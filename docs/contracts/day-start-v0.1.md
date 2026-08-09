@@ -24,11 +24,19 @@ Status: Phase 2 sandbox only. Production promotion is not authorized.
   "previousDaySteps": 7500,
   "comment": "optional",
   "source": "RFORM_MOBILE",
-  "appVersion": "0.2.0-sandbox"
+  "appVersion": "0.2.1-sandbox"
 }
 ```
 
 The server accepts only the current server date in the configured timezone. `previousDaySteps` and `comment` are optional.
+
+## Date storage invariant
+
+`DAILY.Date` and `INBOX_LOG.Event_Date` are calendar dates, not timestamps. The writer must store them as an integer Google Sheets date serial with no fractional time component. For example, `2026-08-09` is stored as serial `46243`, not `46243.5`.
+
+This invariant is required because nutrition-plan validity and the 7-day weight window compare date cells numerically. A fractional date can incorrectly exclude same-day `Effective_To` rows or shift the 7-day boundary.
+
+Timestamp fields such as `Updated_At`, `Received_At` and `Applied_At` remain true date-time values.
 
 ## Server-owned data
 
@@ -65,7 +73,7 @@ A successful new event creates one audit row:
 - `Processing_Status = APPLIED`;
 - `Applied_By = OWNER`;
 - `Source_Chat = RFORM_MOBILE`;
-- `Version = 0.2.0-sandbox`.
+- `Version = 0.2.1-sandbox`.
 
 ## Idempotency and concurrency
 
@@ -100,6 +108,7 @@ A pending event is stored in browser `localStorage` until server acknowledgement
 4. Existing date with new UUID: `ALREADY_EXISTS`, no duplicate.
 5. Previous-day steps: only the previous date Steps changes.
 6. Formula integrity: Day_ID, 7-day average, nutrition plan/fact projections and duplicate formulas are present.
-7. Duplicate flags remain blank after a valid write.
-8. A production datastore configuration is rejected by the existing sandbox title guard.
-9. Training Mobile v2.1 remains unchanged and continues to run independently.
+7. Date integrity: `DAILY.Date` and `INBOX_LOG.Event_Date` have integer date serials with no time fraction.
+8. Duplicate flags remain blank after a valid write.
+9. A production datastore configuration is rejected by the existing sandbox title guard.
+10. Training Mobile v2.1 remains unchanged and continues to run independently.
