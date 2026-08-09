@@ -1,6 +1,6 @@
 'use strict';
 
-const RFORM_PHASE3_VERSION = '0.3.0-sandbox';
+const RFORM_PHASE3_VERSION = '0.3.1-sandbox';
 const RFORM_MEAL_SOURCE = 'RFORM_MOBILE';
 const RFORM_MEAL_TYPES = Object.freeze(['BREAKFAST','POST_WORKOUT','LUNCH','SNACK','DINNER','LATE_SNACK','OTHER']);
 const RFORM_MEAL_MAX_COMPONENTS = 20;
@@ -182,9 +182,7 @@ function submitMeal(payload) {
 
       for (let offset = 0; offset < rawRowCount; offset++) {
         const row = rawFirstRow + offset;
-        if (Number(raw.getRange(row, rawHeaders.Date).getValue()) !== sheetDateSerial) {
-          throw new Error(`VERIFY_FAILED:NUTRITION_RAW:DateSerial:${row}`);
-        }
+        verifyCalendarDateCellPhase3_(raw.getRange(row, rawHeaders.Date), sheetDateSerial, config.timezone, `NUTRITION_RAW:DateSerial:${row}`);
         if (raw.getRange(row, rawHeaders.Meal_ID).getDisplayValue() !== mealId) {
           throw new Error(`VERIFY_FAILED:NUTRITION_RAW:Meal_ID:${row}`);
         }
@@ -212,9 +210,7 @@ function submitMeal(payload) {
       if (aggregate.getRange(aggregateRow, aggregateHeaders.Day_ID).getDisplayValue() !== dayId) {
         throw new Error('VERIFY_FAILED:NUTRITION_DAILY:Day_ID');
       }
-      if (Number(aggregate.getRange(aggregateRow, aggregateHeaders.Date).getValue()) !== sheetDateSerial) {
-        throw new Error('VERIFY_FAILED:NUTRITION_DAILY:DateSerial');
-      }
+      verifyCalendarDateCellPhase3_(aggregate.getRange(aggregateRow, aggregateHeaders.Date), sheetDateSerial, config.timezone, 'NUTRITION_DAILY:DateSerial');
       if (aggregate.getRange(aggregateRow, aggregateHeaders.Duplicate_Flag).getDisplayValue()) {
         throw new Error('VERIFY_FAILED:NUTRITION_DAILY:DUPLICATE');
       }
@@ -240,9 +236,7 @@ function submitMeal(payload) {
       if (inbox.getRange(inboxRow, inboxHeaders.Inbox_Event_ID).getDisplayValue() !== inboxId) {
         throw new Error('VERIFY_FAILED:INBOX_LOG:Inbox_Event_ID');
       }
-      if (Number(inbox.getRange(inboxRow, inboxHeaders.Event_Date).getValue()) !== sheetDateSerial) {
-        throw new Error('VERIFY_FAILED:INBOX_LOG:Event_Date');
-      }
+      verifyCalendarDateCellPhase3_(inbox.getRange(inboxRow, inboxHeaders.Event_Date), sheetDateSerial, config.timezone, 'INBOX_LOG:Event_Date');
       if (inbox.getRange(inboxRow, inboxHeaders.Duplicate_Flag).getDisplayValue()) {
         throw new Error('VERIFY_FAILED:INBOX_LOG:DUPLICATE');
       }
@@ -272,6 +266,22 @@ function submitMeal(payload) {
   };
 }
 
+function verifyCalendarDateCellPhase3_(range, expectedSerial, timezone, label) {
+  const value = range.getValue();
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value)) {
+    const dateKey = Utilities.formatDate(value, timezone, 'yyyy-MM-dd');
+    const timeKey = Utilities.formatDate(value, timezone, 'HH:mm:ss');
+    if (dateKeyToSheetSerial_(dateKey) !== expectedSerial || timeKey !== '00:00:00') {
+      throw new Error(`VERIFY_FAILED:${label}`);
+    }
+    return;
+  }
+  const serial = Number(value);
+  if (!Number.isFinite(serial) || !Number.isInteger(serial) || serial !== expectedSerial) {
+    throw new Error(`VERIFY_FAILED:${label}`);
+  }
+}
+
 function validateMealPayload_(payload, config) {
   if (!payload || typeof payload !== 'object') throw new Error('VALIDATION:PAYLOAD_REQUIRED');
   const today = Utilities.formatDate(new Date(), config.timezone, 'yyyy-MM-dd');
@@ -284,9 +294,7 @@ function validateMealPayload_(payload, config) {
 
   if (!/^[0-9a-fA-F-]{32,36}$/.test(eventId)) throw new Error('VALIDATION:EVENT_ID');
   if (eventType !== 'MEAL') throw new Error('VALIDATION:EVENT_TYPE');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate) || eventDate !== today) {
-    throw new Error('VALIDATION:EVENT_DATE_TODAY_ONLY');
-  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate) || eventDate !== today) throw new Error('VALIDATION:EVENT_DATE_TODAY_ONLY');
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(mealTime)) throw new Error('VALIDATION:MEAL_TIME');
   if (!RFORM_MEAL_TYPES.includes(mealType)) throw new Error('VALIDATION:MEAL_TYPE');
   if (source !== RFORM_MEAL_SOURCE) throw new Error('VALIDATION:SOURCE');
@@ -356,9 +364,7 @@ function resolveCatalogFoods_(sheet, headers, foodIds) {
 function calculateCatalogComponent_(food, component, index) {
   if (!food.displayName) throw new Error(`VALIDATION:FOOD_NAME:${food.foodId}`);
   if (!Number.isFinite(food.basisAmount) || food.basisAmount <= 0) throw new Error(`VALIDATION:BASIS_AMOUNT:${food.foodId}`);
-  if (!food.basis || component.unit !== food.basis) {
-    throw new Error(`VALIDATION:UNIT_MISMATCH:${food.foodId}:${component.unit}:${food.basis || 'NONE'}`);
-  }
+  if (!food.basis || component.unit !== food.basis) throw new Error(`VALIDATION:UNIT_MISMATCH:${food.foodId}:${component.unit}:${food.basis || 'NONE'}`);
   ['calories','protein','fat','carbs'].forEach(field => {
     if (!Number.isFinite(food[field]) || food[field] < 0) throw new Error(`VALIDATION:CATALOG_${field.toUpperCase()}:${food.foodId}`);
   });
@@ -445,7 +451,7 @@ function buildMealInboxRow_(row, inboxId, dayId, input, components, mealId, now,
   values[13] = RFORM_MEAL_SOURCE;
   values[14] = RFORM_PHASE3_VERSION;
   values[16] = `=IF(A${row}="";"";IF(COUNTIF($A$2:$A$5000;A${row})>1;"DUPLICATE";""))`;
-  values[17] = `R/Form Mobile ${RFORM_PHASE3_VERSION}. Component-level MEAL: ${components.length} component(s), Meal_ID ${mealId}. KБЖУ calculated server-side from verified FOOD_CATALOG. NUTRITION_DAILY remains formula-owned. Training Mobile v2.1 не изменялся.`;
+  values[17] = `R/Form Mobile ${RFORM_PHASE3_VERSION}. Component-level MEAL: ${components.length} component(s), Meal_ID ${mealId}. КБЖУ calculated server-side from verified FOOD_CATALOG. NUTRITION_DAILY remains formula-owned. Training Mobile v2.1 не изменялся.`;
   return values;
 }
 
