@@ -28,7 +28,7 @@ All components in one submitted meal share the same server-generated `Meal_ID`. 
   ],
   "templateId": "optional",
   "source": "RFORM_MOBILE",
-  "appVersion": "0.3.0-sandbox"
+  "appVersion": "0.3.1-sandbox"
 }
 ```
 
@@ -97,7 +97,15 @@ A successful new event creates one audit row:
 - `Processing_Status = APPLIED`;
 - `Applied_By = OWNER`;
 - `Source_Chat = RFORM_MOBILE`;
-- `Version = 0.3.0-sandbox`.
+- `Version = 0.3.1-sandbox`.
+
+## Date verification invariant
+
+Calendar dates must be persisted as integer Google Sheets serials with no fractional time component.
+
+Apps Script `Range.getValue()` may return a JavaScript `Date` object for a cell formatted as DATE even when the underlying serial is correct. Runtime `0.3.1-sandbox` therefore normalizes verifier reads: a returned `Date` is converted to the spreadsheet calendar serial before comparison; numeric reads are compared directly.
+
+This verification rule applies to `NUTRITION_RAW.Date`, `NUTRITION_DAILY.Date` and `INBOX_LOG.Event_Date`.
 
 ## Idempotency and concurrency
 
@@ -108,6 +116,8 @@ Event idempotency key: `APP-MEAL-<eventId>`.
 Retry with the same event ID returns `ALREADY_APPLIED` and creates no new component, aggregate or audit row.
 
 Within one event, duplicate `foodId + unit` components are rejected so the client must combine them before submit.
+
+A new event ID is not treated as a duplicate merely because its foods and amounts match an earlier meal: eating the same meal twice is a valid use case. Phase 3 idempotency therefore tests replay of the same event ID, not content equality across distinct events.
 
 ## Native structure preservation
 
@@ -149,7 +159,7 @@ Phase 3A UI supports component entry from verified `FOOD_CATALOG`. Recent/favori
 5. Second meal reuses the same NUTRITION_DAILY row.
 6. Retry with same UUID → ALREADY_APPLIED and no new rows.
 7. Duplicate flags remain blank.
-8. NUTRITION_RAW Date and NUTRITION_DAILY Date are integer serials.
+8. NUTRITION_RAW Date, NUTRITION_DAILY Date and INBOX_LOG Event_Date are integer serials.
 9. Native formats and validations remain present on new rows.
 10. Closed or missing day rejects MEAL.
 11. Unverified/inactive/duplicate catalog food rejects MEAL.
