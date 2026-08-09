@@ -44,6 +44,8 @@ Phase 3C.1 renders these records only. No repeat action is enabled yet.
 
 Up to 6 catalog-backed foods ordered by latest R/Form Mobile use. The latest actual `Amount` and `Unit` are returned as `lastAmount` and `lastUnit`.
 
+When two foods were used in the same transaction and therefore have the same `Created_At`, their relative order is not semantically significant in Phase 3C.1.
+
 When Phase 3C.2/3C.3 is later enabled, this value can be used as the default amount. Phase 3C.1 does not write anything.
 
 ## favorites
@@ -73,7 +75,7 @@ Phase 3C.1 does not expose template create/update/delete operations.
 On the current sandbox fixture after Phase 3A regressions, expected read model is:
 
 - recentMeals: 3 (`M3`, `M2`, `M1`, newest first);
-- recentFoods: 2 (`FOOD-000002`, then `FOOD-000001`, based on latest component use);
+- recentFoods: 2 (`FOOD-000001` and `FOOD-000002`; either relative order is acceptable because both were last used in M3 at the same timestamp);
 - favorites: 0;
 - templates: 0;
 - no datastore changes after bootstrap/render.
