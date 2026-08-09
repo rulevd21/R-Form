@@ -6,247 +6,73 @@
   <base target="_top">
   <title>R/Form Mobile — Sandbox</title>
   <style>
-    :root {
-      --bg: #0b0f12;
-      --panel: #141a1f;
-      --panel-2: #1b2329;
-      --text: #f3f5f7;
-      --muted: #9ba7b0;
-      --line: #2b353d;
-      --accent: #f3f5f7;
-      --danger: #ffb4ab;
-      --radius: 18px;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      line-height: 1.35;
-    }
-    .app { max-width: 720px; margin: 0 auto; padding: 22px 16px 96px; }
-    .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
-    .brand { font-size: 22px; font-weight: 800; letter-spacing: .02em; }
-    .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; }
-    .badge { border: 1px solid var(--line); border-radius: 999px; padding: 7px 10px; color: var(--muted); font-size: 11px; white-space: nowrap; }
-    .stack { display: grid; gap: 12px; }
-    .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
-    .card h2 { margin: 0 0 12px; font-size: 15px; }
-    .hero { padding: 18px; }
-    .hero-date { color: var(--muted); font-size: 13px; }
-    .hero-status { font-size: 30px; font-weight: 800; margin-top: 4px; }
-    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-    .metric { background: var(--panel-2); border-radius: 14px; padding: 12px; min-height: 76px; }
-    .metric-label { color: var(--muted); font-size: 11px; }
-    .metric-value { margin-top: 6px; font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
-    .range-list { display: grid; gap: 8px; }
-    .range-row { display: flex; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
-    .range-row:last-child { border-bottom: 0; padding-bottom: 0; }
-    .range-label { color: var(--muted); }
-    button, .button {
-      appearance: none;
-      width: 100%;
-      border: 0;
-      border-radius: 14px;
-      padding: 14px 16px;
-      font-weight: 750;
-      font-size: 15px;
-      background: var(--accent);
-      color: #0b0f12;
-      text-align: center;
-      text-decoration: none;
-      display: block;
-      cursor: pointer;
-    }
-    .button.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); }
-    .button[aria-disabled="true"] { opacity: .45; pointer-events: none; }
-    .notice { color: var(--muted); font-size: 13px; }
-    .error { color: var(--danger); white-space: pre-wrap; }
-    .loading { padding: 40px 4px; color: var(--muted); text-align: center; }
-    .bottom { position: fixed; left: 0; right: 0; bottom: 0; background: rgba(11,15,18,.96); border-top: 1px solid var(--line); backdrop-filter: blur(10px); }
-    .bottom-inner { max-width: 720px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); padding: 8px 10px max(8px, env(safe-area-inset-bottom)); }
-    .nav { color: var(--muted); font-size: 11px; text-align: center; padding: 8px 2px; }
-    .nav.active { color: var(--text); font-weight: 700; }
-    @media (min-width: 600px) { .grid { grid-template-columns: repeat(4, minmax(0,1fr)); } }
+    :root{--bg:#0b0f12;--panel:#141a1f;--panel2:#1b2329;--text:#f3f5f7;--muted:#9ba7b0;--line:#2b353d;--danger:#ffb4ab;--ok:#b7f7c8;--radius:18px}
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.35}
+    .app{max-width:720px;margin:0 auto;padding:22px 16px 96px}.topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:22px}
+    .brand{font-size:22px;font-weight:800}.subtitle,.notice,.hint{color:var(--muted)}.subtitle{font-size:13px;margin-top:4px}.badge{border:1px solid var(--line);border-radius:999px;padding:7px 10px;color:var(--muted);font-size:11px;white-space:nowrap}
+    .stack{display:grid;gap:12px}.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px}.card h2{margin:0 0 12px;font-size:15px}.hero{padding:18px}.hero-date{color:var(--muted);font-size:13px}.hero-status{font-size:30px;font-weight:800;margin-top:4px}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.metric{background:var(--panel2);border-radius:14px;padding:12px;min-height:76px}.metric-label{color:var(--muted);font-size:11px}.metric-value{margin-top:6px;font-size:18px;font-weight:700;overflow-wrap:anywhere}
+    .range-list{display:grid;gap:8px}.range-row{display:flex;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding-bottom:8px}.range-row:last-child{border-bottom:0}.range-label{color:var(--muted)}
+    button,.button{appearance:none;width:100%;border:0;border-radius:14px;padding:14px 16px;font-weight:750;font-size:15px;background:var(--text);color:var(--bg);text-align:center;text-decoration:none;display:block;cursor:pointer}.button.secondary,button.secondary{background:var(--panel2);color:var(--text);border:1px solid var(--line)}button:disabled,.button[aria-disabled="true"]{opacity:.45;pointer-events:none}
+    .notice{font-size:13px}.error{color:var(--danger);white-space:pre-wrap}.success{color:var(--ok)}.loading{padding:40px 4px;color:var(--muted);text-align:center}
+    .bottom{position:fixed;left:0;right:0;bottom:0;background:rgba(11,15,18,.96);border-top:1px solid var(--line);backdrop-filter:blur(10px)}.bottom-inner{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);padding:8px 10px max(8px,env(safe-area-inset-bottom))}.nav{color:var(--muted);font-size:11px;text-align:center;padding:8px 2px}.nav.active{color:var(--text);font-weight:700}
+    .sheet-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:20;display:flex;align-items:flex-end}.sheet{width:100%;max-width:720px;margin:0 auto;background:var(--panel);border:1px solid var(--line);border-bottom:0;border-radius:22px 22px 0 0;padding:18px 16px max(18px,env(safe-area-inset-bottom));max-height:92vh;overflow:auto}.sheet-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:14px}.sheet-head h2{margin:0;font-size:21px}.close{width:auto;background:transparent;color:var(--muted);padding:6px 10px;font-size:22px}.form{display:grid;gap:12px}.field{display:grid;gap:6px}.field label{font-size:12px;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:12px;background:var(--panel2);color:var(--text);font:inherit;padding:12px}textarea{min-height:72px;resize:vertical}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.sync{font-size:12px;margin-top:8px}.hint{font-size:11px}
+    [hidden]{display:none!important}@media(min-width:600px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
   </style>
 </head>
 <body>
-  <main class="app">
-    <header class="topbar">
-      <div>
-        <div class="brand">R/Form</div>
-        <div class="subtitle">Personal System · Mobile</div>
-      </div>
-      <div class="badge" id="envBadge">SANDBOX · READ ONLY</div>
-    </header>
+<main class="app">
+  <header class="topbar"><div><div class="brand">R/Form</div><div class="subtitle">Personal System · Mobile</div></div><div class="badge" id="envBadge">SANDBOX</div></header>
+  <div id="loading" class="loading">Загрузка состояния дня…</div><div id="error" class="card error" hidden></div>
+  <section id="content" class="stack" hidden>
+    <article class="card hero"><div class="hero-date" id="todayDate">—</div><div class="hero-status" id="dayState">—</div><div class="notice" id="dayType">—</div></article>
+    <article id="dayStartCard" class="card" hidden><h2>Старт дня</h2><div class="notice">Только исходные факты. Средний вес, план КБЖУ, ID, формулы и audit trail создаются автоматически.</div><div style="margin-top:12px"><button id="openStart">Начать день</button></div><div id="pendingNotice" class="sync" hidden></div></article>
+    <article class="card"><h2>Состояние</h2><div class="grid"><div class="metric"><div class="metric-label">Вес</div><div class="metric-value" id="weight">—</div></div><div class="metric"><div class="metric-label">Средний 7д</div><div class="metric-value" id="weight7d">—</div></div><div class="metric"><div class="metric-label">Сон</div><div class="metric-value" id="sleep">—</div></div><div class="metric"><div class="metric-label">Готовность</div><div class="metric-value" id="readiness">—</div></div></div></article>
+    <article class="card"><h2>Питание</h2><div class="range-list"><div class="range-row"><span class="range-label">Ккал</span><strong id="calories">—</strong></div><div class="range-row"><span class="range-label">Белки</span><strong id="protein">—</strong></div><div class="range-row"><span class="range-label">Жиры</span><strong id="fat">—</strong></div><div class="range-row"><span class="range-label">Углеводы</span><strong id="carbs">—</strong></div><div class="range-row"><span class="range-label">Приёмов пищи</span><strong id="mealCount">0</strong></div></div><div class="notice" id="nutritionStatus" style="margin-top:12px">—</div></article>
+    <article class="card"><h2>Тренировка</h2><div class="notice" id="trainingStatus">—</div><div style="margin-top:12px"><a id="trainingButton" class="button secondary" aria-disabled="true" href="#">Открыть Training Mobile v2.1</a></div><div class="notice" style="margin-top:10px">Training Mobile v2.1 остаётся отдельным production writer и этой версией не изменяется.</div></article>
+    <article class="card"><h2>Phase 2</h2><div class="notice">Разрешена только sandbox-запись DAY_START. Питание, замеры и DAY_CLOSE пока не записываются из нового приложения.</div></article>
+  </section>
+</main>
+<nav class="bottom"><div class="bottom-inner"><div class="nav active">Сегодня</div><div class="nav">Питание</div><div class="nav">Тренировка</div><div class="nav">Замеры</div></div></nav>
 
-    <div id="loading" class="loading">Загрузка состояния дня…</div>
-    <div id="error" class="card error" hidden></div>
+<div id="startSheet" class="sheet-backdrop" hidden>
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="startTitle">
+    <div class="sheet-head"><div><h2 id="startTitle">Начать день</h2><div class="hint" id="formDate">—</div></div><button class="close" id="closeStart" type="button">×</button></div>
+    <form id="dayStartForm" class="form">
+      <div class="field"><label for="dayTypeInput">Тип дня</label><select id="dayTypeInput" required></select></div>
+      <div class="form-grid"><div class="field"><label for="weightInput">Вес, кг</label><input id="weightInput" inputmode="decimal" type="number" min="30" max="300" step="0.05" required></div><div class="field"><label for="sleepInput">Сон, ч</label><input id="sleepInput" inputmode="decimal" type="number" min="0" max="24" step="0.25" required></div></div>
+      <div class="form-grid"><div class="field"><label for="sleepQualityInput">Качество сна, 1–10</label><input id="sleepQualityInput" type="number" min="1" max="10" step="1" required></div><div class="field"><label for="readinessInput">Готовность, 1–10</label><input id="readinessInput" type="number" min="1" max="10" step="1" required></div></div>
+      <div class="form-grid"><div class="field"><label for="shoulderInput">Плечо, 0–10</label><input id="shoulderInput" type="number" min="0" max="10" step="1" value="0" required></div><div class="field"><label for="elbowInput">Локоть, 0–10</label><input id="elbowInput" type="number" min="0" max="10" step="1" value="0" required></div></div>
+      <div class="form-grid"><div class="field"><label for="otherPainInput">Другая боль, 0–10</label><input id="otherPainInput" type="number" min="0" max="10" step="1" value="0" required></div><div class="field"><label for="stepsInput">Шаги за предыдущий день</label><input id="stepsInput" type="number" min="0" max="100000" step="1" placeholder="необязательно"></div></div>
+      <div class="hint" id="stepsHint"></div>
+      <div class="field"><label for="commentInput">Комментарий</label><textarea id="commentInput" maxlength="500" placeholder="необязательно"></textarea></div>
+      <button id="saveStart" type="submit">Сохранить старт дня</button>
+      <button id="retryStart" type="button" class="secondary" hidden>Повторить синхронизацию</button>
+      <div id="formStatus" class="sync notice"></div>
+    </form>
+  </section>
+</div>
 
-    <section id="content" class="stack" hidden>
-      <article class="card hero">
-        <div class="hero-date" id="todayDate">—</div>
-        <div class="hero-status" id="dayState">—</div>
-        <div class="notice" id="dayType">—</div>
-      </article>
-
-      <article class="card">
-        <h2>Состояние</h2>
-        <div class="grid">
-          <div class="metric"><div class="metric-label">Вес</div><div class="metric-value" id="weight">—</div></div>
-          <div class="metric"><div class="metric-label">Средний 7д</div><div class="metric-value" id="weight7d">—</div></div>
-          <div class="metric"><div class="metric-label">Сон</div><div class="metric-value" id="sleep">—</div></div>
-          <div class="metric"><div class="metric-label">Готовность</div><div class="metric-value" id="readiness">—</div></div>
-        </div>
-      </article>
-
-      <article class="card">
-        <h2>Питание</h2>
-        <div class="range-list">
-          <div class="range-row"><span class="range-label">Ккал</span><strong id="calories">—</strong></div>
-          <div class="range-row"><span class="range-label">Белки</span><strong id="protein">—</strong></div>
-          <div class="range-row"><span class="range-label">Жиры</span><strong id="fat">—</strong></div>
-          <div class="range-row"><span class="range-label">Углеводы</span><strong id="carbs">—</strong></div>
-          <div class="range-row"><span class="range-label">Приёмов пищи</span><strong id="mealCount">—</strong></div>
-        </div>
-        <div class="notice" id="nutritionStatus" style="margin-top:12px">—</div>
-      </article>
-
-      <article class="card">
-        <h2>Тренировка</h2>
-        <div class="notice" id="trainingStatus">—</div>
-        <div style="margin-top:12px">
-          <a id="trainingButton" class="button secondary" aria-disabled="true" href="#">Открыть Training Mobile v2.1</a>
-        </div>
-        <div class="notice" style="margin-top:10px">Training Mobile v2.1 остаётся отдельным production writer. Эта оболочка его данные только читает.</div>
-      </article>
-
-      <article class="card">
-        <h2>Phase 1</h2>
-        <div class="notice">Все элементы этой версии read-only. DAY_START, питание, замеры и закрытие дня будут подключаться поэтапно после sandbox regression.</div>
-      </article>
-    </section>
-  </main>
-
-  <nav class="bottom" aria-label="Навигация">
-    <div class="bottom-inner">
-      <div class="nav active">Сегодня</div>
-      <div class="nav">Питание</div>
-      <div class="nav">Тренировка</div>
-      <div class="nav">Замеры</div>
-    </div>
-  </nav>
-
-  <script>
-    const state = { bootstrap: null, today: null, training: null };
-
-    function loadPhase1State() {
-      return new Promise((resolve, reject) => {
-        google.script.run
-          .withSuccessHandler(resolve)
-          .withFailureHandler(error => reject(new Error(error && error.message ? error.message : String(error))))
-          .getPhase1BootstrapState();
-      });
-    }
-
-    async function init() {
-      try {
-        const response = await loadPhase1State();
-        state.bootstrap = response.app;
-        state.today = response.today;
-        state.training = response.training;
-        render();
-      } catch (error) {
-        showError(error);
-      }
-    }
-
-    function render() {
-      const t = state.today || {};
-      const d = t.day || {};
-      const n = t.nutrition || {};
-      const tr = state.training || {};
-
-      text('todayDate', formatDate(t.date));
-      text('dayState', stateLabel(t.state));
-      text('dayType', d.dayType ? d.dayType : (t.state === 'NOT_STARTED' ? 'День ещё не начат' : 'Тип дня не указан'));
-      text('weight', valueUnit(d.morningWeight, 'кг'));
-      text('weight7d', valueUnit(d.weight7dAverage, 'кг'));
-      text('sleep', valueUnit(d.sleepHours, 'ч'));
-      text('readiness', score(d.readiness));
-
-      const plan = d.nutritionPlan || {};
-      const fact = n.fact || {};
-      text('calories', planFact(fact.calories, plan.calories, ''));
-      text('protein', planFact(fact.protein, plan.protein, ' г'));
-      text('fat', planFact(fact.fat, plan.fat, ' г'));
-      text('carbs', planFact(fact.carbs, plan.carbs, ' г'));
-      text('mealCount', n.mealCount !== undefined ? n.mealCount : 0);
-      text('nutritionStatus', n.status ? `Статус: ${n.status}${n.planStatus ? ' · ' + n.planStatus : ''}` : 'Суточный агрегат пока отсутствует');
-
-      text('trainingStatus', trainingLabel(tr));
-      const button = document.getElementById('trainingButton');
-      if (tr.launchAvailable && tr.legacyUrl) {
-        button.href = tr.legacyUrl;
-        button.setAttribute('aria-disabled', 'false');
-        button.target = '_blank';
-        button.rel = 'noopener';
-      } else {
-        button.href = '#';
-        button.setAttribute('aria-disabled', 'true');
-      }
-
-      document.getElementById('envBadge').textContent = `${state.bootstrap.environment} · READ ONLY · ${state.bootstrap.appVersion}`;
-      document.getElementById('loading').hidden = true;
-      document.getElementById('content').hidden = false;
-    }
-
-    function showError(error) {
-      document.getElementById('loading').hidden = true;
-      const el = document.getElementById('error');
-      el.hidden = false;
-      el.textContent = `Не удалось загрузить sandbox.\n${error.message}`;
-    }
-
-    function text(id, value) { document.getElementById(id).textContent = value === '' || value === null || value === undefined ? '—' : value; }
-    function valueUnit(value, unit) { return value === '' || value === null || value === undefined ? '—' : `${fmt(value)} ${unit}`; }
-    function score(value) { return value === '' || value === null || value === undefined ? '—' : `${fmt(value)}/10`; }
-    function fmt(value) { return typeof value === 'number' ? new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(value) : value; }
-    function formatDate(value) {
-      if (!value) return '—';
-      const m = String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
-      return m ? `${m[3]}.${m[2]}.${m[1]}` : value;
-    }
-    function pair(range, unit) {
-      if (!range || range.min === '' || range.min === null || range.min === undefined) return '—';
-      if (range.max === '' || range.max === null || range.max === undefined || range.max === range.min) return `${fmt(range.min)}${unit}`;
-      return `${fmt(range.min)}–${fmt(range.max)}${unit}`;
-    }
-    function planFact(fact, plan, unit) {
-      const f = pair(fact, unit);
-      const p = pair(plan, unit);
-      if (f === '—' && p === '—') return '—';
-      if (f === '—') return `план ${p}`;
-      if (p === '—') return `факт ${f}`;
-      return `${f} / план ${p}`;
-    }
-    function stateLabel(value) {
-      if (value === 'OPEN') return 'День открыт';
-      if (value === 'CLOSED') return 'День закрыт';
-      if (value === 'NOT_STARTED') return 'Начало дня';
-      return value || '—';
-    }
-    function trainingLabel(tr) {
-      if (!tr.required) return 'Сегодня тренировка не требуется.';
-      const parts = [];
-      if (tr.trainingCode) parts.push(`Тренировка ${tr.trainingCode}`);
-      if (tr.status) parts.push(tr.status);
-      if (tr.sessionId) parts.push(tr.sessionId);
-      return parts.join(' · ') || 'Тренировка запланирована.';
-    }
-
-    init();
-  </script>
+<script>
+const STORAGE_KEY='rform.phase2.pendingDayStart';
+const state={bootstrap:null,today:null,training:null,dayStart:null,pending:null};
+function serverCall(name,arg){return new Promise((resolve,reject)=>{const runner=google.script.run.withSuccessHandler(resolve).withFailureHandler(e=>reject(new Error(e&&e.message?e.message:String(e))));arg===undefined?runner[name]():runner[name](arg);});}
+async function loadState(){return serverCall('getPhase2BootstrapState');}
+async function init(){try{const r=await loadState();applyBootstrap(r);restorePending();render();}catch(e){showError(e);}}
+function applyBootstrap(r){state.bootstrap=r.app;state.today=r.today;state.training=r.training;state.dayStart=r.dayStart;}
+function render(){const t=state.today||{},d=t.day||{},n=t.nutrition||{},tr=state.training||{};text('todayDate',formatDate(t.date));text('dayState',stateLabel(t.state));text('dayType',d.dayType|| (t.state==='NOT_STARTED'?'День ещё не начат':'Тип дня не указан'));text('weight',valueUnit(d.morningWeight,'кг'));text('weight7d',valueUnit(d.weight7dAverage,'кг'));text('sleep',valueUnit(d.sleepHours,'ч'));text('readiness',score(d.readiness));const p=d.nutritionPlan||{},f=n.fact||{};text('calories',planFact(f.calories,p.calories,''));text('protein',planFact(f.protein,p.protein,' г'));text('fat',planFact(f.fat,p.fat,' г'));text('carbs',planFact(f.carbs,p.carbs,' г'));text('mealCount',n.mealCount!==undefined?n.mealCount:0);text('nutritionStatus',n.status?`Статус: ${n.status}${n.planStatus?' · '+n.planStatus:''}`:'Суточный агрегат пока отсутствует');text('trainingStatus',trainingLabel(tr));const b=document.getElementById('trainingButton');if(tr.launchAvailable&&tr.legacyUrl){b.href=tr.legacyUrl;b.setAttribute('aria-disabled','false');b.target='_blank';b.rel='noopener';}else{b.href='#';b.setAttribute('aria-disabled','true');}document.getElementById('envBadge').textContent=`${state.bootstrap.environment} · DAY_START · ${state.bootstrap.appVersion}`;document.getElementById('dayStartCard').hidden=t.state!=='NOT_STARTED';renderPending();document.getElementById('loading').hidden=true;document.getElementById('content').hidden=false;}
+function openForm(){if(!state.dayStart||state.today.state!=='NOT_STARTED')return;const select=document.getElementById('dayTypeInput');select.innerHTML='<option value="">Выберите тип дня</option>';state.dayStart.allowedDayTypes.forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;select.appendChild(o);});if(state.dayStart.suggestedDayType)select.value=state.dayStart.suggestedDayType;text('formDate',formatDate(state.today.date));const s=document.getElementById('stepsInput');if(state.dayStart.previousDaySteps!==''&&state.dayStart.previousDaySteps!==null)s.value=state.dayStart.previousDaySteps;text('stepsHint',state.dayStart.previousDayExists?`Предыдущая дата: ${formatDate(state.dayStart.previousDate)}. Поле можно оставить пустым, если шаги ещё неизвестны.`:`Предыдущая дата ${formatDate(state.dayStart.previousDate)} не найдена: шаги оставьте пустыми.`);if(state.pending)fillFromPending(state.pending);document.getElementById('startSheet').hidden=false;}
+function closeForm(){document.getElementById('startSheet').hidden=true;}
+function newEventId(){if(window.crypto&&crypto.randomUUID)return crypto.randomUUID();return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0,v=c==='x'?r:(r&3|8);return v.toString(16);});}
+function buildPayload(){return{eventId:state.pending?.eventId||newEventId(),eventType:'DAY_START',eventDate:state.today.date,dayType:document.getElementById('dayTypeInput').value,morningWeight:Number(document.getElementById('weightInput').value),sleepHours:Number(document.getElementById('sleepInput').value),sleepQuality:Number(document.getElementById('sleepQualityInput').value),readiness:Number(document.getElementById('readinessInput').value),shoulderPain:Number(document.getElementById('shoulderInput').value),elbowPain:Number(document.getElementById('elbowInput').value),otherPain:Number(document.getElementById('otherPainInput').value),previousDaySteps:document.getElementById('stepsInput').value===''?'':Number(document.getElementById('stepsInput').value),comment:document.getElementById('commentInput').value.trim(),source:'RFORM_MOBILE',appVersion:state.bootstrap.appVersion};}
+async function submitStart(payload){state.pending=payload;localStorage.setItem(STORAGE_KEY,JSON.stringify(payload));setFormBusy(true);text('formStatus','Синхронизация с sandbox…');try{const r=await serverCall('submitDayStart',payload);localStorage.removeItem(STORAGE_KEY);state.pending=null;state.today=r.today;state.training=r.training;state.dayStart={...(state.dayStart||{}),status:'ALREADY_STARTED'};text('formStatus',r.status==='APPLIED'?'Записано и проверено.':`Сервер: ${r.status}. Дубль не создан.`);document.getElementById('formStatus').className='sync success';setTimeout(()=>{closeForm();render();},450);}catch(e){text('formStatus',`Не синхронизировано: ${e.message}`);document.getElementById('formStatus').className='sync error';document.getElementById('retryStart').hidden=false;setFormBusy(false);renderPending();}}
+function setFormBusy(v){document.getElementById('saveStart').disabled=v;document.getElementById('retryStart').disabled=v;}
+function restorePending(){try{const p=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');if(p&&p.eventType==='DAY_START'&&p.eventDate===state.today.date)state.pending=p;else localStorage.removeItem(STORAGE_KEY);}catch(_){localStorage.removeItem(STORAGE_KEY);}}
+function fillFromPending(p){document.getElementById('dayTypeInput').value=p.dayType||'';document.getElementById('weightInput').value=p.morningWeight??'';document.getElementById('sleepInput').value=p.sleepHours??'';document.getElementById('sleepQualityInput').value=p.sleepQuality??'';document.getElementById('readinessInput').value=p.readiness??'';document.getElementById('shoulderInput').value=p.shoulderPain??0;document.getElementById('elbowInput').value=p.elbowPain??0;document.getElementById('otherPainInput').value=p.otherPain??0;document.getElementById('stepsInput').value=p.previousDaySteps??'';document.getElementById('commentInput').value=p.comment||'';document.getElementById('retryStart').hidden=false;}
+function renderPending(){const el=document.getElementById('pendingNotice');if(state.pending&&state.today?.state==='NOT_STARTED'){el.hidden=false;el.textContent='Есть неподтверждённый DAY_START. Повторная отправка использует тот же eventId.';el.className='sync error';}else el.hidden=true;}
+function showError(e){document.getElementById('loading').hidden=true;const el=document.getElementById('error');el.hidden=false;el.textContent=`Не удалось загрузить sandbox.\n${e.message}`;}
+function text(id,v){const el=document.getElementById(id);if(el)el.textContent=v===''||v===null||v===undefined?'—':v;}function valueUnit(v,u){return v===''||v===null||v===undefined?'—':`${fmt(v)} ${u}`;}function score(v){return v===''||v===null||v===undefined?'—':`${fmt(v)}/10`;}function fmt(v){return typeof v==='number'?new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2}).format(v):v;}function formatDate(v){if(!v)return'—';const m=String(v).match(/^(\d{4})-(\d{2})-(\d{2})$/);return m?`${m[3]}.${m[2]}.${m[1]}`:v;}function pair(r,u){if(!r||r.min===''||r.min===null||r.min===undefined)return'—';if(r.max===''||r.max===null||r.max===undefined||r.max===r.min)return`${fmt(r.min)}${u}`;return`${fmt(r.min)}–${fmt(r.max)}${u}`;}function planFact(f,p,u){const a=pair(f,u),b=pair(p,u);if(a==='—'&&b==='—')return'—';if(a==='—')return`план ${b}`;if(b==='—')return`факт ${a}`;return`${a} / план ${b}`;}function stateLabel(v){return v==='OPEN'?'День открыт':v==='CLOSED'?'День закрыт':v==='NOT_STARTED'?'Начало дня':v||'—';}function trainingLabel(tr){if(!tr.required)return'Сегодня тренировка не требуется.';const a=[];if(tr.trainingCode)a.push(`Тренировка ${tr.trainingCode}`);if(tr.status)a.push(tr.status);if(tr.sessionId)a.push(tr.sessionId);return a.join(' · ')||'Тренировка запланирована.';}
+document.getElementById('openStart').addEventListener('click',openForm);document.getElementById('closeStart').addEventListener('click',closeForm);document.getElementById('startSheet').addEventListener('click',e=>{if(e.target.id==='startSheet')closeForm();});document.getElementById('dayStartForm').addEventListener('submit',e=>{e.preventDefault();if(!e.currentTarget.reportValidity())return;submitStart(buildPayload());});document.getElementById('retryStart').addEventListener('click',()=>{if(state.pending)submitStart(state.pending);});init();
+</script>
 </body>
 </html>
