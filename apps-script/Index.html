@@ -141,24 +141,21 @@
   <script>
     const state = { bootstrap: null, today: null, training: null };
 
-    function serverCall(name, ...args) {
+    function loadPhase1State() {
       return new Promise((resolve, reject) => {
         google.script.run
           .withSuccessHandler(resolve)
-          .withFailureHandler(error => reject(new Error(error && error.message ? error.message : String(error))))[name](...args);
+          .withFailureHandler(error => reject(new Error(error && error.message ? error.message : String(error))))
+          .getPhase1BootstrapState();
       });
     }
 
     async function init() {
       try {
-        const [bootstrap, today, training] = await Promise.all([
-          serverCall('getAppBootstrap'),
-          serverCall('getTodayState'),
-          serverCall('getTrainingLaunchState')
-        ]);
-        state.bootstrap = bootstrap;
-        state.today = today;
-        state.training = training;
+        const response = await loadPhase1State();
+        state.bootstrap = response.app;
+        state.today = response.today;
+        state.training = response.training;
         render();
       } catch (error) {
         showError(error);
