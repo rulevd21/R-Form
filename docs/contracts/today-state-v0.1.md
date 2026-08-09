@@ -2,7 +2,23 @@
 
 Status: Phase 1 / sandbox / read-only.
 
-## Public server functions
+## Preferred client entry point
+
+### `getPhase1BootstrapState()`
+
+The mobile shell uses one server round-trip for initial state. The response combines application metadata, the current-day projection, and the legacy-training launch state:
+
+```json
+{
+  "app": { "environment": "SANDBOX", "readOnly": true },
+  "today": { "date": "YYYY-MM-DD", "state": "OPEN" },
+  "training": { "adapter": "TrainingAdapterLegacyV21", "mode": "READ_ONLY_LAUNCH" }
+}
+```
+
+This is the preferred Phase 1 client contract. The lower-level public read functions below remain available for diagnostics and regression tests.
+
+## Public read functions
 
 ### `getAppBootstrap()`
 
@@ -88,7 +104,7 @@ Shape:
 }
 ```
 
-## `getTrainingLaunchState()`
+### `getTrainingLaunchState()`
 
 Returns the compatibility-layer launch state for the existing Training Mobile v2.1. The adapter does not write training facts and does not alter the legacy writer.
 
