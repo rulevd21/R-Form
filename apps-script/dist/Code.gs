@@ -197,7 +197,7 @@ function getTrainingStateByDate_(ss, dateKey, dayId, config) {
   const sessions = ss.getSheetByName('TRAINING_SESSIONS');
   if (!sessions) return { required: false, status: 'UNAVAILABLE', launchAvailable: false };
   const headers = getHeaderMap_(sessions);
-  const required = ['Session_ID','Day_ID','Date','Training_Code','Plan_Status','Session_Status'];
+  const required = ['Session_ID','Day_ID','Date','Session_Type','Plan_Status','Session_Status'];
   requireHeaders_(headers, required, 'TRAINING_SESSIONS');
 
   let row = dayId ? findRowByExactValue_(sessions, headers.Day_ID, dayId) : 0;
@@ -207,7 +207,7 @@ function getTrainingStateByDate_(ss, dateKey, dayId, config) {
     return {
       required: true,
       sessionId: valueByHeader_(values, headers, 'Session_ID'),
-      trainingCode: valueByHeader_(values, headers, 'Training_Code'),
+      trainingCode: valueByHeader_(values, headers, 'Session_Type'),
       planStatus: valueByHeader_(values, headers, 'Plan_Status'),
       status: valueByHeader_(values, headers, 'Session_Status') || 'UNKNOWN',
       launchAvailable: Boolean(config.trainingLegacyUrl)
@@ -230,13 +230,13 @@ function getPlannedTrainingByDate_(ss, dateKey, timezone) {
   const sheet = ss.getSheetByName('TRAINING_PLAN');
   if (!sheet) return null;
   const headers = getHeaderMap_(sheet);
-  requireHeaders_(headers, ['Date','Session_ID'], 'TRAINING_PLAN');
+  requireHeaders_(headers, ['Date','Session_ID','Session_Type'], 'TRAINING_PLAN');
   const row = findRowByDate_(sheet, headers.Date, dateKey, timezone);
   if (!row) return null;
   const values = sheet.getRange(row, 1, 1, sheet.getLastColumn()).getValues()[0];
   return {
     sessionId: valueByHeader_(values, headers, 'Session_ID'),
-    trainingCode: headers.Session_Type ? valueByHeader_(values, headers, 'Session_Type') : ''
+    trainingCode: valueByHeader_(values, headers, 'Session_Type')
   };
 }
 
