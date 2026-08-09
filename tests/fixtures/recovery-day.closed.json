@@ -1,0 +1,61 @@
+{
+  "fixture_version": "0.1",
+  "synthetic": true,
+  "purpose": "Closed recovery-day regression fixture for R/Form Input Automation",
+  "day": {
+    "day_id": "D-20990101",
+    "date": "2099-01-01",
+    "day_type": "RECOVERY",
+    "morning_weight": 70.5,
+    "weight_7d_average": 70.4,
+    "sleep_hours": 8,
+    "sleep_quality": 9,
+    "readiness": 9,
+    "steps_previous_day": 8000,
+    "shoulder_pain": 0,
+    "elbow_pain": 0,
+    "other_pain": 0,
+    "status": "CLOSED"
+  },
+  "nutrition": {
+    "meal_count": 6,
+    "plan": {
+      "calories_min": 2900,
+      "calories_max": 3000,
+      "protein_min": 160,
+      "protein_max": 175,
+      "fat_min": 70,
+      "fat_max": 85,
+      "carbs_min": 370,
+      "carbs_max": 410
+    },
+    "fact": {
+      "calories_min": 2920,
+      "calories_max": 3070,
+      "protein_min": 160,
+      "protein_max": 174,
+      "fat_min": 72,
+      "fat_max": 86,
+      "carbs_min": 380,
+      "carbs_max": 420
+    },
+    "status": "CLOSED"
+  },
+  "training": {
+    "required": false,
+    "session_id": null,
+    "status": "NOT_REQUIRED"
+  },
+  "closure": {
+    "duplicate_count": 0,
+    "open_qa_count": 0,
+    "close_readiness": "READY",
+    "day_packet_status": "GENERATED"
+  },
+  "expected_invariants": [
+    "DAY_CLOSE succeeds with no training session when day_type is RECOVERY",
+    "nutrition is CLOSED before DAILY is CLOSED",
+    "duplicate_count remains zero",
+    "no training writer is invoked"
+  ]
+}
