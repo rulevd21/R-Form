@@ -1,0 +1,64 @@
+{
+  "fixture_version": "0.1",
+  "synthetic": true,
+  "purpose": "Closed training-day regression fixture for TrainingAdapterLegacyV21",
+  "day": {
+    "day_id": "D-20990102",
+    "date": "2099-01-02",
+    "day_type": "TRAINING_C",
+    "morning_weight": 70.6,
+    "sleep_hours": 7.5,
+    "sleep_quality": 9,
+    "readiness": 9,
+    "shoulder_pain": 0,
+    "elbow_pain": 0,
+    "other_pain": 0,
+    "status": "CLOSED"
+  },
+  "training_session": {
+    "session_id": "S-20990102-C",
+    "training_code": "C",
+    "planned_duration": "60–75",
+    "actual_duration": 65,
+    "recovery_status": "RECOVERED",
+    "planned_sets": 18,
+    "saved_sets": 18,
+    "plan_status": "WITHIN_PLAN",
+    "technique_status": "GOOD",
+    "status": "CLOSED"
+  },
+  "sets": [
+    {"set_id":"SET-20990102-C-01","order":1,"exercise":"COMPETITION_BENCH_PRESS_2S_PAUSE","set_type":"TECHNIQUE","set_number":1,"kg":70,"reps":4,"rir":4},
+    {"set_id":"SET-20990102-C-02","order":1,"exercise":"COMPETITION_BENCH_PRESS_2S_PAUSE","set_type":"TECHNIQUE","set_number":2,"kg":70,"reps":4,"rir":4},
+    {"set_id":"SET-20990102-C-03","order":1,"exercise":"COMPETITION_BENCH_PRESS_2S_PAUSE","set_type":"TECHNIQUE","set_number":3,"kg":70,"reps":4,"rir":3},
+    {"set_id":"SET-20990102-C-04","order":1,"exercise":"COMPETITION_BENCH_PRESS_2S_PAUSE","set_type":"TECHNIQUE","set_number":4,"kg":70,"reps":4,"rir":3},
+    {"set_id":"SET-20990102-C-05","order":2,"exercise":"DUMBBELL_BENCH_PRESS","set_type":"ACCESSORY","set_number":1,"kg":24,"reps":10,"rir":3},
+    {"set_id":"SET-20990102-C-06","order":2,"exercise":"DUMBBELL_BENCH_PRESS","set_type":"ACCESSORY","set_number":2,"kg":24,"reps":10,"rir":3},
+    {"set_id":"SET-20990102-C-07","order":2,"exercise":"DUMBBELL_BENCH_PRESS","set_type":"ACCESSORY","set_number":3,"kg":24,"reps":10,"rir":2},
+    {"set_id":"SET-20990102-C-08","order":3,"exercise":"BACK_SQUAT","set_type":"ACCESSORY","set_number":1,"kg":85,"reps":8,"rir":5},
+    {"set_id":"SET-20990102-C-09","order":3,"exercise":"BACK_SQUAT","set_type":"ACCESSORY","set_number":2,"kg":85,"reps":8,"rir":5},
+    {"set_id":"SET-20990102-C-10","order":3,"exercise":"BACK_SQUAT","set_type":"ACCESSORY","set_number":3,"kg":85,"reps":8,"rir":4},
+    {"set_id":"SET-20990102-C-11","order":4,"exercise":"LAT_PULLDOWN","set_type":"ACCESSORY","set_number":1,"kg":70,"reps":10,"rir":3},
+    {"set_id":"SET-20990102-C-12","order":4,"exercise":"LAT_PULLDOWN","set_type":"ACCESSORY","set_number":2,"kg":70,"reps":10,"rir":2},
+    {"set_id":"SET-20990102-C-13","order":4,"exercise":"LAT_PULLDOWN","set_type":"ACCESSORY","set_number":3,"kg":70,"reps":10,"rir":2},
+    {"set_id":"SET-20990102-C-14","order":5,"exercise":"OVERHEAD_CABLE_TRICEPS_EXTENSION","set_type":"ACCESSORY","set_number":1,"kg":30,"reps":12,"rir":4},
+    {"set_id":"SET-20990102-C-15","order":5,"exercise":"OVERHEAD_CABLE_TRICEPS_EXTENSION","set_type":"ACCESSORY","set_number":2,"kg":30,"reps":12,"rir":3},
+    {"set_id":"SET-20990102-C-16","order":5,"exercise":"OVERHEAD_CABLE_TRICEPS_EXTENSION","set_type":"ACCESSORY","set_number":3,"kg":30,"reps":12,"rir":2},
+    {"set_id":"SET-20990102-C-17","order":6,"exercise":"REAR_DELT_MACHINE","set_type":"ACCESSORY","set_number":1,"kg":25,"reps":15,"rir":3},
+    {"set_id":"SET-20990102-C-18","order":6,"exercise":"REAR_DELT_MACHINE","set_type":"ACCESSORY","set_number":2,"kg":25,"reps":15,"rir":2}
+  ],
+  "closure": {
+    "duplicate_count": 0,
+    "open_qa_count": 0,
+    "close_readiness": "READY"
+  },
+  "expected_invariants": [
+    "TRAINING_PRE does not change nutrition",
+    "TRAINING_SET remains idempotent by business Record_Key",
+    "exactly 18 planned sets produce exactly 18 saved sets",
+    "Record_Key and Duplicate_Flag are derived, not client payload facts",
+    "TRAINING_CLOSE closes the session but does not close the day",
+    "DAY_CLOSE may close the day only after the training session is CLOSED",
+    "all training events remain auditable"
+  ]
+}
