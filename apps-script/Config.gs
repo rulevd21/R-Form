@@ -8,6 +8,8 @@ const RFORM_CONFIG_KEYS = Object.freeze({
   APP_TIMEZONE: 'APP_TIMEZONE'
 });
 
+const RFORM_SANDBOX_TITLE_PREFIX = 'RFORM_MASTER_DATA_SANDBOX_';
+
 function getConfig_() {
   const props = PropertiesService.getScriptProperties();
   const config = {
@@ -27,7 +29,12 @@ function getConfig_() {
 
 function getMasterSpreadsheet_() {
   const config = getConfig_();
-  return SpreadsheetApp.openById(config.masterSpreadsheetId);
+  const spreadsheet = SpreadsheetApp.openById(config.masterSpreadsheetId);
+  const title = spreadsheet.getName();
+  if (!title || title.indexOf(RFORM_SANDBOX_TITLE_PREFIX) !== 0) {
+    throw new Error(`SAFETY_GUARD:EXPECTED_SANDBOX_DATASTORE:${title || 'UNKNOWN'}`);
+  }
+  return spreadsheet;
 }
 
 function getHeaderMap_(sheet) {
