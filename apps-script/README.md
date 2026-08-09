@@ -4,6 +4,15 @@ Status: Phase 1 / read-only shell.
 
 This source package is intentionally unable to write to `RFORM_MASTER_DATA_v1`.
 
+## Fast manual bootstrap
+
+To minimize owner effort, use only two source files for the first sandbox deployment:
+
+1. `dist/Code.gs` — bundled server-side Phase 1 code.
+2. `Index.html` — mobile-first client shell.
+
+The modular `.gs` files remain the canonical development source. `dist/Code.gs` is only a bootstrap bundle for manual loading into Apps Script while no Apps Script connector is available.
+
 ## Script Properties required for sandbox runtime
 
 Set these in the sandbox Apps Script project only:
@@ -12,11 +21,11 @@ Set these in the sandbox Apps Script project only:
 - `APP_VERSION` — recommended `0.1.0-sandbox`.
 - `DATA_SCHEMA_VERSION` — recommended `RFORM_MASTER_DATA_v1`.
 - `APP_TIMEZONE` — `Europe/Moscow` for compatibility with the current data store.
-- `TRAINING_LEGACY_URL` — current production Training Mobile v2.1 URL. This is used only as a launch link; the new shell does not proxy or replace its writer.
+- `TRAINING_LEGACY_URL` — current verified production Training Mobile v2.1 URL. Leave blank until the exact current URL is verified; the shell will remain functional and the Training launch button will stay disabled.
 
 Do not commit property values, Google identifiers, deployment IDs, or user data to GitHub.
 
-## Files
+## Canonical development files
 
 - `Code.gs` — HTML web-app entry point and bootstrap.
 - `Config.gs` — server-side config and schema helpers.
@@ -24,13 +33,14 @@ Do not commit property values, Google identifiers, deployment IDs, or user data 
 - `TrainingAdapterLegacyV21.gs` — read-only launch compatibility adapter.
 - `Index.html` — mobile-first read-only shell.
 - `appsscript.json` — V8 manifest.
+- `dist/Code.gs` — bundled manual-bootstrap server file.
 
 ## Phase 1 allowed behavior
 
 - read the current day state;
 - show current plan/fact nutrition values when present;
 - show training state;
-- launch the existing Training Mobile v2.1 by link when configured.
+- launch the existing Training Mobile v2.1 by link only after its current URL is verified and configured.
 
 ## Phase 1 forbidden behavior
 
@@ -41,4 +51,4 @@ Do not commit property values, Google identifiers, deployment IDs, or user data 
 
 ## Deployment gate
 
-Runtime testing starts only after a separate sandbox Apps Script project is created and these source files are loaded into it. Production deployment is not part of Phase 1.
+Runtime testing starts only after a separate sandbox Apps Script project is created and the bundled `dist/Code.gs` plus `Index.html` are loaded into it. Production deployment is not part of Phase 1.
