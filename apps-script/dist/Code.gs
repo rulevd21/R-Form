@@ -8,6 +8,8 @@ const RFORM_CONFIG_KEYS = Object.freeze({
   APP_TIMEZONE: 'APP_TIMEZONE'
 });
 
+const RFORM_SANDBOX_TITLE_PREFIX = 'RFORM_MASTER_DATA_SANDBOX_';
+
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('Index')
     .setTitle('R/Form Mobile — Sandbox');
@@ -60,7 +62,13 @@ function getConfig_() {
 }
 
 function getMasterSpreadsheet_() {
-  return SpreadsheetApp.openById(getConfig_().masterSpreadsheetId);
+  const config = getConfig_();
+  const spreadsheet = SpreadsheetApp.openById(config.masterSpreadsheetId);
+  const title = spreadsheet.getName();
+  if (!title || title.indexOf(RFORM_SANDBOX_TITLE_PREFIX) !== 0) {
+    throw new Error(`SAFETY_GUARD:EXPECTED_SANDBOX_DATASTORE:${title || 'UNKNOWN'}`);
+  }
+  return spreadsheet;
 }
 
 function getHeaderMap_(sheet) {
