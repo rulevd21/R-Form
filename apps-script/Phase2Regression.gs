@@ -33,7 +33,7 @@ function runPhase2IdempotencyRegression() {
   const dailyRow = findRowByDate_(daily, dailyHeaders.Date, eventDate, config.timezone);
   if (!dailyRow) throw new Error(`REGRESSION:CURRENT_DAY_NOT_FOUND:${eventDate}`);
 
-  const inboxValues = inbox.getRange(2, 1, Math.max(0, inbox.getLastRow() - 1), inbox.getLastColumn()).getValues();
+  const inboxValues = inbox.getRange(2, 1, inbox.getLastRow() - 1, inbox.getLastColumn()).getValues();
   let originalInboxId = '';
   for (let i = 0; i < inboxValues.length; i += 1) {
     const row = inboxValues[i];
@@ -78,7 +78,7 @@ function runPhase2IdempotencyRegression() {
     appVersion: RFORM_PHASE2_VERSION
   };
 
-  const before = regressionSnapshot_(daily, inbox, dailyHeaders, inboxHeaders, eventDate, dayId);
+  const before = regressionSnapshot_(daily, inbox, dailyHeaders, inboxHeaders, dayId);
 
   const sameEventResult = submitDayStart(Object.assign({}, basePayload, { eventId: originalEventId }));
   if (sameEventResult.status !== 'ALREADY_APPLIED') {
@@ -92,7 +92,7 @@ function runPhase2IdempotencyRegression() {
   }
 
   SpreadsheetApp.flush();
-  const after = regressionSnapshot_(daily, inbox, dailyHeaders, inboxHeaders, eventDate, dayId);
+  const after = regressionSnapshot_(daily, inbox, dailyHeaders, inboxHeaders, dayId);
 
   if (after.dailyCount !== before.dailyCount) {
     throw new Error(`REGRESSION:DAILY_COUNT_CHANGED:${before.dailyCount}->${after.dailyCount}`);
@@ -120,15 +120,14 @@ function runPhase2IdempotencyRegression() {
   };
 }
 
-function regressionSnapshot_(daily, inbox, dailyHeaders, inboxHeaders, eventDate, dayId) {
-  const dailyRows = daily.getRange(2, 1, Math.max(0, daily.getLastRow() - 1), daily.getLastColumn()).getValues();
-  const inboxRows = inbox.getRange(2, 1, Math.max(0, inbox.getLastRow() - 1), inbox.getLastColumn()).getValues();
+function regressionSnapshot_(daily, inbox, dailyHeaders, inboxHeaders, dayId) {
+  const dailyRows = daily.getRange(2, 1, daily.getLastRow() - 1, daily.getLastColumn()).getValues();
+  const inboxRows = inbox.getRange(2, 1, inbox.getLastRow() - 1, inbox.getLastColumn()).getValues();
 
   let dailyCount = 0;
   let dailyDuplicateCount = 0;
   dailyRows.forEach(row => {
-    const value = row[dailyHeaders.Date - 1];
-    if (value instanceof Date && Utilities.formatDate(value, 'UTC', 'yyyy-MM-dd') === eventDate) {
+    if (String(row[dailyHeaders.Day_ID - 1] || '') === dayId) {
       dailyCount += 1;
       if (String(row[dailyHeaders.Duplicate_Flag - 1] || '') === 'DUPLICATE') dailyDuplicateCount += 1;
     }
