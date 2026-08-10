@@ -1,6 +1,6 @@
 'use strict';
 
-const RFORM_PHASE2_VERSION = '0.2.1-sandbox';
+const RFORM_PHASE2_VERSION = '0.2.2-sandbox';
 const RFORM_DAY_START_TYPES = Object.freeze(['REST', 'RECOVERY', 'TRAINING_A', 'TRAINING_B', 'TRAINING_C']);
 const RFORM_DAY_START_SOURCE = 'RFORM_MOBILE';
 
@@ -123,14 +123,16 @@ function submitDayStart(payload) {
 
         const expectedDayId = dayIdFromDateKey_(input.eventDate);
         const actualDayId = daily.getRange(dailyRow, dailyHeaders.Day_ID).getDisplayValue();
-        const actualDateSerial = Number(daily.getRange(dailyRow, dailyHeaders.Date).getValue());
 
         if (actualDayId !== expectedDayId) {
           throw new Error(`VERIFY_FAILED:DAILY:Day_ID:${actualDayId}`);
         }
-        if (actualDateSerial !== sheetDateSerial) {
-          throw new Error(`VERIFY_FAILED:DAILY:DateSerial:${actualDateSerial}`);
-        }
+        verifyCalendarDateCellPhase2_(
+          daily.getRange(dailyRow, dailyHeaders.Date),
+          sheetDateSerial,
+          config.timezone,
+          `DAILY:DateSerial:${dailyRow}`
+        );
         if (daily.getRange(dailyRow, dailyHeaders.Duplicate_Flag).getDisplayValue()) {
           throw new Error('VERIFY_FAILED:DAILY:DUPLICATE');
         }
@@ -157,9 +159,12 @@ function submitDayStart(payload) {
         if (inbox.getRange(inboxRow, inboxHeaders.Inbox_Event_ID).getDisplayValue() !== inboxId) {
           throw new Error('VERIFY_FAILED:INBOX_LOG:Inbox_Event_ID');
         }
-        if (Number(inbox.getRange(inboxRow, inboxHeaders.Event_Date).getValue()) !== sheetDateSerial) {
-          throw new Error('VERIFY_FAILED:INBOX_LOG:Event_Date');
-        }
+        verifyCalendarDateCellPhase2_(
+          inbox.getRange(inboxRow, inboxHeaders.Event_Date),
+          sheetDateSerial,
+          config.timezone,
+          `INBOX_LOG:Event_Date:${inboxRow}`
+        );
         if (inbox.getRange(inboxRow, inboxHeaders.Duplicate_Flag).getDisplayValue()) {
           throw new Error('VERIFY_FAILED:INBOX_LOG:DUPLICATE');
         }
@@ -186,6 +191,22 @@ function submitDayStart(payload) {
     training: buildTrainingLaunchState_(today, config),
     appVersion: RFORM_PHASE2_VERSION
   };
+}
+
+function verifyCalendarDateCellPhase2_(range, expectedSerial, timezone, label) {
+  const value = range.getValue();
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value)) {
+    const dateKey = Utilities.formatDate(value, timezone, 'yyyy-MM-dd');
+    const timeKey = Utilities.formatDate(value, timezone, 'HH:mm:ss');
+    if (dateKeyToSheetSerial_(dateKey) !== expectedSerial || timeKey !== '00:00:00') {
+      throw new Error(`VERIFY_FAILED:${label}`);
+    }
+    return;
+  }
+  const serial = Number(value);
+  if (!Number.isFinite(serial) || !Number.isInteger(serial) || serial !== expectedSerial) {
+    throw new Error(`VERIFY_FAILED:${label}`);
+  }
 }
 
 function validateDayStartPayload_(payload, config) {
@@ -300,15 +321,7 @@ function nutritionFactFormula_(sourceColumn, row) {
   return `=IFERROR(IF(INDEX(FILTER(NUTRITION_DAILY!$O$2:$O$5004;NUTRITION_DAILY!$A$2:$A$5004=$A${row});1)<>"CLOSED";"";INDEX(FILTER(NUTRITION_DAILY!${sourceColumn}$2:${sourceColumn}$5004;NUTRITION_DAILY!$A$2:$A$5004=$A${row});1));"")`;
 }
 
-function buildDayStartInboxRow_(
-  row,
-  inboxId,
-  dayId,
-  input,
-  now,
-  previousStepsChanged,
-  sheetDateSerial
-) {
+function buildDayStartInboxRow_(row, inboxId, dayId, input, now, previousStepsChanged, sheetDateSerial) {
   const values = new Array(18).fill('');
 
   values[0] = inboxId;
