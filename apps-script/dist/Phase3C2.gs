@@ -1,6 +1,6 @@
 'use strict';
 
-const RFORM_PHASE3C2_VERSION = '0.3.3-sandbox';
+const RFORM_PHASE3C2_VERSION = '0.3.4-sandbox';
 
 /**
  * Phase 3C.2 bootstrap.
