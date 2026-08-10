@@ -69,37 +69,37 @@ function setFoodFavorite(payload) {
       const favoriteCell = catalog.getRange(catalogRow, catalogHeaders.Favorite);
       previousFavoriteValue = favoriteCell.getValue();
       const previousFavorite = isTruthy_(previousFavoriteValue);
-      if (previousFavorite === input.favorite) {
-        resultStatus = 'ALREADY_STATE';
-      } else {
+      const noChange = previousFavorite === input.favorite;
+
+      if (!noChange) {
         favoriteCell.setValue(input.favorite ? 'YES' : 'NO');
         catalogChanged = true;
         SpreadsheetApp.flush();
-
         const storedFavorite = String(favoriteCell.getDisplayValue() || '').trim().toUpperCase();
         if (storedFavorite !== (input.favorite ? 'YES' : 'NO')) throw new Error('VERIFY_FAILED:FOOD_CATALOG:Favorite');
         if (catalog.getRange(catalogRow, catalogHeaders.Duplicate_Flag).getDisplayValue()) throw new Error('VERIFY_FAILED:FOOD_CATALOG:DUPLICATE');
-
-        const now = new Date();
-        inboxRow = inbox.getLastRow() + 1;
-        ensureRows_(inbox, inboxRow);
-        prepareNewRowsLikePrevious_(inbox, inboxRow, 1);
-        inbox.getRange(inboxRow, 1, 1, 18).setValues([
-          buildFoodFavoriteInboxRow_(inboxRow, inboxId, input, previousFavorite, now, sheetDateSerial)
-        ]);
-        inbox.getRange(inboxRow, inboxHeaders.Received_At).setNumberFormat('dd.mm.yyyy hh:mm');
-        inbox.getRange(inboxRow, inboxHeaders.Event_Date).setNumberFormat('dd.mm.yyyy');
-        inbox.getRange(inboxRow, inboxHeaders.Applied_At).setNumberFormat('dd.mm.yyyy hh:mm');
-        SpreadsheetApp.flush();
-
-        if (inbox.getRange(inboxRow, inboxHeaders.Inbox_Event_ID).getDisplayValue() !== inboxId) throw new Error('VERIFY_FAILED:INBOX_LOG:Inbox_Event_ID');
-        if (String(inbox.getRange(inboxRow, inboxHeaders.Event_Type).getDisplayValue()).trim() !== 'CORRECTION') throw new Error('VERIFY_FAILED:INBOX_LOG:Event_Type');
-        if (String(inbox.getRange(inboxRow, inboxHeaders.Parsed_Entity).getDisplayValue()).trim() !== 'FOOD_FAVORITE') throw new Error('VERIFY_FAILED:INBOX_LOG:Parsed_Entity');
-        verifyCalendarDateCellPhase3_(inbox.getRange(inboxRow, inboxHeaders.Event_Date), sheetDateSerial, config.timezone, 'INBOX_LOG:Event_Date');
-        if (inbox.getRange(inboxRow, inboxHeaders.Duplicate_Flag).getDisplayValue()) throw new Error('VERIFY_FAILED:INBOX_LOG:DUPLICATE');
-
-        resultStatus = 'APPLIED';
       }
+
+      const now = new Date();
+      inboxRow = inbox.getLastRow() + 1;
+      ensureRows_(inbox, inboxRow);
+      prepareNewRowsLikePrevious_(inbox, inboxRow, 1);
+      inbox.getRange(inboxRow, 1, 1, 18).setValues([
+        buildFoodFavoriteInboxRow_(inboxRow, inboxId, input, previousFavorite, now, sheetDateSerial, noChange ? 'SKIPPED' : 'APPLIED')
+      ]);
+      inbox.getRange(inboxRow, inboxHeaders.Received_At).setNumberFormat('dd.mm.yyyy hh:mm');
+      inbox.getRange(inboxRow, inboxHeaders.Event_Date).setNumberFormat('dd.mm.yyyy');
+      inbox.getRange(inboxRow, inboxHeaders.Applied_At).setNumberFormat('dd.mm.yyyy hh:mm');
+      SpreadsheetApp.flush();
+
+      if (inbox.getRange(inboxRow, inboxHeaders.Inbox_Event_ID).getDisplayValue() !== inboxId) throw new Error('VERIFY_FAILED:INBOX_LOG:Inbox_Event_ID');
+      if (String(inbox.getRange(inboxRow, inboxHeaders.Event_Type).getDisplayValue()).trim() !== 'CORRECTION') throw new Error('VERIFY_FAILED:INBOX_LOG:Event_Type');
+      if (String(inbox.getRange(inboxRow, inboxHeaders.Parsed_Entity).getDisplayValue()).trim() !== 'FOOD_FAVORITE') throw new Error('VERIFY_FAILED:INBOX_LOG:Parsed_Entity');
+      if (String(inbox.getRange(inboxRow, inboxHeaders.Processing_Status).getDisplayValue()).trim() !== (noChange ? 'SKIPPED' : 'APPLIED')) throw new Error('VERIFY_FAILED:INBOX_LOG:Processing_Status');
+      verifyCalendarDateCellPhase3_(inbox.getRange(inboxRow, inboxHeaders.Event_Date), sheetDateSerial, config.timezone, 'INBOX_LOG:Event_Date');
+      if (inbox.getRange(inboxRow, inboxHeaders.Duplicate_Flag).getDisplayValue()) throw new Error('VERIFY_FAILED:INBOX_LOG:DUPLICATE');
+
+      resultStatus = noChange ? 'ALREADY_STATE' : 'APPLIED';
     }
   } catch (error) {
     if (inboxRow) inbox.getRange(inboxRow, 1, 1, 18).clearContent();
@@ -115,7 +115,7 @@ function setFoodFavorite(payload) {
   return {
     status: resultStatus,
     eventId: input.eventId,
-    inboxEventId: resultStatus === 'APPLIED' || resultStatus === 'ALREADY_APPLIED' ? inboxId : '',
+    inboxEventId: resultStatus === 'APPLIED' || resultStatus === 'ALREADY_STATE' || resultStatus === 'ALREADY_APPLIED' ? inboxId : '',
     foodId: input.foodId,
     favorite: food ? Boolean(food.favorite) : input.favorite,
     fastPaths: fresh.fastPaths,
@@ -129,16 +129,17 @@ function validateFoodFavoritePayload_(payload) {
   const eventType = String(payload.eventType || '').trim();
   const foodId = String(payload.foodId || '').trim();
   const source = String(payload.source || '').trim();
+  const clientVersion = String(payload.appVersion || '').trim().slice(0, 80);
 
   if (!/^[0-9a-fA-F-]{32,36}$/.test(eventId)) throw new Error('VALIDATION:EVENT_ID');
   if (eventType !== 'FOOD_FAVORITE') throw new Error('VALIDATION:EVENT_TYPE');
   if (!/^FOOD-[A-Za-z0-9_-]+$/.test(foodId)) throw new Error('VALIDATION:FOOD_ID');
   if (typeof payload.favorite !== 'boolean') throw new Error('VALIDATION:FAVORITE_BOOLEAN');
   if (source !== RFORM_FAVORITE_SOURCE) throw new Error('VALIDATION:SOURCE');
-  return { eventId, eventType, foodId, favorite: payload.favorite, source };
+  return { eventId, eventType, foodId, favorite: payload.favorite, source, clientVersion };
 }
 
-function buildFoodFavoriteInboxRow_(row, inboxId, input, previousFavorite, now, sheetDateSerial) {
+function buildFoodFavoriteInboxRow_(row, inboxId, input, previousFavorite, now, sheetDateSerial, processingStatus) {
   const values = new Array(18).fill('');
   values[0] = inboxId;
   values[1] = now;
@@ -150,13 +151,13 @@ function buildFoodFavoriteInboxRow_(row, inboxId, input, previousFavorite, now, 
   values[7] = input.foodId;
   values[8] = 'VALID';
   values[9] = '';
-  values[10] = 'APPLIED';
+  values[10] = processingStatus;
   values[11] = now;
   values[12] = 'OWNER';
   values[13] = RFORM_FAVORITE_SOURCE;
   values[14] = RFORM_PHASE3C3_VERSION;
   values[15] = '';
   values[16] = `=IF(A${row}="";"";IF(COUNTIF($A$2:$A$5000;A${row})>1;"DUPLICATE";""))`;
-  values[17] = 'Phase 3C.3 Favorite metadata change only. FOOD_CATALOG.Favorite changed; NUTRITION_RAW and nutrition facts are not modified.';
+  values[17] = `Phase 3C.3 FOOD_FAVORITE ${previousFavorite ? 'YES' : 'NO'} -> ${input.favorite ? 'YES' : 'NO'}; client=${input.clientVersion || 'unknown'}; metadata only; NUTRITION_RAW and nutrition facts unchanged.`;
   return values;
 }
