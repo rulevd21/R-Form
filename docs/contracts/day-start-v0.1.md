@@ -24,7 +24,7 @@ Status: Phase 2 sandbox only. Production promotion is not authorized.
   "previousDaySteps": 7500,
   "comment": "optional",
   "source": "RFORM_MOBILE",
-  "appVersion": "0.2.1-sandbox"
+  "appVersion": "0.2.2-sandbox"
 }
 ```
 
@@ -32,11 +32,20 @@ The server accepts only the current server date in the configured timezone. `pre
 
 ## Date storage invariant
 
-`DAILY.Date` and `INBOX_LOG.Event_Date` are calendar dates, not timestamps. The writer must store them as an integer Google Sheets date serial with no fractional time component. For example, `2026-08-09` is stored as serial `46243`, not `46243.5`.
-
-This invariant is required because nutrition-plan validity and the 7-day weight window compare date cells numerically. A fractional date can incorrectly exclude same-day `Effective_To` rows or shift the 7-day boundary.
+`DAILY.Date` and `INBOX_LOG.Event_Date` are calendar dates, not timestamps. The writer stores them as integer Google Sheets date serials with no fractional time component. For example, `2026-08-10` is stored as serial `46244`.
 
 Timestamp fields such as `Updated_At`, `Received_At` and `Applied_At` remain true date-time values.
+
+### Date verifier semantics
+
+Apps Script `Range.getValue()` may return a JavaScript `Date` object for a DATE-formatted cell even when the underlying Sheets serial is correct. Converting that object with `Number(value)` yields Unix epoch milliseconds, not a Sheets serial.
+
+Runtime `0.2.2-sandbox` therefore verifies calendar dates by type:
+
+- when `getValue()` returns a `Date`, the verifier converts it back to `yyyy-MM-dd` in the spreadsheet timezone, checks local time `00:00:00`, and compares the resulting Sheets serial with the expected serial;
+- when it returns a number, the verifier requires a finite integer equal to the expected serial.
+
+This rule is aligned with the accepted Phase 3 `MEAL` verifier and applies to both `DAILY.Date` and `INBOX_LOG.Event_Date`.
 
 ## Server-owned data
 
@@ -73,7 +82,7 @@ A successful new event creates one audit row:
 - `Processing_Status = APPLIED`;
 - `Applied_By = OWNER`;
 - `Source_Chat = RFORM_MOBILE`;
-- `Version = 0.2.1-sandbox`.
+- `Version = 0.2.2-sandbox`.
 
 ## Idempotency and concurrency
 
@@ -98,7 +107,7 @@ For a new event, the write path keeps rollback snapshots. If verification fails 
 
 ## Client retry
 
-A pending event is stored in browser `localStorage` until server acknowledgement. A retry reuses the same `eventId`.
+A pending event is stored in browser `localStorage` until server acknowledgement. A retry reuses the same `eventId` and payload.
 
 ## Acceptance tests
 
@@ -109,6 +118,7 @@ A pending event is stored in browser `localStorage` until server acknowledgement
 5. Previous-day steps: only the previous date Steps changes.
 6. Formula integrity: Day_ID, 7-day average, nutrition plan/fact projections and duplicate formulas are present.
 7. Date integrity: `DAILY.Date` and `INBOX_LOG.Event_Date` have integer date serials with no time fraction.
-8. Duplicate flags remain blank after a valid write.
-9. A production datastore configuration is rejected by the existing sandbox title guard.
-10. Training Mobile v2.1 remains unchanged and continues to run independently.
+8. DATE-formatted cells returned by Apps Script as JavaScript `Date` objects pass verification when their spreadsheet-local calendar date and midnight time are correct.
+9. Duplicate flags remain blank after a valid write.
+10. A production datastore configuration is rejected by the existing sandbox title guard.
+11. Training Mobile v2.1 remains unchanged and continues to run independently.
