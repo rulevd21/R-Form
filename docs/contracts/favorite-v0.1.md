@@ -37,7 +37,7 @@ Controls:
 - rollback of Favorite and audit row if verification fails;
 - replay of an accepted `eventId` returns `ALREADY_APPLIED` without another write.
 
-If the requested boolean already equals the current Favorite state, the server returns `ALREADY_STATE` and performs no write/audit.
+If the requested boolean already equals the current Favorite state, the server performs no catalog change, records one `SKIPPED` audit event for that `eventId`, and returns `ALREADY_STATE`. A replay of that accepted eventId is still idempotent.
 
 ## Audit mapping
 
@@ -50,13 +50,14 @@ Parsed_Entity = FOOD_FAVORITE
 Target_Sheet = FOOD_CATALOG
 Target_Record_ID = <Food_ID>
 Validation_Status = VALID
-Processing_Status = APPLIED
+Processing_Status = APPLIED | SKIPPED
 Applied_By = OWNER
 Source_Chat = RFORM_MOBILE
 Version = 0.3.5-sandbox
+Note = old→new + client runtime marker + metadata-only invariant
 ```
 
-`INBOX_LOG.Version` is the server-side Favorite writer version. It is intentionally separate from historical MEAL writer version markers.
+`INBOX_LOG.Version` is the server-side Favorite writer version. It is intentionally separate from historical MEAL writer version markers. The client/UI runtime is retained in `Note`.
 
 ## Invariants
 
@@ -64,6 +65,7 @@ A Favorite operation MUST NOT modify:
 - `NUTRITION_RAW`;
 - `NUTRITION_DAILY`;
 - FOOD_CATALOG calories/protein/fat/carbs/basis/source fields;
+- FOOD_CATALOG `Last_Used_At` or `Record_Key`;
 - Training Mobile v2.1 data or deployment.
 
 After a successful write, the next fast-path bootstrap must move the item into or out of `favorites[]` while preserving it in `recentFoods[]` when applicable.
@@ -78,7 +80,7 @@ Initial sandbox state:
 Minimal acceptance:
 1. Mark `FOOD-000001` favorite in UI.
 2. Expect exactly `FOOD_CATALOG.Favorite = YES` for that row.
-3. Expect exactly one new `APP-FAVORITE-*` audit row with `CORRECTION / FOOD_FAVORITE`.
+3. Expect exactly one new `APP-FAVORITE-*` audit row with `CORRECTION / FOOD_FAVORITE / APPLIED`.
 4. Expect `favorites[]` to contain `FOOD-000001`.
-5. Confirm `NUTRITION_RAW` and `NUTRITION_DAILY` unchanged.
+5. Confirm `NUTRITION_RAW`, `NUTRITION_DAILY`, other FOOD_CATALOG fields and KБЖУ unchanged.
 6. Retry the same stored eventId only when testing recovery/idempotency; no synthetic second toggle is required for normal UX acceptance.
