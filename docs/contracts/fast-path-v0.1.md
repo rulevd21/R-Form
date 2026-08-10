@@ -10,7 +10,7 @@ Reduce repeated nutrition input without changing the accepted Phase 3A `MEAL` wr
 
 `getPhase3CBootstrapState()` remains the read-model source introduced in Phase 3C.1.
 
-`getPhase3C2BootstrapState()` wraps it for runtime `0.3.3-sandbox` and enables only the client-side capability `repeatRecentMeal`.
+`getPhase3C2BootstrapState()` wraps it for runtime `0.3.4-sandbox` and enables only the client-side capability `repeatRecentMeal`.
 
 Returned `fastPaths` includes:
 
@@ -64,6 +64,14 @@ Only the subsequent ordinary Save calls the existing accepted `submitMeal()` wri
 
 If a pending MEAL exists, repeat controls are disabled so a new payload cannot overwrite the pending retry state.
 
+## Amount input invariant
+
+Catalog-backed amount input must not reject a valid positive decimal solely because of an HTML `step` lattice.
+
+The client uses `type=number`, `min=0.01`, `max=10000` and `step=any`. Server-side validation remains authoritative: the submitted amount must be finite and greater than zero, and the existing MEAL writer applies its normal validation.
+
+This permits both whole-gram values such as `150` and exact decimal values such as `149.91` without browser `stepMismatch` errors. Runtime `0.3.4-sandbox` replaces the earlier `min=0.01` + `step=0.1` combination, whose valid-value lattice incorrectly made `150` invalid (`149.91` and `150.01` were the nearest browser-accepted values).
+
 ## recentFoods
 
 Up to 6 catalog-backed foods ordered by latest R/Form Mobile use. The latest actual `Amount` and `Unit` are returned as `lastAmount` and `lastUnit`.
@@ -112,7 +120,8 @@ On the current sandbox fixture after Phase 3A regressions:
 1. When current day is not OPEN, repeat buttons are disabled and no data changes occur.
 2. When current day is OPEN, pressing repeat opens the ordinary MEAL form with prior components and amounts.
 3. Meal time is current, not historical.
-4. No write occurs before Save.
-5. Save uses existing `submitMeal()` and must create one new MEAL event and one new Meal_ID.
-6. Retry of that new eventId remains `ALREADY_APPLIED` without duplicates.
-7. Favorite, recent-food direct prefill and templates remain non-mutating in this phase.
+4. Whole and decimal amounts from a recent meal pass browser validation without step mismatch.
+5. No write occurs before Save.
+6. Save uses existing `submitMeal()` and must create one new MEAL event and one new Meal_ID.
+7. Retry of that new eventId remains `ALREADY_APPLIED` without duplicates.
+8. Favorite, recent-food direct prefill and templates remain non-mutating in this phase.
