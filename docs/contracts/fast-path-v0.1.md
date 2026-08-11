@@ -1,6 +1,6 @@
 # R/Form Nutrition Fast Path contract v0.1
 
-Status: Phase 3C sandbox completion candidate. Production promotion is not authorized.
+Status: Phase 3C PASSED / SANDBOX ACCEPTANCE COMPLETE. Production promotion is not authorized.
 
 ## Purpose
 
@@ -86,11 +86,10 @@ PASSED: FOOD-000001 NO→YES verified with one audit event and zero nutrition ch
 PASSED: one two-component ACTIVE template created and audited; template-use form visually verified with current time, SNACK, FOOD-000001 150 g and FOOD-000002 425 g. Source confirms template-use click itself contains no writer call.
 
 ### 3C.5 Recent-food prefill
-SOURCE READY / RUNTIME ACCEPTANCE PENDING. Required acceptance:
+PASSED: owner screenshot on 11.08.2026 verified FOOD-000002 direct prefill with one component at 425 g, current time `12:08`, and normal suggested Meal_Type `LUNCH`. Independent sandbox re-read confirmed zero `NUTRITION_RAW`, `NUTRITION_DAILY`, or MEAL audit writes before Save; only the separate DAY_START event for 11.08 was present.
 
-1. runtime badge = `0.3.7-sandbox`;
-2. `Недавние продукты` shows `Добавить` for eligible items;
-3. pressing `Добавить` on FOOD-000002 opens ordinary MEAL form with one component FOOD-000002 and 425 g;
-4. Meal_Time is current and Meal_Type uses the normal current suggestion;
-5. no `NUTRITION_RAW`, `NUTRITION_DAILY` or `INBOX_LOG` write occurs before Save;
-6. ordinary Save is not required for this acceptance because the unchanged `submitMeal()` path is already independently accepted.
+## Final Phase 3C status
+
+Phase 3C Fast Path = PASSED / SANDBOX ACCEPTANCE COMPLETE.
+
+Accepted scope: read model, Repeat Recent Meal, Favorite, Save/Use Template, Recent Food Prefill. Production promotion remains a separate future gate.
