@@ -126,8 +126,7 @@ function upsertCheck_(sheet, p) {
   if (!row) row = Math.max(sheet.getLastRow() + 1, 2);
 
   const sessionDate = String(p.session_date || p.submitted_at || '').slice(0, 10);
-  const intensity = [String(p.rir || '').trim() ? 'RIR ' + String(p.rir).trim() : '', String(p.effort || '').trim()].filter(Boolean).join(' · ');
-  const quality = [String(p.effort || '').trim() ? 'Ощущение: ' + String(p.effort).trim() : '', String(p.quality || '').trim()].filter(Boolean).join(' | ');
+  const intensity = [String(p.rir || '').trim(), String(p.effort || '').trim()].filter(Boolean).join(' · ');
   const values = {
     check_id: p.check_id,
     participant_id: p.participant_id,
@@ -139,7 +138,7 @@ function upsertCheck_(sheet, p) {
     fact: String(p.fact || '').trim(),
     rir_summary: intensity,
     rest_summary: String(p.rest || '').trim(),
-    quality_comment: quality,
+    quality_comment: String(p.quality || '').trim(),
     participant_decision: String(p.decision || '').trim(),
     data_quality: 'COMPLETE'
   };
