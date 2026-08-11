@@ -1,8 +1,7 @@
 'use strict';
 
 const RFORM_TC = Object.freeze({
-  SHEET_ID_PROP: 'TRAINING_CHECK_SPREADSHEET_ID',
-  TOKEN_PROP: 'TRAINING_CHECK_ACCESS_TOKEN',
+  DATASTORE_ID: '1X9xfRDMtqPpfDOAXWHAIl5oRCqnLQMcpHWRBa75LLrM',
   CHECKS_SHEET: 'CHECKS',
   PARTICIPANTS_SHEET: 'PARTICIPANTS',
   INGEST_SHEET: 'INGEST_LOG',
@@ -31,15 +30,6 @@ function doPost(e) {
 }
 
 function processTrainingCheck_(e) {
-  const props = PropertiesService.getScriptProperties();
-  const spreadsheetId = props.getProperty(RFORM_TC.SHEET_ID_PROP);
-  const expectedToken = props.getProperty(RFORM_TC.TOKEN_PROP);
-  if (!spreadsheetId) throw new Error('CONFIG_MISSING:TRAINING_CHECK_SPREADSHEET_ID');
-  if (!expectedToken) throw new Error('CONFIG_MISSING:TRAINING_CHECK_ACCESS_TOKEN');
-
-  const access = String((e && e.parameter && e.parameter.access) || '');
-  if (!constantTimeEqual_(access, expectedToken)) throw new Error('ACCESS_DENIED');
-
   const raw = String((e && e.parameter && e.parameter.payload) || '');
   if (!raw) throw new Error('PAYLOAD_MISSING');
   if (raw.length > RFORM_TC.MAX_PAYLOAD_CHARS) throw new Error('PAYLOAD_TOO_LARGE');
@@ -47,18 +37,27 @@ function processTrainingCheck_(e) {
   let payload;
   try { payload = JSON.parse(raw); } catch (_) { throw new Error('PAYLOAD_INVALID_JSON'); }
   validatePayload_(payload);
+  const access = String((e && e.parameter && e.parameter.access) || '');
 
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const ss = SpreadsheetApp.openById(spreadsheetId);
+    const ss = SpreadsheetApp.openById(RFORM_TC.DATASTORE_ID);
     const checks = requireSheet_(ss, RFORM_TC.CHECKS_SHEET);
     const participants = requireSheet_(ss, RFORM_TC.PARTICIPANTS_SHEET);
     const ingest = requireSheet_(ss, RFORM_TC.INGEST_SHEET);
 
+    const checkHeaders = headerMap_(checks);
+    requireHeaders_(checkHeaders, ['check_id','participant_id','submission_token'], RFORM_TC.CHECKS_SHEET);
+    const checkRow = findRowByExact_(checks, checkHeaders.check_id, payload.check_id);
+    if (!checkRow) throw new Error('CHECK_NOT_PRECREATED');
+    const expectedParticipant = String(checks.getRange(checkRow, checkHeaders.participant_id).getDisplayValue() || '');
+    const expectedToken = String(checks.getRange(checkRow, checkHeaders.submission_token).getDisplayValue() || '');
+    if (expectedParticipant !== String(payload.participant_id)) throw new Error('PARTICIPANT_MISMATCH');
+    if (!expectedToken || !constantTimeEqual_(access, expectedToken)) throw new Error('ACCESS_DENIED');
+
     const ingestHeaders = headerMap_(ingest);
     requireHeaders_(ingestHeaders, ['event_id','received_at','check_id','participant_id','source','client_version','payload_json','processing_status','error_code','note'], RFORM_TC.INGEST_SHEET);
-
     const duplicateRow = findRowByExact_(ingest, ingestHeaders.event_id, payload.event_id);
     if (duplicateRow) {
       return {
@@ -72,10 +71,10 @@ function processTrainingCheck_(e) {
     }
 
     upsertParticipantConsent_(participants, payload);
-    upsertCheck_(checks, payload);
+    updateCheck_(checks, checkHeaders, checkRow, payload);
     appendIngest_(ingest, ingestHeaders, payload, raw, 'APPLIED', '', 'Training Check accepted');
-
     SpreadsheetApp.flush();
+
     return {
       ok: true,
       type: 'rform-training-check-ack',
@@ -86,7 +85,7 @@ function processTrainingCheck_(e) {
     };
   } catch (err) {
     try {
-      const ss = SpreadsheetApp.openById(spreadsheetId);
+      const ss = SpreadsheetApp.openById(RFORM_TC.DATASTORE_ID);
       const ingest = ss.getSheetByName(RFORM_TC.INGEST_SHEET);
       if (ingest && payload && payload.event_id) {
         appendIngest_(ingest, headerMap_(ingest), payload, raw, 'ERROR', String(err && err.message ? err.message : err), 'Receiver failed');
@@ -118,12 +117,9 @@ function upsertParticipantConsent_(sheet, p) {
   sheet.getRange(row, h.consent_store_data).setValue(true);
 }
 
-function upsertCheck_(sheet, p) {
-  const h = headerMap_(sheet);
+function updateCheck_(sheet, h, row, p) {
   const required = ['check_id','participant_id','test_status','test_date','session_date','training_context','plan','fact','rir_summary','rest_summary','quality_comment','participant_decision','data_quality'];
   requireHeaders_(h, required, RFORM_TC.CHECKS_SHEET);
-  let row = findRowByExact_(sheet, h.check_id, p.check_id);
-  if (!row) row = Math.max(sheet.getLastRow() + 1, 2);
 
   const sessionDate = String(p.session_date || p.submitted_at || '').slice(0, 10);
   const intensity = [String(p.rir || '').trim(), String(p.effort || '').trim()].filter(Boolean).join(' · ');
