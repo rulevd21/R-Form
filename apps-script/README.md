@@ -1,85 +1,65 @@
-# R/Form Mobile — Apps Script sandbox
+# R/Form Mobile — Apps Script development track
 
-Status: Phase 3A / Nutrition MEAL source package ready; runtime load pending.
+Current status: **Phase 3C Fast Path sandbox acceptance complete; Production Promotion P0 readiness in progress**.
 
-The production `RFORM_MASTER_DATA_v1` and the production Training Mobile v2.1 writer are outside the Phase 3 write scope.
+The production `RFORM_MASTER_DATA_v1`, GitHub `main` and production Training Mobile v2.1 writer remain outside automatic sandbox changes.
 
-## Current sandbox bootstrap
+## Accepted sandbox capabilities
 
-Keep the already verified Phase 1 + Phase 2 files in the existing Apps Script test project. To load Phase 3A manually, add/update only:
+- Phase 1: read-only Today / Training compatibility shell.
+- Phase 2: `DAY_START` writer, including date verifier hotfix `0.2.2-sandbox`.
+- Phase 3A: component-level `MEAL` writer with catalog-derived K/P/F/C, idempotency, rollback, native validation/format propagation and formula-owned `NUTRITION_DAILY` aggregation.
+- Phase 3C: recent MEAL repeat, Favorite metadata, explicit meal templates and recent-food prefill.
+- Final sandbox fast-path runtime marker: `0.3.7-sandbox`.
 
-1. `dist/Phase3.gs` → create an Apps Script script file named `Phase3` and paste this content.
-2. `Index.html` → replace the existing HTML file with the current version.
+## Canonical development source
 
-Do not replace `Code.gs` or `Phase2.gs`. Do not change Script Properties. No new deployment is required for `/dev`: the test deployment runs the latest saved project source.
+- `Code.gs` — HTML entry point / base bootstrap.
+- `Config.gs` — sandbox configuration and datastore guard.
+- `TodayService.gs` — Today state projection.
+- `TrainingAdapterLegacyV21.gs` — read/launch compatibility adapter.
+- `DayStartService.gs` — accepted DAY_START writer.
+- `MealService.gs` — accepted component-level MEAL writer.
+- `FastPathService.gs` — recent meal / recent food / favorites / templates read model.
+- `FavoriteService.gs` — audited Favorite metadata writer.
+- `TemplateService.gs` — audited explicit template writer.
 
-The modular `.gs` files remain canonical development source. Files under `dist/` exist only to minimize manual transfer while no Apps Script connector is available.
+`dist/` contains manual-transfer bundles used because no direct Apps Script source connector is available in this workflow.
 
-## Script Properties
+## Production Promotion P0
 
-Keep the existing sandbox properties:
+Production must **not** be enabled by replacing `MASTER_SPREADSHEET_ID` in the sandbox project. The accepted sandbox source is intentionally fail-closed to spreadsheet titles beginning with `RFORM_MASTER_DATA_SANDBOX_`.
 
-- `MASTER_SPREADSHEET_ID` — sandbox copy only;
-- `APP_VERSION` — may remain the existing value; Phase 3A exposes `0.3.0-sandbox` from code;
-- `DATA_SCHEMA_VERSION` — `RFORM_MASTER_DATA_v1`;
-- `APP_TIMEZONE` — `Europe/Moscow`;
-- `TRAINING_LEGACY_URL` — keep the existing value.
+The first production step is a separate read-only RC project. Standalone package:
 
-Never commit property values, Google identifiers, deployment IDs or personal user data to the public repository.
+1. `dist/ProductionPreflight.gs` → create one Apps Script script file (for example `ProductionPreflight`).
+2. `dist/IndexProductionPreflight.html` → create Apps Script HTML file `Index` with this content.
+3. Script Properties:
+   - `MASTER_SPREADSHEET_ID` = production `RFORM_MASTER_DATA_v1` ID;
+   - `APP_TIMEZONE` = `Europe/Moscow`;
+   - `TRAINING_LEGACY_URL` optional and not launch-authorized in preflight.
 
-## Canonical development files
+Runtime marker: `0.4.0-rc1`.
 
-- `Code.gs` — HTML entry point/bootstrap from Phase 1;
-- `Config.gs` — server config and schema helpers;
-- `TodayService.gs` — current-state projection;
-- `TrainingAdapterLegacyV21.gs` — read/launch compatibility adapter;
-- `DayStartService.gs` — Phase 2 DAY_START writer;
-- `MealService.gs` — Phase 3A component-level MEAL writer;
-- `Index.html` — mobile client;
-- `appsscript.json` — V8 manifest;
-- `dist/Code.gs` — bundled Phase 1 server source;
-- `dist/Phase2.gs` — additive Phase 2 deployment source;
-- `dist/Phase3.gs` — additive Phase 3A deployment source.
+The P0 package is read-only by construction: it has no write endpoint and no schema-migration endpoint. It only verifies exact production datastore identity, required legacy sheets, current Today/Nutrition state, Training continuity status, and presence/absence of the two feature sheets.
 
-## Phase 3A allowed behavior
+See `docs/contracts/production-promotion-v0.1.md` for the gate sequence.
 
-All previously verified DAY_START behavior remains available. In addition, when a current day is OPEN and `FOOD_CATALOG` contains active user-verified products, the sandbox may:
+## Production schema gap
 
-- submit one `MEAL` event with one or more catalog components;
-- generate one Meal_ID shared by all components;
-- write one `NUTRITION_RAW` row per component;
-- calculate exact point K/P/F/C values server-side from catalog Basis/Basis_Amount;
-- create the current `NUTRITION_DAILY` formula row if it does not exist;
-- append one `INBOX_LOG` MEAL audit event;
-- retry the same event UUID without creating duplicates.
+Production currently lacks the sandbox-only feature sheets:
 
-The current Phase 3A UI intentionally disables `Добавить еду` when the verified catalog is empty. This is the expected pre-seed state.
+- `FOOD_CATALOG`;
+- `MEAL_TEMPLATES`.
 
-## Still forbidden
+Creating them is a separate named production gate. The sandbox acceptance template is test data and must not be copied to production.
 
-- production writes or production promotion;
-- changes to Training Mobile v2.1 deployment, URL or writer contract;
-- changes to GitHub `main` for sandbox testing;
-- client-supplied K/P/F/C or formula fields;
-- automatic AI/photo nutrition estimation;
-- MEASUREMENT / DAY_CLOSE writes;
-- template/recent/favorite/barcode write workflows before their later phases.
+## Still forbidden without named production gates
 
-## Safety
-
-The existing server guard permits access only when the configured spreadsheet title starts with `RFORM_MASTER_DATA_SANDBOX_`. Phase 3A adds current OPEN-day validation, exact schema validation, ScriptLock, event idempotency, verified-catalog eligibility, explicit calendar-date storage, native format/validation propagation, formula-owned aggregate creation and rollback of partial new writes.
-
-## Phase 3A pre-write regression order
-
-1. Keep existing `Code.gs` and `Phase2.gs` unchanged.
-2. Add `Phase3.gs` from `dist/Phase3.gs`.
-3. Replace `Index.html` with the current source.
-4. Save and open the existing `/dev` URL.
-5. Before any catalog seed or MEAL submit, visually verify:
-   - badge `SANDBOX · MEAL · 0.3.0-sandbox`;
-   - current day remains OPEN with unchanged DAY_START facts;
-   - nutrition block displays `Приёмов пищи пока нет` instead of technical `MISSING`;
-   - `Добавить еду` is disabled while `FOOD_CATALOG` is empty;
-   - no runtime/schema error is shown.
-6. After this pre-write check, prepare a small verified sandbox FOOD_CATALOG seed and run a separate MEAL happy-path/idempotency regression.
-7. Production promotion remains a separate future gate.
+- production Sheet schema changes;
+- production DAY_START / MEAL / Favorite / Template writes from the new app;
+- repurposing the sandbox Apps Script project as production;
+- changes to Training Mobile v2.1 deployment, URL, writer contract or data path;
+- changes to GitHub `main` for testing;
+- synthetic production acceptance data;
+- mandatory AI/Gemini dependency in the critical input path.
