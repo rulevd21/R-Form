@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<base target="_top">
+<title>R/Form Mobile — Production RC Preflight</title>
+<style>
+:root{--bg:#0b0f12;--panel:#141a1f;--panel2:#1b2329;--text:#f3f5f7;--muted:#9ba7b0;--line:#2b353d;--ok:#b7f7c8;--warn:#ffd8a8;--danger:#ffb4ab}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.35}.app{max-width:720px;margin:0 auto;padding:22px 16px 60px}.top{display:flex;justify-content:space-between;gap:12px;margin-bottom:18px}.brand{font-size:22px;font-weight:800}.sub,.muted{color:var(--muted)}.sub{font-size:13px;margin-top:4px}.badge{border:1px solid var(--line);border-radius:999px;padding:7px 10px;color:var(--warn);font-size:11px;white-space:nowrap}.stack{display:grid;gap:12px}.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px}.card h2{font-size:15px;margin:0 0 12px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.metric{background:var(--panel2);border-radius:14px;padding:12px}.label{font-size:11px;color:var(--muted)}.value{font-size:17px;font-weight:700;margin-top:5px;overflow-wrap:anywhere}.row{display:flex;justify-content:space-between;gap:14px;padding:8px 0;border-bottom:1px solid var(--line)}.row:last-child{border-bottom:0}.ok{color:var(--ok)}.warn{color:var(--warn)}.danger{color:var(--danger)}.notice{font-size:12px;color:var(--muted);margin-top:10px}.loading{padding:36px 0;text-align:center;color:var(--muted)}[hidden]{display:none!important}@media(min-width:600px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+</style>
+</head>
+<body>
+<main class="app">
+<header class="top"><div><div class="brand">R/Form</div><div class="sub">Production Promotion · Read-only preflight</div></div><div class="badge" id="badge">PRODUCTION RC · READ ONLY</div></header>
+<div id="loading" class="loading">Проверка production-контура…</div>
+<div id="error" class="card danger" hidden></div>
+<section id="content" class="stack" hidden>
+<article class="card"><h2>Safety gate</h2><div class="row"><span class="muted">Datastore</span><strong id="store">—</strong></div><div class="row"><span class="muted">Write capability</span><strong class="ok">DISABLED</strong></div><div class="row"><span class="muted">Write scope</span><strong>∅</strong></div><div class="row"><span class="muted">Gate</span><strong id="gate">—</strong></div><div class="notice">Этот package не содержит write endpoint и не выполняет schema migration.</div></article>
+<article class="card"><h2>Schema readiness</h2><div class="row"><span class="muted">Required legacy sheets</span><strong id="required">—</strong></div><div class="row"><span class="muted">FOOD_CATALOG</span><strong id="catalog">—</strong></div><div class="row"><span class="muted">MEAL_TEMPLATES</span><strong id="templates">—</strong></div></article>
+<article class="card"><h2>Сегодня</h2><div class="grid"><div class="metric"><div class="label">Дата</div><div class="value" id="date">—</div></div><div class="metric"><div class="label">Статус</div><div class="value" id="dayStatus">—</div></div><div class="metric"><div class="label">Тип дня</div><div class="value" id="dayType">—</div></div><div class="metric"><div class="label">Вес</div><div class="value" id="weight">—</div></div></div><div class="notice" id="stateNote"></div></article>
+<article class="card"><h2>Питание</h2><div class="row"><span class="muted">Приёмов пищи</span><strong id="mealCount">—</strong></div><div class="row"><span class="muted">Ккал</span><strong id="calories">—</strong></div><div class="row"><span class="muted">Белки</span><strong id="protein">—</strong></div><div class="row"><span class="muted">Жиры</span><strong id="fat">—</strong></div><div class="row"><span class="muted">Углеводы</span><strong id="carbs">—</strong></div></article>
+<article class="card"><h2>Training continuity</h2><div class="row"><span class="muted">Сегодня</span><strong id="training">—</strong></div><div class="row"><span class="muted">Legacy URL configured</span><strong id="legacyConfigured">—</strong></div><div class="row"><span class="muted">Launch</span><strong class="warn">DISABLED IN RC</strong></div><div class="notice">Training Mobile writer, deployment и URL этим preflight package не меняются.</div></article>
+</section>
+</main>
+<script>
+function text(id,value){document.getElementById(id).textContent=value===undefined||value===null||value===''?'—':String(value)}
+function range(min,max,unit){if(min===''&&max==='')return'—';if(min===max)return`${min}${unit||''}`;return`${min}–${max}${unit||''}`}
+function load(){google.script.run.withSuccessHandler(render).withFailureHandler(fail).getProductionPreflightState()}
+function render(r){const d=r.datastore||{},t=r.today||{},n=r.nutrition||{},tr=r.training||{};text('badge',`${r.app.environment} · ${r.app.appVersion}`);text('store',d.title);text('gate',r.gate.status);text('required',(d.missingRequiredSheets||[]).length?`MISSING: ${d.missingRequiredSheets.join(', ')}`:'OK');text('catalog',d.featureSchema&&d.featureSchema.FOOD_CATALOG?'PRESENT':'MISSING');text('templates',d.featureSchema&&d.featureSchema.MEAL_TEMPLATES?'PRESENT':'MISSING');text('date',t.date);text('dayStatus',t.state);text('dayType',t.dayType);text('weight',t.morningWeight===''?'—':`${t.morningWeight} кг`);text('stateNote',`Day_ID: ${t.dayId||'—'} · Средний 7д: ${t.weight7dAverage||'—'} · Сон: ${t.sleepHours||'—'} · Готовность: ${t.readiness||'—'}`);text('mealCount',n.mealCount);text('calories',range(n.caloriesMin,n.caloriesMax,' ккал'));text('protein',range(n.proteinMin,n.proteinMax,' г'));text('fat',range(n.fatMin,n.fatMax,' г'));text('carbs',range(n.carbsMin,n.carbsMax,' г'));text('training',tr.status);text('legacyConfigured',tr.legacyUrlConfigured?'YES':'NO');document.getElementById('loading').hidden=true;document.getElementById('content').hidden=false}
+function fail(e){document.getElementById('loading').hidden=true;const box=document.getElementById('error');box.hidden=false;box.textContent=`Preflight failed: ${e&&e.message?e.message:String(e)}`}
+load();
+</script>
+</body>
+</html>
