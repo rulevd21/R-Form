@@ -1,127 +1,96 @@
 # R/Form Nutrition Fast Path contract v0.1
 
-Status: Phase 3C.2 sandbox only. Repeat recent meal enabled; Favorite / recent-food prefill / templates remain read-only. Production promotion is not authorized.
+Status: Phase 3C sandbox completion candidate. Production promotion is not authorized.
 
 ## Purpose
 
 Reduce repeated nutrition input without changing the accepted Phase 3A `MEAL` writer or canonical component-level storage model.
 
-## Bootstrap
+## Bootstrap chain
 
-`getPhase3CBootstrapState()` remains the read-model source introduced in Phase 3C.1.
+- `getPhase3CBootstrapState()` — read model: recent meals, recent foods, favorites, templates.
+- `getPhase3C2BootstrapState()` — repeat recent MEAL.
+- `getPhase3C3BootstrapState()` — Favorite metadata operation.
+- `getPhase3C4BootstrapState()` — template save/use.
+- `getPhase3C5BootstrapState()` — recent-food direct prefill, runtime `0.3.7-sandbox`.
 
-`getPhase3C2BootstrapState()` wraps it for runtime `0.3.4-sandbox` and enables only the client-side capability `repeatRecentMeal`.
+The final sandbox capability layer exposes the accepted functions while preserving the existing `DAY_START` and `MEAL` writers.
 
-Returned `fastPaths` includes:
+## Recent meals
 
-```json
-{
-  "recentMeals": [],
-  "recentFoods": [],
-  "favorites": [],
-  "templates": [],
-  "limits": { "recentMeals": 3, "recentFoods": 6 },
-  "capabilities": {
-    "repeatRecentMeal": true,
-    "recentFoodPrefill": false,
-    "favoriteWrite": false,
-    "templateWrite": false
-  }
-}
-```
+Up to 3 most recent successful R/Form Mobile catalog-backed meals are grouped by `Meal_ID`. `Повторить` is available only for an OPEN day with no unresolved pending MEAL.
 
-No new write endpoint is added. `writeScope` remains `DAY_START` + `MEAL`.
+Pressing `Повторить` is client-only prefill: historical Food_ID/Amount and Meal_Type are copied into the ordinary MEAL form, while Meal_Time becomes current. No datastore write occurs before ordinary Save. Save uses the accepted `submitMeal()` and creates a new eventId/new Meal_ID.
 
-## recentMeals
+## Recent foods
 
-Up to 3 most recent successful R/Form Mobile catalog-backed meals.
+Up to 6 active, verified, non-duplicate catalog-backed foods are returned with `lastAmount`/`lastUnit` from the latest R/Form Mobile use. When two foods share the same latest transaction timestamp, their relative order is not semantically significant.
 
-Eligibility:
+Runtime `0.3.7-sandbox` enables `recentFoodPrefill`:
 
-- `NUTRITION_RAW.Status != DELETED`;
-- `Duplicate_Flag` blank;
-- component source begins with `RFORM_MOBILE`;
-- component resolves to an active, verified, non-duplicate `FOOD_CATALOG` item;
-- component unit equals current catalog basis;
-- all components sharing one `Meal_ID` are grouped into one returned meal.
+- `Добавить` is available only for an OPEN day with no unresolved pending MEAL;
+- the ordinary MEAL form opens with exactly one component using the selected `Food_ID`;
+- default amount is `lastAmount` when present, otherwise current catalog `Basis_Amount`;
+- Meal_Time is current;
+- Meal_Type uses the normal current suggestion, not a historical type from an unrelated meal;
+- the user may edit all fields before Save;
+- selecting the food itself performs zero datastore writes;
+- Save still uses the unchanged accepted `submitMeal()` writer.
 
-Returned meal includes `mealId`, date, meal time/type, components, display summary and summed K/P/F/C.
+## Favorites
 
-## Phase 3C.2 repeat semantics
+`FOOD_CATALOG.Favorite` is explicit YES/NO metadata. `setFoodFavorite()` is sandbox-only and audited as:
 
-The `Повторить` button is enabled only when the current `DAILY` state is `OPEN` and there is no unresolved pending MEAL event.
+- `Inbox_Event_ID = APP-FAVORITE-<eventId>`;
+- `Event_Type = CORRECTION`;
+- `Parsed_Entity = FOOD_FAVORITE`;
+- `Target_Sheet = FOOD_CATALOG`;
+- `Target_Record_ID = Food_ID`.
 
-Pressing `Повторить` does **not** write anything. It opens the ordinary MEAL form with:
+Favorite changes do not modify `NUTRITION_RAW`, nutrition facts, `Last_Used_At` or `Record_Key`.
 
-- the previous meal type preselected when still allowed;
-- the previous Food_ID list;
-- the previous Amount values;
-- the current server-provided meal time instead of the historical time.
+## Templates
 
-The user may edit meal type, components or amounts before saving.
+A template is created only by an explicit action on a successful catalog-backed multi-component MEAL. One template contains N `MEAL_TEMPLATES` component rows with a shared `Meal_Template_ID` and ordered Food_ID/Default_Amount/Unit. K/P/F/C are never stored as template-owned values.
 
-Only the subsequent ordinary Save calls the existing accepted `submitMeal()` writer. Because no pending event exists at prefill time, Save creates a new eventId. The server therefore creates a new Meal_ID and treats it as a legitimate new meal, not an idempotency replay.
+`saveMealTemplate()` is sandbox-only and audited as `CORRECTION / MEAL_TEMPLATE`. An identical ACTIVE template by Meal_Type + ordered Food_ID/Amount/Unit returns `ALREADY_STATE` without duplicate component rows.
 
-If a pending MEAL exists, repeat controls are disabled so a new payload cannot overwrite the pending retry state.
+`Использовать` is client-only prefill: it opens the ordinary MEAL form with current time and template components. No write occurs before Save.
 
 ## Amount input invariant
 
-Catalog-backed amount input must not reject a valid positive decimal solely because of an HTML `step` lattice.
+Catalog-backed amount input uses `type=number`, `min=0.01`, `max=10000`, `step=any`. Server-side validation remains authoritative. Whole values such as `150` and decimal values such as `149.91` must both pass browser validation.
 
-The client uses `type=number`, `min=0.01`, `max=10000` and `step=any`. Server-side validation remains authoritative: the submitted amount must be finite and greater than zero, and the existing MEAL writer applies its normal validation.
+## Safety invariants
 
-This permits both whole-gram values such as `150` and exact decimal values such as `149.91` without browser `stepMismatch` errors. Runtime `0.3.4-sandbox` replaces the earlier `min=0.01` + `step=0.1` combination, whose valid-value lattice incorrectly made `150` invalid (`149.91` and `150.01` were the nearest browser-accepted values).
-
-## recentFoods
-
-Up to 6 catalog-backed foods ordered by latest R/Form Mobile use. The latest actual `Amount` and `Unit` are returned as `lastAmount` and `lastUnit`.
-
-When two foods were used in the same transaction and therefore have the same `Created_At`, their relative order is not semantically significant.
-
-Phase 3C.2 still renders recent foods read-only. Direct recent-food prefill is deferred to Phase 3C.3.
-
-## favorites
-
-Reads only `FOOD_CATALOG` rows that are active, verified, non-duplicate and `Favorite=YES`.
-
-Phase 3C.2 does not expose `setFoodFavorite()` or any catalog mutation.
-
-## templates
-
-Reads only `MEAL_TEMPLATES.Status=ACTIVE` components whose `Food_ID` still resolves to an eligible catalog item and whose unit matches catalog basis.
-
-Components are grouped by `Meal_Template_ID` and ordered by `Component_Order`. K/P/F/C are not stored or returned as template-owned values.
-
-Phase 3C.2 does not expose template create/update/delete or repeat actions.
-
-## Safety
-
-- existing sandbox datastore guard remains authoritative;
-- accepted Phase 3A `submitMeal()` is unchanged;
-- Phase 3C.2 adds no write endpoint;
-- a repeat prefill itself performs zero datastore writes;
-- `writeScope` remains `DAY_START` + `MEAL` only;
+- sandbox title guard remains authoritative;
+- `submitMeal()` is unchanged;
+- Repeat, template use and recent-food selection are client-only prefill operations;
+- Favorite and template-save writers are separate audited metadata operations;
+- unresolved pending MEAL blocks all new MEAL-prefill shortcuts;
+- no fast-path requires manual K/P/F/C input;
 - production `RFORM_MASTER_DATA_v1`, GitHub `main` and Training Mobile v2.1 are outside scope.
 
-## Acceptance tests
+## Acceptance status
 
-### 3C.1 read-only baseline
+### 3C.1 Read model
+PASSED: recentMeals/recentFoods/favorites/templates load without datastore writes.
 
-On the current sandbox fixture after Phase 3A regressions:
+### 3C.2 Repeat recent MEAL
+PASSED: prefill and subsequent ordinary MEAL Save verified; browser Amount lattice defect corrected; new Meal_ID created without duplicates.
 
-- recentMeals: 3 (`M3`, `M2`, `M1`, newest first);
-- recentFoods: 2 (`FOOD-000001` and `FOOD-000002`; relative order is not significant when both share the same latest timestamp);
-- favorites: 0;
-- templates: 0;
-- bootstrap/render creates no datastore changes.
+### 3C.3 Favorite
+PASSED: FOOD-000001 NO→YES verified with one audit event and zero nutrition changes.
 
-### 3C.2 repeat prefill
+### 3C.4 Templates
+PASSED: one two-component ACTIVE template created and audited; template-use form visually verified with current time, SNACK, FOOD-000001 150 g and FOOD-000002 425 g. Source confirms template-use click itself contains no writer call.
 
-1. When current day is not OPEN, repeat buttons are disabled and no data changes occur.
-2. When current day is OPEN, pressing repeat opens the ordinary MEAL form with prior components and amounts.
-3. Meal time is current, not historical.
-4. Whole and decimal amounts from a recent meal pass browser validation without step mismatch.
-5. No write occurs before Save.
-6. Save uses existing `submitMeal()` and must create one new MEAL event and one new Meal_ID.
-7. Retry of that new eventId remains `ALREADY_APPLIED` without duplicates.
-8. Favorite, recent-food direct prefill and templates remain non-mutating in this phase.
+### 3C.5 Recent-food prefill
+SOURCE READY / RUNTIME ACCEPTANCE PENDING. Required acceptance:
+
+1. runtime badge = `0.3.7-sandbox`;
+2. `Недавние продукты` shows `Добавить` for eligible items;
+3. pressing `Добавить` on FOOD-000002 opens ordinary MEAL form with one component FOOD-000002 and 425 g;
+4. Meal_Time is current and Meal_Type uses the normal current suggestion;
+5. no `NUTRITION_RAW`, `NUTRITION_DAILY` or `INBOX_LOG` write occurs before Save;
+6. ordinary Save is not required for this acceptance because the unchanged `submitMeal()` path is already independently accepted.
