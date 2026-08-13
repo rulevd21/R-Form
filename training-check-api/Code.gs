@@ -12,6 +12,7 @@ const RFORM_TC = Object.freeze({
 function doGet(e) {
   const mode = String((e && e.parameter && e.parameter.mode) || '').trim();
   if (mode === 'status') return statusJs_(e);
+  if (mode === 'check') return checkStateJs_(e);
   return HtmlService.createHtmlOutput('R/Form Training Check receiver: OK');
 }
 
@@ -42,14 +43,83 @@ function statusJs_(e) {
       found: false,
       type: 'rform-training-check-status',
       event_id: String((e && e.parameter && e.parameter.event) || ''),
-      check_id: String((e && e.parameter && e.parameter.check) || ''),
       status: 'ERROR',
       error: String(err && err.message ? err.message : err)
     };
   }
+  return jsonpOutput_(prefix, result);
+}
+
+function checkStateJs_(e) {
+  const prefix = safeJsonpPrefix_(String((e && e.parameter && e.parameter.prefix) || ''));
+  let result;
+  try {
+    result = getCheckState_(e);
+  } catch (err) {
+    result = {
+      ok: false,
+      type: 'rform-training-check-check',
+      status: 'ERROR',
+      error: String(err && err.message ? err.message : err)
+    };
+  }
+  return jsonpOutput_(prefix, result);
+}
+
+function jsonpOutput_(prefix, result) {
   const safe = JSON.stringify(result).replace(/</g, '\\u003c');
   return ContentService.createTextOutput(prefix + '(' + safe + ');')
     .setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+function getCheckState_(e) {
+  const p = (e && e.parameter) || {};
+  const checkId = String(p.check || '').trim();
+  const participantId = String(p.participant || '').trim();
+  const access = String(p.access || '');
+  if (!checkId) throw new Error('FIELD_REQUIRED:check');
+  if (!participantId) throw new Error('FIELD_REQUIRED:participant');
+
+  const ss = SpreadsheetApp.openById(RFORM_TC.DATASTORE_ID);
+  const checks = requireSheet_(ss, RFORM_TC.CHECKS_SHEET);
+  const h = headerMap_(checks);
+  const auth = authorizeCheck_(checks, h, checkId, participantId, access);
+  requireHeaders_(h, [
+    'test_status','session_date','plan','fact','rir_summary','rest_summary',
+    'quality_comment','participant_decision','analyst_key_deviation',
+    'analyst_interpretation','report_next_step','data_quality','report_version','reported_at'
+  ], RFORM_TC.CHECKS_SHEET);
+
+  const value = function(name) {
+    return String(checks.getRange(auth.row, h[name]).getDisplayValue() || '');
+  };
+  const status = value('test_status') || 'PLANNED';
+  const keyDeviation = value('analyst_key_deviation');
+  const interpretation = value('analyst_interpretation');
+  const nextCheckpoint = value('report_next_step');
+  const reportReady = status === 'REPORTED' && !!(keyDeviation && interpretation && nextCheckpoint);
+
+  return {
+    ok: true,
+    type: 'rform-training-check-check',
+    status: status,
+    data_quality: value('data_quality'),
+    report_ready: reportReady,
+    report_version: value('report_version'),
+    reported_at: value('reported_at'),
+    report: reportReady ? {
+      session_date: value('session_date'),
+      plan: value('plan'),
+      fact: value('fact'),
+      intensity: value('rir_summary'),
+      rest: value('rest_summary'),
+      quality: value('quality_comment'),
+      decision: value('participant_decision'),
+      key_deviation: keyDeviation,
+      interpretation: interpretation,
+      next_checkpoint: nextCheckpoint
+    } : null
+  };
 }
 
 function getTrainingCheckStatus_(e) {
@@ -66,14 +136,7 @@ function getTrainingCheckStatus_(e) {
   const checks = requireSheet_(ss, RFORM_TC.CHECKS_SHEET);
   const ingest = requireSheet_(ss, RFORM_TC.INGEST_SHEET);
   const checkHeaders = headerMap_(checks);
-  requireHeaders_(checkHeaders, ['check_id','participant_id','submission_token'], RFORM_TC.CHECKS_SHEET);
-
-  const checkRow = findRowByExact_(checks, checkHeaders.check_id, checkId);
-  if (!checkRow) throw new Error('CHECK_NOT_PRECREATED');
-  const expectedParticipant = String(checks.getRange(checkRow, checkHeaders.participant_id).getDisplayValue() || '');
-  const expectedToken = String(checks.getRange(checkRow, checkHeaders.submission_token).getDisplayValue() || '');
-  if (expectedParticipant !== participantId) throw new Error('PARTICIPANT_MISMATCH');
-  if (!expectedToken || !constantTimeEqual_(access, expectedToken)) throw new Error('ACCESS_DENIED');
+  const auth = authorizeCheck_(checks, checkHeaders, checkId, participantId, access);
 
   const h = headerMap_(ingest);
   requireHeaders_(h, ['event_id','check_id','participant_id','processing_status','error_code','note'], RFORM_TC.INGEST_SHEET);
@@ -84,9 +147,8 @@ function getTrainingCheckStatus_(e) {
       found: false,
       type: 'rform-training-check-status',
       event_id: eventId,
-      check_id: checkId,
-      participant_id: participantId,
-      status: 'PENDING'
+      status: 'PENDING',
+      check_status: auth.status
     };
   }
 
@@ -97,14 +159,14 @@ function getTrainingCheckStatus_(e) {
   const status = String(ingest.getRange(row, h.processing_status).getDisplayValue() || '');
   const errorCode = String(ingest.getRange(row, h.error_code).getDisplayValue() || '');
   const note = String(ingest.getRange(row, h.note).getDisplayValue() || '');
+  const checkStatus = String(checks.getRange(auth.row, checkHeaders.test_status).getDisplayValue() || auth.status || '');
   return {
     ok: status === 'APPLIED',
     found: true,
     type: 'rform-training-check-status',
     event_id: eventId,
-    check_id: checkId,
-    participant_id: participantId,
     status: status || 'UNKNOWN',
+    check_status: checkStatus,
     error: errorCode,
     note: note
   };
@@ -129,13 +191,7 @@ function processTrainingCheck_(e) {
     const ingest = requireSheet_(ss, RFORM_TC.INGEST_SHEET);
 
     const checkHeaders = headerMap_(checks);
-    requireHeaders_(checkHeaders, ['check_id','participant_id','submission_token'], RFORM_TC.CHECKS_SHEET);
-    const checkRow = findRowByExact_(checks, checkHeaders.check_id, payload.check_id);
-    if (!checkRow) throw new Error('CHECK_NOT_PRECREATED');
-    const expectedParticipant = String(checks.getRange(checkRow, checkHeaders.participant_id).getDisplayValue() || '');
-    const expectedToken = String(checks.getRange(checkRow, checkHeaders.submission_token).getDisplayValue() || '');
-    if (expectedParticipant !== String(payload.participant_id)) throw new Error('PARTICIPANT_MISMATCH');
-    if (!expectedToken || !constantTimeEqual_(access, expectedToken)) throw new Error('ACCESS_DENIED');
+    const auth = authorizeCheck_(checks, checkHeaders, payload.check_id, payload.participant_id, access);
 
     const ingestHeaders = headerMap_(ingest);
     requireHeaders_(ingestHeaders, ['event_id','received_at','check_id','participant_id','source','client_version','payload_json','processing_status','error_code','note'], RFORM_TC.INGEST_SHEET);
@@ -145,14 +201,14 @@ function processTrainingCheck_(e) {
         ok: true,
         type: 'rform-training-check-ack',
         event_id: payload.event_id,
-        check_id: payload.check_id,
-        participant_id: payload.participant_id,
         status: 'ALREADY_APPLIED'
       };
     }
 
+    if (auth.status !== 'PLANNED') throw new Error('CHECK_CLOSED');
+
     upsertParticipantConsent_(participants, payload);
-    updateCheck_(checks, checkHeaders, checkRow, payload);
+    updateCheck_(checks, checkHeaders, auth.row, payload);
     appendIngest_(ingest, ingestHeaders, payload, raw, 'APPLIED', '', 'Training Check accepted');
     SpreadsheetApp.flush();
 
@@ -160,8 +216,6 @@ function processTrainingCheck_(e) {
       ok: true,
       type: 'rform-training-check-ack',
       event_id: payload.event_id,
-      check_id: payload.check_id,
-      participant_id: payload.participant_id,
       status: 'APPLIED'
     };
   } catch (err) {
@@ -176,6 +230,20 @@ function processTrainingCheck_(e) {
   } finally {
     lock.releaseLock();
   }
+}
+
+function authorizeCheck_(checks, h, checkId, participantId, access) {
+  requireHeaders_(h, ['check_id','participant_id','submission_token','test_status'], RFORM_TC.CHECKS_SHEET);
+  const row = findRowByExact_(checks, h.check_id, checkId);
+  if (!row) throw new Error('CHECK_NOT_PRECREATED');
+  const expectedParticipant = String(checks.getRange(row, h.participant_id).getDisplayValue() || '');
+  const expectedToken = String(checks.getRange(row, h.submission_token).getDisplayValue() || '');
+  if (expectedParticipant !== String(participantId)) throw new Error('PARTICIPANT_MISMATCH');
+  if (!expectedToken || !constantTimeEqual_(access, expectedToken)) throw new Error('ACCESS_DENIED');
+  return {
+    row: row,
+    status: String(checks.getRange(row, h.test_status).getDisplayValue() || 'PLANNED')
+  };
 }
 
 function validatePayload_(p) {
