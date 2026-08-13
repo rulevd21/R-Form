@@ -1,6 +1,6 @@
-# R/Form Channel Control v0.1
+# R/Form Channel Control v0.2
 
-A lightweight owner dashboard for the R/Form Telegram publishing workflow.
+Owner dashboard for the R/Form Telegram publishing workflow.
 
 ## Decision baseline
 
@@ -10,7 +10,8 @@ Approved 2026-08-13:
 - after APPROVE + SCHEDULE, publish automatically;
 - live Telegram edits allowed only with explicit confirmation and audit logging;
 - analytics v0.1: Google Sheets + Telegram export / reactions, no MTProto dependency;
-- content production stays in the existing R/Form ChatGPT process; Channel Control manages flow, not generation.
+- content production stays in the existing R/Form ChatGPT process; Channel Control manages flow, not generation;
+- **before scheduling a publication, the owner must be able to see the exact Telegram copy together with the visual card(s).**
 
 ## Source of truth
 
@@ -35,7 +36,9 @@ RFORM_MASTER_DATA_v1 / CONTENT_QUEUE
 R/Form Channel Control (Apps Script Web App)
         |
         +-- Save draft
+        +-- Preview text + visual(s)
         +-- Approve
+        +-- Preview again before Schedule
         +-- Schedule
         +-- Hold / Cancel / Supersede
         +-- Edit published Telegram post
@@ -52,9 +55,35 @@ writeback to CONTENT_QUEUE + CONTROL_LOG
 
 No new publishing engine is introduced. Channel Control deliberately reuses the existing `telegram_autopost_v0_3.gs` queue rules to prevent two competing schedulers.
 
+## Publication preview v0.2
+
+Backend `rformCcGetPreview()` reads the current `CONTENT_QUEUE` row and returns the exact `Telegram_Text`, mode and visual source used for publication.
+
+Visual resolution supports:
+
+- direct Google Drive image/PDF file links;
+- Google Drive folders containing several cards;
+- external image URLs.
+
+For a Drive folder the panel lists up to 10 image/PDF assets and sorts them by filename. The preview is read-only and does not modify `CONTENT_QUEUE` or `CONTROL_LOG`.
+
+The UI add-on `PreviewAddon.html` adds:
+
+- `Предпросмотр` on every content card;
+- Telegram-like rendering of the text;
+- horizontal inspection of all visual cards;
+- mode / status / character / card-count control block;
+- warnings when a visual is missing or not approved;
+- source link for opening the original visual;
+- replacement of the old Schedule dialog: `Schedule` now opens the preview first, and scheduling is confirmed from the preview window.
+
+Therefore the production flow is now:
+
+`Edit → Preview → Approve → Preview + time → Schedule → autopost`.
+
 ## Lifecycle model
 
-v0.1 does **not** add a destructive new status column to production. It derives a canonical UI lifecycle from existing fields and writes the legacy status fields atomically.
+v0.2 still does **not** add a destructive new lifecycle column to production. It derives a canonical UI lifecycle from existing fields and writes the legacy status fields atomically.
 
 Displayed states:
 
@@ -64,8 +93,6 @@ Exception states:
 
 `HOLD`, `SUPERSEDED`, `CANCELLED`, `ERROR`
 
-A later schema migration can persist `Lifecycle_State`, `Revision_ID`, and `Publication_ID` after the UI workflow proves stable.
-
 ## Safety rules
 
 1. Scheduling requires:
@@ -74,74 +101,78 @@ A later schema migration can persist `Lifecycle_State`, `Revision_ID`, and `Publ
    - `Approval_Status = APPROVED`
    - non-empty `Telegram_Text`
    - for media posts: `Visual_Status = APPROVED`
-2. `Schedule` sets `AutoPost_Allowed = YES` and `Publication_Status = SCHEDULED`.
-3. `Hold` / `Cancel` always set `AutoPost_Allowed = NO`.
-4. Published content cannot be cancelled retroactively. Use `Edit live` or `Supersede`.
-5. Live edit requires explicit confirmation and a valid `Telegram_Message_ID`.
-6. Every management action is appended to `CONTROL_LOG`.
-7. The existing autopost trigger remains the only process that creates new Telegram publications.
+2. The Schedule action is routed through publication preview before `AutoPost_Allowed` can be enabled from the UI.
+3. `Schedule` sets `AutoPost_Allowed = YES` and `Publication_Status = SCHEDULED`.
+4. `Hold` / `Cancel` always set `AutoPost_Allowed = NO`.
+5. Published content cannot be cancelled retroactively. Use `Edit live` or `Supersede`.
+6. Live edit requires explicit confirmation and a valid `Telegram_Message_ID`.
+7. Every management write is appended to `CONTROL_LOG`; preview itself is read-only.
+8. The existing autopost trigger remains the only process that creates new Telegram publications.
 
 ## Files
 
-- `Code.gs` — Apps Script backend, Sheet write controls, Telegram live-edit actions, audit logging.
-- `Index.html` — responsive R/Form owner dashboard.
+- `Code.gs` — Apps Script backend, including preview data and Drive visual resolution.
+- `Index.html` — existing responsive R/Form owner dashboard.
+- `PreviewAddon.html` — v0.2 preview UI layer loaded after `Index.html`.
 - `appsscript.json` — Apps Script manifest.
 
-## Deployment: lowest-friction route
+## Deployment upgrade from v0.1 to v0.2
 
-Use the **existing standalone Apps Script project that runs `telegram_autopost_v0_3.gs`**. This is intentional: its Telegram token Script Property is already configured.
+In the same Apps Script project that already runs Channel Control and `telegram_autopost_v0_3.gs`:
 
-1. Add `Code.gs` and `Index.html` from this folder to that Apps Script project. Keep the existing autopost file unchanged.
-2. Run `rformCcSetup()` once. It verifies the two spreadsheets and the audit sheet; it does not publish anything.
-3. Deploy → New deployment → Web app:
-   - Execute as: **Me**
-   - Who has access: **Only myself** (or the narrowest owner-only option offered by the account)
-4. Open the deployment URL on desktop/mobile and save it as a shortcut.
+1. Replace `Code.gs` with the v0.2 version from this folder.
+2. Create a new HTML file named `PreviewAddon` and paste `PreviewAddon.html` into it.
+3. In `doGet()`, render `Index` and append `PreviewAddon` before the closing `</body>` tag. Recommended implementation:
 
-The existing trigger `rformTgProcessQueue` continues to handle scheduled posting.
+```javascript
+function doGet() {
+  const base = HtmlService.createTemplateFromFile('Index').evaluate().getContent();
+  const addon = HtmlService.createHtmlOutputFromFile('PreviewAddon').getContent();
+  const html = base.replace('</body>', addon + '\n</body>');
+  return HtmlService.createHtmlOutput(html)
+    .setTitle('R/Form · Channel Control')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+```
+
+4. Save the project and update the existing Web App deployment to a new version. The existing deployment URL can remain the same.
+5. The first preview of a Drive visual may request/refresh Drive authorization because v0.2 reads image files from the configured Drive folder.
+
+The Telegram autopost trigger and token settings are unchanged.
 
 ## Owner workflow
 
 ### New/future content
 
-1. `03_CONTENT_CALENDAR` creates/plans the content row in `CONTENT_QUEUE`.
+1. `03_CONTENT_CALENDAR` plans the content row in `CONTENT_QUEUE`.
 2. Existing R/Form chats produce text/visuals.
 3. Channel Control shows the row as `PLANNED`, `DRAFT`, or `REVIEW`.
-4. Owner reviews copy and visual links.
-5. `Approve`.
-6. `Schedule` with date/time.
-7. Existing autopost publishes and writes Telegram identifiers back.
+4. Owner opens `Предпросмотр` and checks text + card(s).
+5. Owner edits if required, then `Approve`.
+6. `Schedule` opens the same preview again together with date/time.
+7. Owner schedules from that preview.
+8. Existing autopost publishes and writes Telegram identifiers back.
 
 ### Published content
 
-Channel Control displays the Telegram link and provides `Редактировать live`.
+Channel Control displays the Telegram link and provides live text editing with explicit confirmation.
 
-The UI forces a second confirmation before calling Telegram edit methods. The change is then written back to `Telegram_Text` and logged in `CONTROL_LOG`.
+## v0.2 limits
 
-### Content that should not be published
-
-Use:
-
-- `Hold` — temporary stop, reversible;
-- `Cancel` — remove from current publishing plan;
-- `Supersede` — replace an obsolete version while preserving history.
-
-## v0.1 limits
-
+- Preview reproduces content and card order, but it is not a pixel-perfect Telegram client emulator.
+- Google Drive thumbnails are used for visual preview; the original file remains the publication source.
 - No automatic MTProto views/forwards collection.
 - No OpenAI API generation inside the dashboard.
-- No automatic revision object yet; audit log is the first version-history layer.
-- Live media replacement is not exposed in the UI yet; v0.1 edits live text/captions only.
+- Live media replacement is not exposed yet.
 - The web app is owner-only and is not intended as a public R/Form product.
 
 ## Next acceptance tests
 
-1. Dashboard loads queue/calendar/publications without modifying data.
-2. Edit a non-published planned row and verify Sheet writeback.
-3. Approve a `TEXT_ONLY` test row.
-4. Schedule a test row with `AutoPost_Allowed=YES`; verify the existing autopost publishes exactly once.
-5. Verify `Telegram_Message_ID`, `Telegram_Post_URL`, `Posted_At` writeback.
-6. Edit the test publication live and verify Telegram + `CONTROL_LOG`.
-7. Put a future item on HOLD and verify autopost cannot send it.
-
-Only after these pass should v0.1 be treated as the operating dashboard.
+1. Open preview for `TEXT_ONLY`: copy is identical to `Telegram_Text`.
+2. Open preview for `PHOTO_CAPTION`: one visual + copy are visible.
+3. Open preview for `ALBUM_CAPTION`: all expected cards appear in correct filename order.
+4. Verify `Предпросмотр` performs no write to `CONTROL_LOG`.
+5. For an APPROVED item, click `Schedule` and verify preview appears before the date/time confirmation.
+6. Schedule, verify one Telegram publication and normal writeback.
+7. Test mobile layout.
