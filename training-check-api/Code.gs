@@ -211,5 +211,13 @@ function constantTimeEqual_(a, b) {
 
 function ackHtml_(ack) {
   const safe = JSON.stringify(ack).replace(/</g, '\\u003c');
-  return HtmlService.createHtmlOutput('<!doctype html><meta charset="utf-8"><script>window.parent.postMessage(' + safe + ',"*");</script>');
+  const script = [
+    '<!doctype html><meta charset="utf-8"><script>',
+    '(function(){var ack=' + safe + ';',
+    'try{window.top.postMessage(ack,"*");}catch(e){}',
+    'try{window.parent.postMessage(ack,"*");}catch(e){}',
+    '})();',
+    '<\/script>'
+  ].join('');
+  return HtmlService.createHtmlOutput(script);
 }
