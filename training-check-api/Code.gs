@@ -9,7 +9,9 @@ const RFORM_TC = Object.freeze({
   MAX_PAYLOAD_CHARS: 12000
 });
 
-function doGet() {
+function doGet(e) {
+  const mode = String((e && e.parameter && e.parameter.mode) || '').trim();
+  if (mode === 'status') return statusJs_(e);
   return HtmlService.createHtmlOutput('R/Form Training Check receiver: OK');
 }
 
@@ -27,6 +29,85 @@ function doPost(e) {
     };
   }
   return ackHtml_(ack);
+}
+
+function statusJs_(e) {
+  const prefix = safeJsonpPrefix_(String((e && e.parameter && e.parameter.prefix) || ''));
+  let result;
+  try {
+    result = getTrainingCheckStatus_(e);
+  } catch (err) {
+    result = {
+      ok: false,
+      found: false,
+      type: 'rform-training-check-status',
+      event_id: String((e && e.parameter && e.parameter.event) || ''),
+      check_id: String((e && e.parameter && e.parameter.check) || ''),
+      status: 'ERROR',
+      error: String(err && err.message ? err.message : err)
+    };
+  }
+  const safe = JSON.stringify(result).replace(/</g, '\\u003c');
+  return ContentService.createTextOutput(prefix + '(' + safe + ');')
+    .setMimeType(ContentService.MimeType.JAVASCRIPT);
+}
+
+function getTrainingCheckStatus_(e) {
+  const p = (e && e.parameter) || {};
+  const checkId = String(p.check || '').trim();
+  const participantId = String(p.participant || '').trim();
+  const eventId = String(p.event || '').trim();
+  const access = String(p.access || '');
+  if (!checkId) throw new Error('FIELD_REQUIRED:check');
+  if (!participantId) throw new Error('FIELD_REQUIRED:participant');
+  if (!eventId) throw new Error('FIELD_REQUIRED:event');
+
+  const ss = SpreadsheetApp.openById(RFORM_TC.DATASTORE_ID);
+  const checks = requireSheet_(ss, RFORM_TC.CHECKS_SHEET);
+  const ingest = requireSheet_(ss, RFORM_TC.INGEST_SHEET);
+  const checkHeaders = headerMap_(checks);
+  requireHeaders_(checkHeaders, ['check_id','participant_id','submission_token'], RFORM_TC.CHECKS_SHEET);
+
+  const checkRow = findRowByExact_(checks, checkHeaders.check_id, checkId);
+  if (!checkRow) throw new Error('CHECK_NOT_PRECREATED');
+  const expectedParticipant = String(checks.getRange(checkRow, checkHeaders.participant_id).getDisplayValue() || '');
+  const expectedToken = String(checks.getRange(checkRow, checkHeaders.submission_token).getDisplayValue() || '');
+  if (expectedParticipant !== participantId) throw new Error('PARTICIPANT_MISMATCH');
+  if (!expectedToken || !constantTimeEqual_(access, expectedToken)) throw new Error('ACCESS_DENIED');
+
+  const h = headerMap_(ingest);
+  requireHeaders_(h, ['event_id','check_id','participant_id','processing_status','error_code','note'], RFORM_TC.INGEST_SHEET);
+  const row = findRowByExact_(ingest, h.event_id, eventId);
+  if (!row) {
+    return {
+      ok: false,
+      found: false,
+      type: 'rform-training-check-status',
+      event_id: eventId,
+      check_id: checkId,
+      participant_id: participantId,
+      status: 'PENDING'
+    };
+  }
+
+  const rowCheck = String(ingest.getRange(row, h.check_id).getDisplayValue() || '');
+  const rowParticipant = String(ingest.getRange(row, h.participant_id).getDisplayValue() || '');
+  if (rowCheck !== checkId || rowParticipant !== participantId) throw new Error('EVENT_SCOPE_MISMATCH');
+
+  const status = String(ingest.getRange(row, h.processing_status).getDisplayValue() || '');
+  const errorCode = String(ingest.getRange(row, h.error_code).getDisplayValue() || '');
+  const note = String(ingest.getRange(row, h.note).getDisplayValue() || '');
+  return {
+    ok: status === 'APPLIED',
+    found: true,
+    type: 'rform-training-check-status',
+    event_id: eventId,
+    check_id: checkId,
+    participant_id: participantId,
+    status: status || 'UNKNOWN',
+    error: errorCode,
+    note: note
+  };
 }
 
 function processTrainingCheck_(e) {
@@ -199,6 +280,12 @@ function safeEventId_(e) {
     const raw = String((e && e.parameter && e.parameter.payload) || '');
     return raw ? String(JSON.parse(raw).event_id || '') : '';
   } catch (_) { return ''; }
+}
+
+function safeJsonpPrefix_(value) {
+  const prefix = String(value || '').trim();
+  if (!/^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/.test(prefix)) throw new Error('INVALID_PREFIX');
+  return prefix;
 }
 
 function constantTimeEqual_(a, b) {
