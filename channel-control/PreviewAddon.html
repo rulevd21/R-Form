@@ -1,0 +1,108 @@
+<style>
+.btn.preview{border-color:rgba(138,174,190,.45);background:rgba(138,174,190,.08)}
+.dialog.preview-wide{width:min(1100px,100%)}
+.preview-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:18px;margin-top:16px}
+.preview-side{background:#0c1014;border:1px solid var(--line);border-radius:14px;padding:14px;align-self:start}
+.preview-kv{display:grid;grid-template-columns:100px 1fr;gap:7px 10px;font-size:11px}
+.preview-kv span:nth-child(odd){color:var(--muted)}
+.preview-warn{background:rgba(216,173,100,.08);border:1px solid rgba(216,173,100,.22);border-radius:9px;padding:8px 9px;font-size:11px;color:#e6cf9f;margin-top:8px;line-height:1.4}
+.tg-shell{max-width:560px;margin:auto;background:#17212b;border-radius:18px;overflow:hidden;border:1px solid rgba(255,255,255,.08)}
+.tg-head{display:flex;gap:10px;align-items:center;padding:12px 14px;background:#202b36}
+.tg-avatar{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:#0d1115;color:var(--brass);font-weight:800;border:1px solid rgba(198,161,91,.45)}
+.tg-post{padding:12px}.tg-copy{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.48;background:#182533;border-radius:10px;padding:11px 12px;color:#f2f4f5}
+.tg-foot{display:flex;justify-content:space-between;color:var(--muted);font-size:10px;padding-top:8px}
+.preview-rail{display:flex;gap:10px;overflow:auto;margin-bottom:10px;scroll-snap-type:x mandatory}
+.preview-media{flex:0 0 min(420px,88%);background:#0d1115;border-radius:12px;overflow:hidden;scroll-snap-align:start}
+.preview-media img{width:100%;display:block;max-height:660px;object-fit:contain;background:#05080a}
+.preview-media-meta{padding:7px 9px;font-size:10px;color:var(--muted)}
+.preview-placeholder{padding:40px;text-align:center;border:1px dashed var(--line);border-radius:12px;color:var(--muted);margin-bottom:10px}
+.preview-schedule{display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}.preview-schedule.show{display:block}
+.preview-source{display:inline-block;margin-top:10px;color:#bfd7e0;text-decoration:none;font-size:11px}
+@media(max-width:840px){.preview-grid{grid-template-columns:1fr}.dialog.preview-wide{padding:14px}}
+</style>
+
+<div class="modal" id="rformPreviewModal">
+  <div class="dialog preview-wide">
+    <h2>Предпросмотр публикации</h2><p id="rformPreviewId"></p>
+    <div class="preview-grid">
+      <div>
+        <div id="rformTelegramPreview"></div>
+        <a id="rformPreviewSource" class="preview-source" href="#" target="_blank" rel="noopener" style="display:none">Открыть источник визуала</a>
+      </div>
+      <aside class="preview-side">
+        <h3 style="margin-top:0">Контроль перед отправкой</h3>
+        <div id="rformPreviewMeta" class="preview-kv"></div>
+        <div id="rformPreviewWarnings"></div>
+        <div id="rformPreviewSchedule" class="preview-schedule">
+          <div class="field"><label>Дата и время</label><input id="rformPreviewAt" type="datetime-local"></div>
+          <div class="sub" style="margin-top:8px">В Telegram уйдёт версия, показанная в предпросмотре.</div>
+        </div>
+      </aside>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('rformPreviewModal')">Закрыть</button>
+      <button class="btn" id="rformPreviewEdit">Редактировать</button>
+      <button class="btn primary" id="rformPreviewScheduleBtn" style="display:none">Запланировать</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let RFORM_PREVIEW={id:'',forSchedule:false,data:null};
+const rformCcBaseCardHtml=cardHtml;
+cardHtml=function(x){
+  const html=rformCcBaseCardHtml(x);
+  const button=`<button class="btn preview" onclick="rformCcOpenPreview('${esc(x.Content_ID)}',false)">Предпросмотр</button>`;
+  return html.replace('<div class="actions">','<div class="actions">'+button);
+};
+openSchedule=function(id){rformCcOpenPreview(id,true)};
+
+async function rformCcOpenPreview(id,forSchedule){
+  setLoading(true);
+  try{
+    const p=await api('rformCcGetPreview',{contentId:id});
+    RFORM_PREVIEW={id:id,forSchedule:!!forSchedule,data:p};
+    rformCcDrawPreview_(p,!!forSchedule);
+    openModal('rformPreviewModal');
+  }catch(e){alert('Ошибка предпросмотра: '+e.message)}finally{setLoading(false)}
+}
+
+function rformCcDrawPreview_(p,forSchedule){
+  const x=p.item||{},vs=p.visuals||[],mode=String(x.Telegram_Post_Mode||'TEXT_ONLY').toUpperCase();
+  document.getElementById('rformPreviewId').textContent=`${x.Content_ID||''} · ${mode} · ${x.Lifecycle_State||''}`;
+  let media='';
+  if(mode!=='TEXT_ONLY'){
+    media=vs.length?`<div class="preview-rail">${vs.map((v,i)=>`<div class="preview-media"><img src="${esc(v.previewUrl)}" alt="${esc(v.name||'visual')}"><div class="preview-media-meta">${i+1}/${vs.length} · <a class="link" href="${esc(v.sourceUrl||v.previewUrl)}" target="_blank" rel="noopener">${esc(v.name||'Открыть')}</a></div></div>`).join('')}</div>`:'<div class="preview-placeholder">Визуал не найден или пока не прикреплён.</div>';
+  }
+  const copy=esc(x.Telegram_Text||'').replace(/\n/g,'<br>')||'<span style="color:#7f919d">Текст отсутствует</span>';
+  document.getElementById('rformTelegramPreview').innerHTML=`<div class="tg-shell"><div class="tg-head"><div class="tg-avatar">R/</div><div><b>R/Form</b><div class="sub">@r_form</div></div></div><div class="tg-post">${media}<div class="tg-copy">${copy}</div><div class="tg-foot"><span>${mode}</span><span>${p.textLength||0} знаков</span></div></div></div>`;
+
+  const source=document.getElementById('rformPreviewSource');
+  if(x.Telegram_Visual_URL){source.href=x.Telegram_Visual_URL;source.style.display='inline-block'}else source.style.display='none';
+  const meta=[['Lifecycle',x.Lifecycle_State||'—'],['Text',x.Text_Status||'—'],['Visual',x.Visual_Status||'—'],['Approval',x.Approval_Status||'—'],['Режим',mode],['Карточек',vs.length],['Знаков',p.textLength||0],['Publish at',x.Publish_At||'—']];
+  document.getElementById('rformPreviewMeta').innerHTML=meta.map(([k,v])=>`<span>${esc(k)}</span><span>${esc(v)}</span>`).join('');
+  document.getElementById('rformPreviewWarnings').innerHTML=(p.warnings||[]).map(w=>`<div class="preview-warn">${esc(w)}</div>`).join('');
+  document.getElementById('rformPreviewEdit').onclick=()=>{closeModal('rformPreviewModal');openEdit(x.Content_ID)};
+
+  const gate=document.getElementById('rformPreviewSchedule'),btn=document.getElementById('rformPreviewScheduleBtn');
+  gate.classList.toggle('show',forSchedule);btn.style.display=forSchedule?'inline-block':'none';
+  if(forSchedule){
+    const d=new Date(Date.now()+24*3600e3);d.setMinutes(0,0,0);
+    document.getElementById('rformPreviewAt').value=localInput(d);
+    btn.onclick=rformCcScheduleFromPreview_;
+  }
+}
+
+async function rformCcScheduleFromPreview_(){
+  const raw=document.getElementById('rformPreviewAt').value;
+  if(!raw){alert('Укажите дату и время');return}
+  if(!confirm('Предпросмотр проверен. Запланировать '+RFORM_PREVIEW.id+' на '+raw+'?'))return;
+  setLoading(true);
+  try{
+    await api('rformCcSchedule',{contentId:RFORM_PREVIEW.id,publishAt:new Date(raw).toISOString()});
+    closeModal('rformPreviewModal');await refresh();
+  }catch(e){alert(e.message)}finally{setLoading(false)}
+}
+
+renderQueue();
+</script>
