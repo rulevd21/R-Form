@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0B1016">
+<title>R/Form Training Check v0.3</title>
+<style>
+:root{--bg:#0B1016;--panel:#111A23;--white:#F2F5F7;--muted:#AAB8C2;--steel:#7FA8BC;--brass:#C5A46D;--green:#6EA77F;--line:rgba(127,168,188,.25);--danger:#DDB6B6}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--white);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.45}.wrap{max-width:720px;margin:auto;padding:20px 16px 60px}.kicker{font-size:12px;letter-spacing:.14em;color:var(--steel);text-transform:uppercase}.logo{font-weight:800;font-size:22px}.hero,.card,.recovery{border:1px solid var(--line);background:var(--panel);border-radius:18px;padding:18px;margin:12px 0}.hero{border-radius:24px;background:linear-gradient(145deg,var(--panel),#0D151D)}.hero h1{font-size:30px;line-height:1.08;margin:7px 0 10px}.hero p,.hint,.status{color:var(--muted);font-size:13px}.promise{margin-top:14px;border-left:3px solid var(--brass);padding-left:12px;font-weight:650}.badge{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:5px 9px;color:var(--muted);font-size:11px}.num{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;border:1px solid var(--steel);color:var(--steel);font-weight:800}.card h2{font-size:19px;margin:8px 0 5px}label{display:block;color:var(--steel);font-size:12px;letter-spacing:.05em;text-transform:uppercase;margin:12px 0 6px}textarea,input,select{width:100%;border:1px solid #324553;background:#0A1118;color:var(--white);border-radius:12px;padding:13px 12px;font:inherit;outline:none}textarea{min-height:82px;resize:vertical}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.consent{display:flex;gap:10px;align-items:flex-start;color:var(--muted);font-size:13px}.consent input{width:auto;margin-top:3px}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.btn{cursor:pointer;border:0;border-radius:12px;padding:13px 15px;font-weight:800}.primary{background:var(--green);color:#08110B}.secondary{background:#1B2B37;color:var(--white);border:1px solid var(--line)}.btn[disabled]{opacity:.45}.warn{color:var(--danger)}.success{color:#9BCBA7}.sending{color:#C9B58D}.recovery{display:none;border-color:rgba(197,164,109,.5)}.recovery b{color:#E3C18B}.footer{color:var(--muted);font-size:12px;margin-top:28px;border-top:1px solid var(--line);padding-top:15px}@media(max-width:520px){.grid2{grid-template-columns:1fr}.wrap{padding:14px 12px 42px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="kicker">R/Form by Rulev Denis</div><div class="logo">Training Check</div>
+  <section class="hero">
+    <span class="badge" id="modeBadge">v0.3</span>
+    <h1>5 строк после тренировки</h1>
+    <p>Черновик сохраняется автоматически. Неуспешную отправку можно восстановить и повторить без повторного ввода.</p>
+    <div class="promise">ПЛАН → ФАКТ → ИНТЕНСИВНОСТЬ → КАЧЕСТВО → РЕШЕНИЕ</div>
+  </section>
+
+  <section class="recovery" id="recoveryBox">
+    <b>Найдена неотправленная попытка.</b>
+    <div class="status" id="recoveryText"></div>
+    <div class="actions"><button class="btn secondary" id="retryPending">Повторить отправку</button></div>
+  </section>
+
+  <section class="card"><div class="num">1</div><h2>Что было запланировано?</h2><textarea id="plan" placeholder="Например: жим 80 кг × 4×4, RIR 3/3/2/2"></textarea></section>
+  <section class="card"><div class="num">2</div><h2>Что получилось фактически?</h2><textarea id="fact" placeholder="Например: 80 кг × 4×4 выполнено полностью"></textarea></section>
+  <section class="card"><div class="num">3</div><h2>Какой остался запас?</h2><div class="grid2"><div><label for="rir">RIR / запас</label><input id="rir" placeholder="Например: 4/3/3/2"></div><div><label for="effort">Ощущение</label><select id="effort"><option value="">Выбрать</option><option>Легче ожиданий</option><option>По плану</option><option>Тяжелее ожиданий</option><option>Не могу оценить</option></select></div></div><label for="rest">Отдых</label><input id="rest" placeholder="Например: 2–3 минуты"></section>
+  <section class="card"><div class="num">4</div><h2>Что произошло с качеством?</h2><textarea id="quality" placeholder="Техника, боль, скорость, контроль — только то, что повлияло на оценку"></textarea></section>
+  <section class="card"><div class="num">5</div><h2>Какое следующее решение?</h2><textarea id="decision" placeholder="Одно следующее действие"></textarea></section>
+  <section class="card"><label class="consent"><input type="checkbox" id="consent"><span>Согласен, что ответы будут сохранены в R/Form для подготовки отчёта и тестирования инструмента. Публикация персональных данных не разрешается.</span></label></section>
+
+  <div class="actions"><button class="btn primary" id="send">Отправить результат</button><button class="btn secondary" id="clear">Очистить черновик</button></div>
+  <div id="status" class="status"></div>
+
+  <div class="footer">R/Form — система управления физической формой. Инструмент структурирует наблюдения и не является медицинской оценкой или индивидуальным назначением тренировки.</div>
+</div>
+<form id="transportForm" method="post" target="transportFrame" style="display:none"><input type="hidden" name="access" id="transportAccess"><input type="hidden" name="payload" id="transportPayload"></form>
+<iframe name="transportFrame" id="transportFrame" title="transport" style="display:none"></iframe>
+<script>
+'use strict';
+const CLIENT_VERSION='0.3.0';
+const SCHEMA_VERSION='rform.training_check.v0.2';
+const FIELDS=['plan','fact','rir','effort','rest','quality','decision'];
+const $=id=>document.getElementById(id);
+const params=new URLSearchParams(location.search);
+const participantId=(params.get('participant')||'ANON').trim();
+const checkId=(params.get('check')||'').trim();
+const apiUrl=(params.get('api')||'').trim();
+const accessToken=(params.get('access')||'').trim();
+const trainingContext=(params.get('context')||'').trim();
+const mode=(params.get('mode')||'').trim();
+const scope=(checkId||'NO_CHECK')+'::'+participantId;
+const draftKey='rform_tc_v03_draft::'+scope;
+const pendingKey='rform_tc_v03_pending::'+scope;
+let pendingEventId='';
+let timer=null;
+function trim(v){return String(v||'').trim()}
+function localDate(){const d=new Date(),o=d.getTimezoneOffset()*60000;return new Date(d-o).toISOString().slice(0,10)}
+function randomHex(bytes=6){const a=new Uint8Array(bytes);crypto.getRandomValues(a);return Array.from(a,b=>b.toString(16).padStart(2,'0')).join('')}
+function validApi(){return /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(apiUrl)&&accessToken.length>=16&&checkId&&participantId!=='ANON'}
+function values(){return {plan:trim($('plan').value),fact:trim($('fact').value),rir:trim($('rir').value),effort:trim($('effort').value),rest:trim($('rest').value),quality:trim($('quality').value),decision:trim($('decision').value),consent:$('consent').checked}}
+function apply(v){if(!v)return;FIELDS.forEach(k=>{if(v[k]!==undefined)$(k).value=v[k]});$('consent').checked=!!v.consent}
+function saveDraft(){localStorage.setItem(draftKey,JSON.stringify({saved_at:new Date().toISOString(),values:values()}))}
+function loadJson(key){try{return JSON.parse(localStorage.getItem(key)||'null')}catch(_){return null}}
+function validate(v){if(!v.plan||!v.fact||!(v.rir||v.effort)||!v.quality||!v.decision){$('status').innerHTML='<span class="warn">Заполните все 5 шагов.</span>';return false}if(!v.consent){$('status').innerHTML='<span class="warn">Для отправки нужно согласие на сохранение ответов.</span>';return false}if(!validApi()){$('status').innerHTML='<span class="warn">Ссылка не подключена к receiver R/Form.</span>';return false}return true}
+function buildPayload(eventId,v){return {schema_version:SCHEMA_VERSION,event_id:eventId,check_id:checkId,participant_id:participantId,submitted_at:new Date().toISOString(),session_date:localDate(),training_context:trainingContext,plan:v.plan,fact:v.fact,rir:v.rir,effort:v.effort,rest:v.rest,quality:v.quality,decision:v.decision,consent_store_data:v.consent,source:'RFORM_TRAINING_CHECK_WEB',client_version:CLIENT_VERSION}}
+function persistPending(payload){localStorage.setItem(pendingKey,JSON.stringify({saved_at:new Date().toISOString(),payload:payload,values:values(),status:'PENDING'}));showRecovery()}
+function clearPending(){localStorage.removeItem(pendingKey);$('recoveryBox').style.display='none'}
+function showRecovery(){const p=loadJson(pendingKey);if(!p||!p.payload)return;$('recoveryBox').style.display='block';$('recoveryText').textContent='Check '+p.payload.check_id+' · event '+p.payload.event_id;apply(p.values||{})}
+function transport(payload){pendingEventId=payload.event_id;$('transportForm').action=apiUrl;$('transportAccess').value=accessToken;$('transportPayload').value=JSON.stringify(payload);persistPending(payload);$('send').disabled=true;$('status').innerHTML='<span class="sending">Отправляю в R/Form…</span>';$('transportForm').submit();clearTimeout(timer);timer=setTimeout(()=>{if(pendingEventId===payload.event_id){$('send').disabled=false;$('status').innerHTML='<span class="warn">Подтверждение не получено. Попытка сохранена локально и доступна для повторной отправки.</span>'}},15000)}
+function newSend(){const v=values();saveDraft();if(!validate(v))return;const payload=buildPayload('RTCWEB-'+Date.now()+'-'+randomHex(4),v);transport(payload)}
+function retry(){const p=loadJson(pendingKey);if(!p||!p.payload){$('status').textContent='Нет сохранённой попытки.';return}if(!validApi()){$('status').innerHTML='<span class="warn">Receiver недоступен для этой ссылки.</span>';return}apply(p.values||{});transport(p.payload)}
+FIELDS.forEach(k=>{$(k).addEventListener('input',saveDraft);$(k).addEventListener('change',saveDraft)});$('consent').addEventListener('change',saveDraft);
+$('send').onclick=newSend;$('retryPending').onclick=retry;$('clear').onclick=()=>{FIELDS.forEach(k=>$(k).value='');$('consent').checked=false;localStorage.removeItem(draftKey);localStorage.removeItem(pendingKey);$('recoveryBox').style.display='none';$('status').textContent='Черновик очищен.'};
+window.addEventListener('message',event=>{const ack=event.data;if(!ack||ack.type!=='rform-training-check-ack'||!pendingEventId||ack.event_id!==pendingEventId)return;const trusted=event.origin==='null'||event.origin==='https://script.google.com'||event.origin.endsWith('.googleusercontent.com');if(!trusted)return;clearTimeout(timer);$('send').disabled=false;if(ack.ok){$('status').innerHTML='<span class="success">Результат отправлен. ID: '+String(ack.check_id||'')+'</span>';clearPending();localStorage.removeItem(draftKey);pendingEventId=''}else{$('status').innerHTML='<span class="warn">Ошибка receiver: '+String(ack.error||'unknown')+'. Попытка сохранена для повторной отправки.</span>';pendingEventId=''}});
+(function init(){const draft=loadJson(draftKey);if(draft&&draft.values)apply(draft.values);showRecovery();if(mode==='e2e'&&!draft&&!loadJson(pendingKey)){apply({plan:'E2E: жим 80 кг × 4×4, целевой RIR 3/3/2/2',fact:'E2E: 80 кг × 4×4 выполнено полностью',rir:'4/3/3/2',effort:'По плану',rest:'2–3 минуты',quality:'E2E: техника стабильна, боли 0/10, контроль сохранён',decision:'E2E: оставить вес и проверить повторяемость на следующей сессии',consent:true});saveDraft()}$('modeBadge').textContent=mode==='e2e'?'v0.3 · E2E · '+participantId:(validApi()?'v0.3 · online · '+participantId:'v0.3 · local')})();
+</script>
+</body>
+</html>
