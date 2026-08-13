@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0B1016">
+<title>R/Form Training Check</title>
+<style>
+:root{--bg:#0B1016;--panel:#111A23;--white:#F2F5F7;--muted:#AAB8C2;--steel:#7FA8BC;--brass:#C5A46D;--green:#6EA77F;--line:rgba(127,168,188,.25);--danger:#DDB6B6}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--white);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.45}.wrap{max-width:720px;margin:auto;padding:20px 16px 60px}.kicker{font-size:12px;letter-spacing:.14em;color:var(--steel);text-transform:uppercase}.logo{font-weight:800;font-size:22px}.hero,.card,.notice,.report{border:1px solid var(--line);background:var(--panel);border-radius:18px;padding:18px;margin:12px 0}.hero{border-radius:24px;background:linear-gradient(145deg,var(--panel),#0D151D)}.hero h1{font-size:30px;line-height:1.08;margin:7px 0 10px}.hero p,.hint,.status{color:var(--muted);font-size:13px}.promise{margin-top:14px;border-left:3px solid var(--brass);padding-left:12px;font-weight:650}.num{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;border:1px solid var(--steel);color:var(--steel);font-weight:800}.card h2,.report h2{font-size:19px;margin:8px 0 5px}label{display:block;color:var(--steel);font-size:12px;letter-spacing:.05em;text-transform:uppercase;margin:12px 0 6px}textarea,input,select{width:100%;border:1px solid #324553;background:#0A1118;color:var(--white);border-radius:12px;padding:13px 12px;font:inherit;outline:none}textarea{min-height:82px;resize:vertical}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.consent{display:flex;gap:10px;align-items:flex-start;color:var(--muted);font-size:13px}.consent input{width:auto;margin-top:3px}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.btn{cursor:pointer;border:0;border-radius:12px;padding:13px 15px;font-weight:800}.primary{background:var(--green);color:#08110B}.secondary{background:#1B2B37;color:var(--white);border:1px solid var(--line)}.btn[disabled]{opacity:.45}.warn{color:var(--danger)}.success{color:#9BCBA7}.sending{color:#C9B58D}.notice,.report{display:none}.notice strong{display:block;margin-bottom:5px}.report-section{padding:13px 0;border-top:1px solid var(--line)}.report-section:first-of-type{border-top:0}.report-label{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--steel);margin-bottom:5px}.report-text{white-space:pre-wrap}.analysis{border-left:3px solid var(--brass);padding-left:12px}.footer{color:var(--muted);font-size:12px;margin-top:28px;border-top:1px solid var(--line);padding-top:15px}.hidden{display:none!important}@media(max-width:520px){.grid2{grid-template-columns:1fr}.wrap{padding:14px 12px 42px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="kicker">R/Form by Rulev Denis</div><div class="logo">Training Check</div>
+  <section class="hero">
+    <h1>5 строк после тренировки</h1>
+    <p>Зафиксируйте только то, что важно для оценки этой сессии. Обычно это занимает 2–3 минуты. Черновик сохраняется автоматически.</p>
+    <div class="promise">ПЛАН → ФАКТ → ИНТЕНСИВНОСТЬ → КАЧЕСТВО → РЕШЕНИЕ</div>
+  </section>
+
+  <section class="notice" id="stateBox">
+    <strong id="stateTitle"></strong>
+    <div class="status" id="stateText"></div>
+    <div class="actions" id="stateActions"></div>
+  </section>
+
+  <section class="notice" id="recoveryBox">
+    <strong>Есть незавершённая отправка.</strong>
+    <div class="status">Ответы сохранены на этом устройстве. Можно проверить сохранение ещё раз без повторного заполнения.</div>
+    <div class="actions"><button class="btn secondary" id="retryPending">Проверить сохранение</button></div>
+  </section>
+
+  <main id="formArea">
+    <section class="card"><div class="num">1</div><h2>Что было запланировано?</h2><textarea id="plan" placeholder="Упражнения, нагрузка, подходы и повторы — коротко"></textarea></section>
+    <section class="card"><div class="num">2</div><h2>Что получилось фактически?</h2><textarea id="fact" placeholder="Что выполнили и где было значимое отличие от плана"></textarea></section>
+    <section class="card"><div class="num">3</div><h2>Какой остался запас?</h2><div class="grid2"><div><label for="rir">RIR / запас</label><input id="rir" placeholder="Например: 4/3/3/2"></div><div><label for="effort">Ощущение</label><select id="effort"><option value="">Выбрать</option><option>Легче ожиданий</option><option>По плану</option><option>Тяжелее ожиданий</option><option>Не могу оценить</option></select></div></div><label for="rest">Отдых</label><input id="rest" placeholder="Например: 2–3 минуты"></section>
+    <section class="card"><div class="num">4</div><h2>Что произошло с качеством?</h2><textarea id="quality" placeholder="Техника, скорость, контроль, дискомфорт — только то, что повлияло на оценку"></textarea></section>
+    <section class="card"><div class="num">5</div><h2>Какое следующее решение?</h2><textarea id="decision" placeholder="Что вы считаете правильным сохранить, проверить или изменить"></textarea></section>
+    <section class="card"><label class="consent"><input type="checkbox" id="consent"><span>Согласен, что ответы будут сохранены в R/Form для подготовки моего отчёта и тестирования инструмента. Публикация персональных данных не разрешается.</span></label></section>
+    <div class="actions"><button class="btn primary" id="send">Отправить результат</button><button class="btn secondary" id="clear">Очистить черновик</button></div>
+    <div id="status" class="status"></div>
+  </main>
+
+  <section class="report" id="reportBox">
+    <h2>Ваш Training Check</h2>
+    <div class="status" id="reportDate"></div>
+    <div class="report-section"><div class="report-label">План</div><div class="report-text" id="rPlan"></div></div>
+    <div class="report-section"><div class="report-label">Факт</div><div class="report-text" id="rFact"></div></div>
+    <div class="report-section"><div class="report-label">Интенсивность</div><div class="report-text" id="rIntensity"></div></div>
+    <div class="report-section"><div class="report-label">Качество</div><div class="report-text" id="rQuality"></div></div>
+    <div class="report-section"><div class="report-label">Ваше решение</div><div class="report-text" id="rDecision"></div></div>
+    <div class="report-section analysis"><div class="report-label">Ключевое отклонение</div><div class="report-text" id="rDeviation"></div></div>
+    <div class="report-section analysis"><div class="report-label">Что это значит</div><div class="report-text" id="rInterpretation"></div></div>
+    <div class="report-section analysis"><div class="report-label">Что проверить дальше</div><div class="report-text" id="rNext"></div></div>
+    <div class="status" style="margin-top:14px">Отчёт описывает одну тренировочную сессию и не является медицинской оценкой или персональной программой тренировок.</div>
+  </section>
+
+  <div class="footer">R/Form — система управления физической формой. Данные этой формы используются только в рамках Training Check и подготовки отчёта.</div>
+</div>
+<form id="transportForm" method="post" target="transportFrame" style="display:none"><input type="hidden" name="access" id="transportAccess"><input type="hidden" name="payload" id="transportPayload"></form>
+<iframe name="transportFrame" id="transportFrame" title="transport" style="display:none"></iframe>
+<script>
+'use strict';
+const API_URL='https://script.google.com/macros/s/AKfycbzHDhJkDtmkdspyLFLj7-de2fOp6XPg1E0qYzIk_ghKN4xTjDxahCfECjAxdtlYucYZVQ/exec';
+const CLIENT_VERSION='0.5.0-pilot1';
+const SCHEMA_VERSION='rform.training_check.v0.2';
+const FIELDS=['plan','fact','rir','effort','rest','quality','decision'];
+const $=id=>document.getElementById(id);
+function decodeTicket(raw){try{let b=String(raw||'').replace(/^#/,'').replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';return JSON.parse(atob(b))}catch(_){return null}}
+const cfg=decodeTicket(location.hash);
+const participantId=cfg&&String(cfg.p||'').trim();
+const checkId=cfg&&String(cfg.c||'').trim();
+const accessToken=cfg&&String(cfg.a||'').trim();
+const trainingContext=cfg&&String(cfg.x||'PILOT_V1').trim();
+const scope=(checkId||'INVALID')+'::'+(participantId||'INVALID');
+const draftKey='rform_tc_pilot1_draft::'+scope;
+const pendingKey='rform_tc_pilot1_pending::'+scope;
+let activeEventId='';let pollDeadline=0;let pollTimer=null;let requestTimer=null;
+function trim(v){return String(v||'').trim()}
+function validConfig(){return !!(cfg&&participantId&&checkId&&accessToken&&accessToken.length>=16)}
+function localDate(){const d=new Date(),o=d.getTimezoneOffset()*60000;return new Date(d-o).toISOString().slice(0,10)}
+function randomHex(bytes=6){const a=new Uint8Array(bytes);crypto.getRandomValues(a);return Array.from(a,b=>b.toString(16).padStart(2,'0')).join('')}
+function loadJson(key){try{return JSON.parse(localStorage.getItem(key)||'null')}catch(_){return null}}
+function values(){return {plan:trim($('plan').value),fact:trim($('fact').value),rir:trim($('rir').value),effort:trim($('effort').value),rest:trim($('rest').value),quality:trim($('quality').value),decision:trim($('decision').value),consent:$('consent').checked}}
+function apply(v){if(!v)return;FIELDS.forEach(k=>{if(v[k]!==undefined)$(k).value=v[k]});$('consent').checked=!!v.consent}
+function saveDraft(){if(validConfig())localStorage.setItem(draftKey,JSON.stringify({saved_at:new Date().toISOString(),values:values()}))}
+function showState(title,text,buttonText,handler){$('stateTitle').textContent=title;$('stateText').textContent=text;$('stateActions').innerHTML='';if(buttonText){const b=document.createElement('button');b.className='btn secondary';b.textContent=buttonText;b.onclick=handler;$('stateActions').appendChild(b)}$('stateBox').style.display='block'}
+function hideState(){$('stateBox').style.display='none'}
+function lockForm(){ $('formArea').classList.add('hidden'); $('recoveryBox').style.display='none' }
+function unlockForm(){ $('formArea').classList.remove('hidden'); $('reportBox').style.display='none' }
+function validate(v){if(!v.plan||!v.fact||!(v.rir||v.effort)||!v.quality||!v.decision){$('status').innerHTML='<span class="warn">Заполните все 5 шагов.</span>';return false}if(!v.consent){$('status').innerHTML='<span class="warn">Для отправки нужно согласие на сохранение ответов.</span>';return false}return true}
+function buildPayload(eventId,v){return {schema_version:SCHEMA_VERSION,event_id:eventId,check_id:checkId,participant_id:participantId,submitted_at:new Date().toISOString(),session_date:localDate(),training_context:trainingContext,plan:v.plan,fact:v.fact,rir:v.rir,effort:v.effort,rest:v.rest,quality:v.quality,decision:v.decision,consent_store_data:v.consent,source:'RFORM_TRAINING_CHECK_WEB',client_version:CLIENT_VERSION}}
+function persistPending(payload,v){localStorage.setItem(pendingKey,JSON.stringify({saved_at:new Date().toISOString(),payload:payload,values:v||values(),status:'PENDING'}));$('recoveryBox').style.display='block'}
+function clearLocal(){localStorage.removeItem(pendingKey);localStorage.removeItem(draftKey);$('recoveryBox').style.display='none'}
+function jsonp(mode,extra,onSuccess,onFailure){const cb='rformCb_'+Date.now()+'_'+randomHex(2),s=document.createElement('script');let done=false;function cleanup(){if(done)return;done=true;clearTimeout(requestTimer);try{s.remove()}catch(_){}try{delete window[cb]}catch(_){window[cb]=undefined}}window[cb]=res=>{cleanup();onSuccess(res)};s.onerror=()=>{cleanup();onFailure&&onFailure()};const q=new URLSearchParams({mode:mode,check:checkId,participant:participantId,access:accessToken,prefix:cb,_:String(Date.now())});Object.keys(extra||{}).forEach(k=>q.set(k,extra[k]));s.src=API_URL+'?'+q.toString();document.head.appendChild(s);requestTimer=setTimeout(()=>{cleanup();onFailure&&onFailure()},5500)}
+function renderReport(r){if(!r)return;$('reportDate').textContent=r.session_date?'Тренировка: '+r.session_date:'';$('rPlan').textContent=r.plan||'—';$('rFact').textContent=r.fact||'—';$('rIntensity').textContent=(r.intensity||'—')+(r.rest?' · отдых '+r.rest:'');$('rQuality').textContent=r.quality||'—';$('rDecision').textContent=r.decision||'—';$('rDeviation').textContent=r.key_deviation||'—';$('rInterpretation').textContent=r.interpretation||'—';$('rNext').textContent=r.next_checkpoint||'—';lockForm();hideState();$('reportBox').style.display='block';window.scrollTo({top:0,behavior:'smooth'})}
+function handleCheckState(res){if(!res||res.ok!==true){lockForm();showState('Ссылка недоступна','Не удалось открыть персональный Training Check. Запросите новую ссылку у автора.');return}if(res.status==='REPORTED'&&res.report_ready&&res.report){clearLocal();renderReport(res.report);return}if(res.status==='COMPLETED'||res.status==='REPORTED'){clearLocal();lockForm();showState('Ответы сохранены','Training Check получен. Отчёт готовится. Эту страницу можно закрыть и открыть по той же ссылке позже.','Проверить готовность отчёта',loadCheckState);return}hideState();unlockForm();const d=loadJson(draftKey);if(d&&d.values)apply(d.values);const p=loadJson(pendingKey);if(p&&p.payload){apply(p.values||{});$('recoveryBox').style.display='block'}}
+function loadCheckState(){if(!validConfig()){lockForm();showState('Ссылка недействительна','Запросите новую персональную ссылку на Training Check.');return}jsonp('check',{},handleCheckState,()=>{if(!$('formArea').classList.contains('hidden'))return;showState('Не удалось проверить состояние','Соединение временно недоступно. Попробуйте открыть страницу ещё раз.')})}
+function finishSuccess(eventId){if(activeEventId&&eventId!==activeEventId)return;clearTimeout(pollTimer);activeEventId='';$('send').disabled=false;clearLocal();lockForm();showState('Ответы сохранены','Training Check получен. Отчёт готовится. Эту страницу можно закрыть и открыть по той же ссылке позже.','Проверить готовность отчёта',loadCheckState)}
+function finishError(){clearTimeout(pollTimer);activeEventId='';$('send').disabled=false;$('status').innerHTML='<span class="warn">Не удалось подтвердить сохранение. Ответы остались на этом устройстве.</span>';$('recoveryBox').style.display='block'}
+function scheduleProbe(eventId){if(Date.now()>=pollDeadline){finishError();return}clearTimeout(pollTimer);pollTimer=setTimeout(()=>probeStatus(eventId),1200)}
+function probeStatus(eventId){activeEventId=eventId;jsonp('status',{event:eventId},res=>{if(!res||res.type!=='rform-training-check-status'||res.event_id!==eventId){scheduleProbe(eventId);return}if(res.found&&res.status==='APPLIED'){finishSuccess(eventId);return}if(res.found&&res.status==='ERROR'){finishError();return}scheduleProbe(eventId)},()=>scheduleProbe(eventId))}
+function transport(payload,v){activeEventId=payload.event_id;persistPending(payload,v);$('transportForm').action=API_URL;$('transportAccess').value=accessToken;$('transportPayload').value=JSON.stringify(payload);$('send').disabled=true;$('status').innerHTML='<span class="sending">Отправляю и проверяю сохранение…</span>';$('transportForm').submit();pollDeadline=Date.now()+22000;setTimeout(()=>probeStatus(payload.event_id),700)}
+function send(){if(!validConfig())return;const existing=loadJson(pendingKey);if(existing&&existing.payload){apply(existing.values||{});transport(existing.payload,existing.values||values());return}const v=values();saveDraft();if(!validate(v))return;transport(buildPayload('RTCWEB-'+Date.now()+'-'+randomHex(4),v),v)}
+function retry(){const p=loadJson(pendingKey);if(!p||!p.payload){loadCheckState();return}apply(p.values||{});transport(p.payload,p.values||values())}
+FIELDS.forEach(k=>{$(k).addEventListener('input',saveDraft);$(k).addEventListener('change',saveDraft)});$('consent').addEventListener('change',saveDraft);$('send').onclick=send;$('retryPending').onclick=retry;$('clear').onclick=()=>{FIELDS.forEach(k=>$(k).value='');$('consent').checked=false;clearLocal();$('status').textContent='Черновик очищен.'};
+window.addEventListener('message',event=>{const ack=event.data;if(!ack||ack.type!=='rform-training-check-ack'||!activeEventId||ack.event_id!==activeEventId)return;if(ack.ok)finishSuccess(activeEventId)});
+(function init(){loadCheckState()})();
+</script>
+</body>
+</html>
