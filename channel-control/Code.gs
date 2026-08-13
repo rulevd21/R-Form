@@ -1,10 +1,10 @@
-// R/Form Channel Control v0.1
+// R/Form Channel Control v0.2
 // Web control layer over RFORM_MASTER_DATA_v1 + current content calendar.
 // Designed to live in the SAME standalone Apps Script project as telegram_autopost_v0_3.gs.
 // This keeps existing Script Properties (RFORM_TG_BOT_TOKEN, RFORM_TG_CHAT_ID) and autopost trigger intact.
 
 const RFORM_CC = Object.freeze({
-  version: '0.1.0',
+  version: '0.2.0',
   masterSpreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
   calendarSpreadsheetId: '1lDBGMRQqpgzCd1IhasH3sGYxVz_kAIoIi6WjpND7s80',
   queueSheet: 'CONTENT_QUEUE',
@@ -15,7 +15,8 @@ const RFORM_CC = Object.freeze({
   auditSheet: 'CONTROL_LOG',
   timeZone: 'Europe/Moscow',
   tokenProperty: 'RFORM_TG_BOT_TOKEN',
-  defaultChatId: '@r_form'
+  defaultChatId: '@r_form',
+  previewMaxVisuals: 10
 });
 
 function doGet() {
@@ -83,6 +84,46 @@ function rformCcGetContent(contentId) {
   const row = rformCcFindQueueRow_(contentId);
   if (!row) throw new Error('Content_ID not found: ' + contentId);
   return rformCcNormalizeQueueItem_(row.object);
+}
+
+function rformCcGetPreview(payload) {
+  rformCcRequirePayload_(payload, ['contentId']);
+  const ctx = rformCcFindQueueRow_(payload.contentId);
+  if (!ctx) throw new Error('Content_ID not found: ' + payload.contentId);
+
+  const item = rformCcNormalizeQueueItem_(ctx.object);
+  const mode = String(item.Telegram_Post_Mode || 'TEXT_ONLY').toUpperCase();
+  const text = String(item.Telegram_Text || '');
+  const warnings = [];
+  let visualResult = {visuals: [], sourceType: 'NONE', warning: ''};
+
+  if (mode !== 'TEXT_ONLY') {
+    const visualUrl = String(item.Telegram_Visual_URL || '').trim();
+    if (!visualUrl) {
+      warnings.push('Для ' + mode + ' не задан Telegram_Visual_URL.');
+    } else {
+      visualResult = rformCcResolveVisuals_(visualUrl);
+      if (visualResult.warning) warnings.push(visualResult.warning);
+      if (!visualResult.visuals.length) warnings.push('Визуал не удалось отобразить в предпросмотре. Проверьте ссылку на исходник.');
+    }
+    if (String(item.Visual_Status || '').toUpperCase() !== 'APPROVED') {
+      warnings.push('Visual_Status ещё не APPROVED.');
+    }
+    if (text.length > 1024) {
+      warnings.push('Текст длиннее media-caption текущего контура; autopost может отправить его отдельным текстовым сообщением.');
+    }
+  }
+
+  if (!text.trim()) warnings.push('Telegram_Text пуст.');
+
+  return {
+    item: item,
+    visuals: visualResult.visuals,
+    visualSourceType: visualResult.sourceType,
+    warnings: warnings,
+    textLength: text.length,
+    previewGeneratedAt: Utilities.formatDate(new Date(), RFORM_CC.timeZone, 'dd.MM.yyyy HH:mm:ss')
+  };
 }
 
 function rformCcSaveDraft(payload) {
@@ -275,6 +316,105 @@ function rformCcValidateSchedulable_(r) {
     throw new Error('Visual_Status must be APPROVED for ' + mode + '.');
   }
   if (!String(r.Telegram_Text || '').trim()) throw new Error('Telegram_Text is empty.');
+}
+
+function rformCcResolveVisuals_(visualUrl) {
+  const url = String(visualUrl || '').trim();
+  const result = {visuals: [], sourceType: 'NONE', warning: ''};
+  if (!url) return result;
+
+  try {
+    const folderMatch = url.match(/\/folders\/([A-Za-z0-9_-]{15,})/);
+    if (folderMatch) {
+      result.sourceType = 'DRIVE_FOLDER';
+      const folder = DriveApp.getFolderById(folderMatch[1]);
+      const iterator = folder.getFiles();
+      const files = [];
+      while (iterator.hasNext()) {
+        const file = iterator.next();
+        const mime = String(file.getMimeType() || '');
+        if (mime.indexOf('image/') === 0 || mime === 'application/pdf') {
+          files.push(file);
+        }
+      }
+      files.sort((a, b) => String(a.getName()).localeCompare(String(b.getName()), 'ru', {numeric: true}));
+      result.visuals = files.slice(0, RFORM_CC.previewMaxVisuals).map(rformCcPreviewFile_);
+      if (files.length > RFORM_CC.previewMaxVisuals) {
+        result.warning = 'Показаны первые ' + RFORM_CC.previewMaxVisuals + ' визуалов из ' + files.length + '.';
+      }
+      return result;
+    }
+
+    const id = rformCcExtractDriveId_(url);
+    if (id) {
+      result.sourceType = 'DRIVE_FILE';
+      try {
+        result.visuals = [rformCcPreviewFile_(DriveApp.getFileById(id))];
+        return result;
+      } catch (fileErr) {
+        try {
+          const folder = DriveApp.getFolderById(id);
+          const iterator = folder.getFiles();
+          const files = [];
+          while (iterator.hasNext()) {
+            const file = iterator.next();
+            const mime = String(file.getMimeType() || '');
+            if (mime.indexOf('image/') === 0 || mime === 'application/pdf') files.push(file);
+          }
+          files.sort((a, b) => String(a.getName()).localeCompare(String(b.getName()), 'ru', {numeric: true}));
+          result.sourceType = 'DRIVE_FOLDER';
+          result.visuals = files.slice(0, RFORM_CC.previewMaxVisuals).map(rformCcPreviewFile_);
+          return result;
+        } catch (folderErr) {
+          throw fileErr;
+        }
+      }
+    }
+
+    if (/^https?:\/\//i.test(url)) {
+      result.sourceType = 'EXTERNAL_URL';
+      result.visuals = [{
+        id: '',
+        name: 'Visual',
+        mimeType: 'external',
+        previewUrl: url,
+        sourceUrl: url
+      }];
+      return result;
+    }
+  } catch (e) {
+    result.warning = 'Не удалось получить визуал из Google Drive: ' + (e.message || e);
+    return result;
+  }
+
+  result.warning = 'Формат Visual URL не распознан.';
+  return result;
+}
+
+function rformCcPreviewFile_(file) {
+  const id = file.getId();
+  return {
+    id: id,
+    name: file.getName(),
+    mimeType: file.getMimeType(),
+    previewUrl: 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(id) + '&sz=w1600',
+    sourceUrl: file.getUrl()
+  };
+}
+
+function rformCcExtractDriveId_(url) {
+  const value = String(url || '').trim();
+  if (/^[A-Za-z0-9_-]{15,}$/.test(value)) return value;
+  const patterns = [
+    /\/d\/([A-Za-z0-9_-]{15,})/,
+    /[?&]id=([A-Za-z0-9_-]{15,})/,
+    /\/file\/d\/([A-Za-z0-9_-]{15,})/
+  ];
+  for (let i = 0; i < patterns.length; i++) {
+    const match = value.match(patterns[i]);
+    if (match) return match[1];
+  }
+  return '';
 }
 
 function rformCcNormalizeQueueItem_(r) {
