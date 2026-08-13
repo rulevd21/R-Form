@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0B1016">
+<title>R/Form Training Check</title>
+<style>
+html,body{margin:0;min-height:100%;background:#0B1016;color:#F2F5F7;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}.gate{max-width:680px;margin:0 auto;padding:36px 18px}.k{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#7FA8BC}.t{font-size:28px;font-weight:800;margin:8px 0 18px}.box{border:1px solid rgba(127,168,188,.25);background:#111A23;border-radius:18px;padding:18px;color:#AAB8C2;line-height:1.5}.btn{margin-top:14px;border:1px solid rgba(127,168,188,.25);border-radius:12px;padding:12px 15px;background:#1B2B37;color:#F2F5F7;font-weight:800;cursor:pointer}iframe{display:none;width:100%;height:100vh;border:0;background:#0B1016}
+</style>
+</head>
+<body>
+<div class="gate" id="gate"><div class="k">R/Form by Rulev Denis</div><div class="t">Training Check</div><div class="box"><div id="msg">Проверяю персональный Training Check…</div><button class="btn" id="retry" style="display:none">Повторить проверку</button></div></div>
+<iframe id="app" title="R/Form Training Check"></iframe>
+<script>
+'use strict';
+const API='https://script.google.com/macros/s/AKfycbzHDhJkDtmkdspyLFLj7-de2fOp6XPg1E0qYzIk_ghKN4xTjDxahCfECjAxdtlYucYZVQ/exec';
+const $=id=>document.getElementById(id);
+function decodeTicket(raw){try{let b=String(raw||'').replace(/^#/,'').replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';return JSON.parse(atob(b))}catch(_){return null}}
+function rand(){return Math.random().toString(36).slice(2,8)}
+const cfg=decodeTicket(location.hash);
+function fail(text){$('msg').textContent=text;$('retry').style.display='inline-block';$('app').style.display='none';$('gate').style.display='block'}
+function jsonp(cb){if(!cfg||!cfg.p||!cfg.c||!cfg.a){fail('Ссылка недействительна. Запросите новую персональную ссылку.');return}const name='rformPilot_'+Date.now()+'_'+rand(),s=document.createElement('script');let done=false;const clean=()=>{if(done)return;done=true;clearTimeout(timer);try{s.remove()}catch(_){}try{delete window[name]}catch(_){}};window[name]=res=>{clean();cb(res)};s.onerror=()=>{clean();fail('Не удалось проверить состояние. Попробуйте ещё раз.')};const q=new URLSearchParams({mode:'check',check:String(cfg.c),participant:String(cfg.p),access:String(cfg.a),prefix:name,_:String(Date.now())});s.src=API+'?'+q.toString();document.head.appendChild(s);const timer=setTimeout(()=>{clean();fail('Не удалось проверить состояние. Попробуйте ещё раз.')},6500)}
+function inspect(expected,tries){const f=$('app');try{const d=f.contentDocument;if(!d)throw new Error();const form=d.getElementById('formArea'),report=d.getElementById('reportBox'),state=d.getElementById('stateBox');const formVisible=form&&!form.classList.contains('hidden');const reportVisible=report&&getComputedStyle(report).display!=='none';const stateVisible=state&&getComputedStyle(state).display!=='none';if(expected==='PLANNED'&&formVisible){showApp();return}if(expected==='REPORTED'&&reportVisible){showApp();return}if((expected==='COMPLETED'||expected==='REPORTED')&&stateVisible&&!formVisible){showApp();return}}catch(_){}if(tries>0){setTimeout(()=>inspect(expected,tries-1),900);return}fail('Состояние подтверждено сервером, но интерфейс не загрузился корректно. Повторите проверку.')}
+function showApp(){$('gate').style.display='none';$('app').style.display='block'}
+function openApp(res){const status=String(res.status||'');if(!['PLANNED','COMPLETED','REPORTED'].includes(status)){fail('Training Check сейчас недоступен. Запросите новую ссылку.');return}$('msg').textContent='Состояние подтверждено. Загружаю Training Check…';const f=$('app');f.onload=()=>setTimeout(()=>inspect(status,4),600);f.src='training-check.html'+location.hash}
+function start(){$('retry').style.display='none';$('msg').textContent='Проверяю персональный Training Check…';jsonp(res=>{if(!res||res.ok!==true){fail('Не удалось открыть персональный Training Check. Запросите новую ссылку.');return}openApp(res)})}
+$('retry').onclick=start;start();
+</script>
+</body>
+</html>
