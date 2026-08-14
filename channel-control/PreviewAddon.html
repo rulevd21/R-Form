@@ -60,7 +60,10 @@ openSchedule=function(id){rformCcOpenPreview(id,true)};
 async function rformCcOpenPreview(id,forSchedule){
   setLoading(true);
   try{
-    const p=await api('rformCcGetPreview',{contentId:id});
+    const p=await api('rformCcGetPreviewV021',{contentId:id});
+    if(!p || typeof p!=='object' || !p.item){
+      throw new Error('Сервер вернул пустой payload предпросмотра. Обновите backend PreviewBackend_v0_2_1.gs и deployment.');
+    }
     RFORM_PREVIEW={id:id,forSchedule:!!forSchedule,data:p};
     rformCcDrawPreview_(p,!!forSchedule);
     openModal('rformPreviewModal');
@@ -68,7 +71,8 @@ async function rformCcOpenPreview(id,forSchedule){
 }
 
 function rformCcDrawPreview_(p,forSchedule){
-  const x=p.item||{},vs=p.visuals||[],mode=String(x.Telegram_Post_Mode||'TEXT_ONLY').toUpperCase();
+  if(!p || !p.item) throw new Error('Preview payload is empty.');
+  const x=p.item||{},vs=Array.isArray(p.visuals)?p.visuals:[],mode=String(x.Telegram_Post_Mode||'TEXT_ONLY').toUpperCase();
   document.getElementById('rformPreviewId').textContent=`${x.Content_ID||''} · ${mode} · ${x.Lifecycle_State||''}`;
   let media='';
   if(mode!=='TEXT_ONLY'){
