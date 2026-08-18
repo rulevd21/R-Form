@@ -11,7 +11,13 @@ const RFORM_CONFIG_KEYS = Object.freeze({
 const RFORM_SANDBOX_TITLE_PREFIX = 'RFORM_MASTER_DATA_SANDBOX_';
 
 function doGet() {
-  return HtmlService.createHtmlOutputFromFile('Index')
+  const base = HtmlService.createHtmlOutputFromFile('Index').getContent();
+  const trainingControls = HtmlService.createHtmlOutputFromFile('TrainingExerciseControls').getContent();
+  const html = base.indexOf('</body>') >= 0
+    ? base.replace('</body>', `${trainingControls}\n</body>`)
+    : `${base}\n${trainingControls}`;
+
+  return HtmlService.createHtmlOutput(html)
     .setTitle('R/Form Mobile — Sandbox');
 }
 
@@ -42,6 +48,7 @@ function buildAppBootstrap_(config) {
       today: true,
       nutrition: false,
       trainingLegacy: true,
+      trainingStructuredChanges: true,
       measurements: false,
       dayClose: false
     }
@@ -289,6 +296,7 @@ function getTrainingLaunchState() {
 
 function buildTrainingLaunchState_(today, config) {
   const training = today.training || { required: false, status: 'NOT_REQUIRED' };
+  const hasSession = Boolean(training.required && training.sessionId);
   return {
     required: Boolean(training.required),
     sessionId: training.sessionId || '',
@@ -297,8 +305,11 @@ function buildTrainingLaunchState_(today, config) {
     planStatus: training.planStatus || '',
     launchAvailable: Boolean(training.required && config.trainingLegacyUrl),
     legacyUrl: training.required && config.trainingLegacyUrl ? config.trainingLegacyUrl : '',
+    structuredChangesAvailable: hasSession,
+    structuredChangesMode: hasSession ? 'SANDBOX_FACT_ONLY' : 'UNAVAILABLE',
+    planImmutable: true,
     adapter: 'TrainingAdapterLegacyV21',
-    mode: 'READ_ONLY_LAUNCH',
+    mode: 'LEGACY_LAUNCH_WITH_STRUCTURED_FACT_CHANGES',
     productionWriterChanged: false
   };
 }

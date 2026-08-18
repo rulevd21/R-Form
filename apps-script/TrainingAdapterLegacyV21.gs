@@ -8,6 +8,7 @@ function getTrainingLaunchState() {
 
 function buildTrainingLaunchState_(today, config) {
   const training = today.training || { required: false, status: 'NOT_REQUIRED' };
+  const hasSession = Boolean(training.required && training.sessionId);
   return {
     required: Boolean(training.required),
     sessionId: training.sessionId || '',
@@ -16,8 +17,11 @@ function buildTrainingLaunchState_(today, config) {
     planStatus: training.planStatus || '',
     launchAvailable: Boolean(training.required && config.trainingLegacyUrl),
     legacyUrl: training.required && config.trainingLegacyUrl ? config.trainingLegacyUrl : '',
+    structuredChangesAvailable: hasSession,
+    structuredChangesMode: hasSession ? 'SANDBOX_FACT_ONLY' : 'UNAVAILABLE',
+    planImmutable: true,
     adapter: 'TrainingAdapterLegacyV21',
-    mode: 'READ_ONLY_LAUNCH',
+    mode: 'LEGACY_LAUNCH_WITH_STRUCTURED_FACT_CHANGES',
     productionWriterChanged: false
   };
 }
