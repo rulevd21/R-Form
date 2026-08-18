@@ -74,6 +74,19 @@ st.markdown(
       [data-testid="stMetric"] { background: var(--rf-panel); border: 1px solid var(--rf-line); border-radius: 10px; padding: .9rem 1rem; }
       [data-testid="stMetricLabel"] { color: var(--rf-steel); }
       [data-testid="stMetricValue"] { color: var(--rf-white); }
+      [data-testid="stAlertContainer"] {
+        background: rgba(127, 168, 188, .08) !important;
+        border: 1px solid var(--rf-line) !important;
+        color: var(--rf-white) !important;
+      }
+      [data-testid="stAlertContainer"] p { color: var(--rf-white) !important; }
+      [data-testid="stRadioOption"][data-selected="true"] > div > div > div:first-child {
+        background-color: var(--rf-steel) !important;
+        border-color: var(--rf-steel) !important;
+      }
+      [data-testid="stRadioOption"][data-selected="true"] > div > div > div:first-child > div {
+        background-color: var(--rf-carbon) !important;
+      }
       .stButton > button, .stDownloadButton > button, .stLinkButton > a { border: 1px solid var(--rf-brass); background: transparent; color: var(--rf-white); border-radius: 8px; }
       .stButton > button:hover, .stLinkButton > a:hover { border-color: var(--rf-white); color: var(--rf-white); }
       [data-testid="stDataFrame"] { border: 1px solid var(--rf-line); border-radius: 10px; overflow: hidden; }
