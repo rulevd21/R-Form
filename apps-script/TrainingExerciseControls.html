@@ -1,0 +1,232 @@
+<style>
+  .training-change-actions{display:grid;gap:8px;margin-top:10px}.training-change-actions button{font-size:13px;padding:11px 12px}
+  .training-mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.training-mode{background:var(--panel2);color:var(--text);border:1px solid var(--line)}.training-mode.active{background:var(--text);color:var(--bg)}
+  .training-set-list{display:grid;gap:7px}.training-set-choice{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);background:var(--panel2);border-radius:12px;padding:10px}.training-set-choice input{width:auto;margin-top:3px}.training-set-choice.disabled{opacity:.5}.training-set-meta{font-size:11px;color:var(--muted);margin-top:3px}
+  .training-change-summary{border:1px solid var(--line);background:var(--panel2);border-radius:12px;padding:10px;font-size:12px;color:var(--muted)}
+</style>
+
+<div id="trainingChangeSheet" class="sheet-backdrop" hidden>
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="trainingChangeTitle">
+    <div class="sheet-head">
+      <div><h2 id="trainingChangeTitle">Изменить упражнения</h2><div class="hint" id="trainingChangeSession">—</div></div>
+      <button class="close" id="closeTrainingChange" type="button">×</button>
+    </div>
+    <div class="notice">Исходный TRAINING_PLAN не меняется. Здесь фиксируется только фактическое отклонение от плана.</div>
+    <div class="training-mode-grid" style="margin-top:14px">
+      <button id="trainingModeReplace" type="button" class="training-mode active">Заменить плановое</button>
+      <button id="trainingModeAdd" type="button" class="training-mode">Добавить новое</button>
+    </div>
+
+    <form id="trainingChangeForm" class="form" style="margin-top:14px">
+      <div id="trainingPlanBlock" class="field">
+        <label for="trainingPlanExercise">Плановое упражнение</label>
+        <select id="trainingPlanExercise"></select>
+        <div id="trainingPlanSets" class="training-set-list"></div>
+      </div>
+
+      <div class="field">
+        <label for="trainingKnownExercise">Фактическое упражнение</label>
+        <select id="trainingKnownExercise"></select>
+      </div>
+      <div id="trainingCustomNameBlock" class="field" hidden>
+        <label for="trainingExerciseName">Название нового упражнения</label>
+        <input id="trainingExerciseName" maxlength="120" placeholder="Например: жим штанги на наклонной средним хватом">
+      </div>
+      <div class="field">
+        <label for="trainingExerciseCategory">Категория</label>
+        <select id="trainingExerciseCategory"></select>
+      </div>
+
+      <div id="trainingAddCountBlock" class="field" hidden>
+        <label for="trainingSetCount">Количество подходов</label>
+        <input id="trainingSetCount" type="number" min="1" max="10" step="1" value="3">
+      </div>
+
+      <div class="form-grid">
+        <div class="field"><label for="trainingWeightPattern">Вес, кг</label><input id="trainingWeightPattern" inputmode="decimal" placeholder="60 или 60/62,5/65" required></div>
+        <div class="field"><label for="trainingRepsPattern">Повторы</label><input id="trainingRepsPattern" inputmode="numeric" placeholder="8 или 8/8/7" required></div>
+      </div>
+      <div class="field">
+        <label for="trainingRirPattern">RIR по подходам</label>
+        <input id="trainingRirPattern" inputmode="decimal" placeholder="3/3/2" required>
+        <div class="hint">Одно значение повторится на все подходы. Через «/» можно указать значения по каждому подходу.</div>
+      </div>
+      <div class="field"><label for="trainingChangeComment">Комментарий</label><textarea id="trainingChangeComment" maxlength="500" placeholder="необязательно"></textarea></div>
+
+      <div id="trainingChangePreview" class="training-change-summary">—</div>
+      <button id="saveTrainingChange" type="submit">Сохранить изменение</button>
+      <div id="trainingChangeStatus" class="sync notice"></div>
+    </form>
+  </section>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  const SOURCE='RFORM_MOBILE';
+  let launch=null;
+  let editState=null;
+  let mode='REPLACE';
+
+  const byId=id=>document.getElementById(id);
+  const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const uuid=()=>window.crypto&&crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0,v=c==='x'?r:(r&3|8);return v.toString(16)});
+
+  function boot(){
+    if(typeof google==='undefined'||!google.script||!google.script.run)return;
+    google.script.run.withSuccessHandler(state=>{
+      launch=state||{};
+      if(!launch.required||!launch.sessionId)return;
+      attachLauncher();
+    }).withFailureHandler(()=>{}).getTrainingLaunchState();
+  }
+
+  function attachLauncher(){
+    if(byId('trainingChangeLauncher'))return;
+    const legacy=byId('trainingButton');
+    if(!legacy)return;
+    const host=legacy.closest('article.card')||legacy.parentElement;
+    const wrap=document.createElement('div');
+    wrap.className='training-change-actions';
+    wrap.innerHTML='<button id="trainingChangeLauncher" type="button" class="secondary">Изменить упражнения</button>'+
+      '<div class="hint">Замена или дополнительное упражнение сохраняются структурированно в TRAINING_SETS.</div>';
+    host.appendChild(wrap);
+    byId('trainingChangeLauncher').addEventListener('click',openSheet);
+  }
+
+  function openSheet(){
+    setStatus('Загрузка плана…');
+    byId('trainingChangeSheet').hidden=false;
+    google.script.run.withSuccessHandler(state=>{
+      editState=state;
+      if(!state.canEdit){setStatus('Тренировка уже закрыта. Структурные изменения доступны только до закрытия сессии.',true);byId('saveTrainingChange').disabled=true;return;}
+      byId('saveTrainingChange').disabled=false;
+      byId('trainingChangeSession').textContent=state.sessionId+' · '+state.sessionStatus;
+      renderPlan();renderKnown();renderCategories();setMode('REPLACE');setStatus('');
+    }).withFailureHandler(error=>setStatus(error&&error.message?error.message:String(error),true)).getTrainingExerciseEditState(launch.sessionId);
+  }
+
+  function closeSheet(){byId('trainingChangeSheet').hidden=true;setStatus('')}
+
+  function setMode(next){
+    mode=next;
+    byId('trainingModeReplace').classList.toggle('active',mode==='REPLACE');
+    byId('trainingModeAdd').classList.toggle('active',mode==='ADD');
+    byId('trainingPlanBlock').hidden=mode!=='REPLACE';
+    byId('trainingAddCountBlock').hidden=mode!=='ADD';
+    if(mode==='REPLACE')syncPlanDefaults();
+    updatePreview();
+  }
+
+  function renderPlan(){
+    const select=byId('trainingPlanExercise');
+    const groups=(editState&&editState.exercises)||[];
+    select.innerHTML=groups.map(g=>`<option value="${esc(g.key)}">${g.order}. ${esc(g.name)} · свободно ${g.unsavedCount}/${g.sets.length}</option>`).join('');
+    select.onchange=()=>{renderPlanSets();syncPlanDefaults();updatePreview()};
+    renderPlanSets();
+  }
+
+  function selectedPlanGroup(){
+    const key=byId('trainingPlanExercise').value;
+    return ((editState&&editState.exercises)||[]).find(g=>g.key===key)||null;
+  }
+
+  function renderPlanSets(){
+    const group=selectedPlanGroup();
+    const host=byId('trainingPlanSets');
+    if(!group){host.innerHTML='<div class="hint">Нет плановых упражнений.</div>';return;}
+    host.innerHTML='<div class="hint">Выберите подходы, которые фактически выполняются другим упражнением/вариацией.</div>'+group.sets.map(set=>{
+      const disabled=set.saved?'disabled':'';
+      const checked=set.saved?'':'checked';
+      const actual=set.actual?` · уже записано: ${esc(set.actual.exercise)} ${set.actual.weight||''}×${set.actual.reps||''}`:'';
+      return `<label class="training-set-choice ${set.saved?'disabled':''}"><input class="training-plan-set" type="checkbox" value="${esc(set.planSetId)}" ${disabled} ${checked}><span><strong>Подход ${set.setNumber}</strong><div class="training-set-meta">план ${set.weight==null?'—':set.weight} × ${set.reps==null?'—':set.reps} · RIR ${set.rir==null?'—':set.rir}${actual}</div></span></label>`;
+    }).join('');
+    host.querySelectorAll('.training-plan-set').forEach(el=>el.addEventListener('change',updatePreview));
+  }
+
+  function renderKnown(){
+    const select=byId('trainingKnownExercise');
+    const known=(editState&&editState.knownExercises)||[];
+    select.innerHTML='<option value="__CUSTOM__">Новое упражнение…</option>'+known.map((item,index)=>`<option value="${index}">${esc(item.name)}</option>`).join('');
+    select.onchange=()=>{
+      const custom=select.value==='__CUSTOM__';
+      byId('trainingCustomNameBlock').hidden=!custom;
+      if(!custom){const item=known[Number(select.value)];if(item&&item.category)byId('trainingExerciseCategory').value=item.category;}
+      updatePreview();
+    };
+    select.value='__CUSTOM__';
+    byId('trainingCustomNameBlock').hidden=false;
+  }
+
+  function renderCategories(){
+    const select=byId('trainingExerciseCategory');
+    select.innerHTML=((editState&&editState.categories)||[]).map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');
+  }
+
+  function syncPlanDefaults(){
+    const group=selectedPlanGroup();
+    if(group&&group.category)byId('trainingExerciseCategory').value=group.category;
+  }
+
+  function checkedPlanSetIds(){return Array.from(document.querySelectorAll('.training-plan-set:checked')).map(el=>el.value)}
+
+  function exerciseName(){
+    const select=byId('trainingKnownExercise');
+    if(select.value==='__CUSTOM__')return byId('trainingExerciseName').value.trim();
+    const item=((editState&&editState.knownExercises)||[])[Number(select.value)];
+    return item?item.name:'';
+  }
+
+  function expectedCount(){return mode==='REPLACE'?checkedPlanSetIds().length:Number(byId('trainingSetCount').value||0)}
+
+  function updatePreview(){
+    const count=expectedCount();
+    const name=exerciseName()||'—';
+    byId('trainingChangePreview').textContent=mode==='REPLACE'
+      ? `Будет создано фактических подходов: ${count}. Плановые строки останутся без изменений. Новое упражнение: ${name}.`
+      : `Будет добавлено сверх плана подходов: ${count}. Упражнение: ${name}.`;
+  }
+
+  function payload(){
+    return {
+      eventId:uuid(),action:mode,sessionId:launch.sessionId,source:SOURCE,
+      planSetIds:mode==='REPLACE'?checkedPlanSetIds():[],setCount:mode==='ADD'?Number(byId('trainingSetCount').value||0):0,
+      exerciseName:exerciseName(),exerciseCategory:byId('trainingExerciseCategory').value,
+      weightPattern:byId('trainingWeightPattern').value,repsPattern:byId('trainingRepsPattern').value,
+      rirPattern:byId('trainingRirPattern').value,comment:byId('trainingChangeComment').value
+    };
+  }
+
+  function validateClient(p){
+    if(!p.exerciseName)return 'Укажите фактическое упражнение.';
+    if(mode==='REPLACE'&&!p.planSetIds.length)return 'Выберите хотя бы один ещё не записанный плановый подход.';
+    if(mode==='ADD'&&(!Number.isInteger(p.setCount)||p.setCount<1||p.setCount>10))return 'Количество подходов должно быть от 1 до 10.';
+    if(!String(p.weightPattern).trim()||!String(p.repsPattern).trim()||!String(p.rirPattern).trim())return 'Заполните вес, повторы и RIR.';
+    return '';
+  }
+
+  function save(event){
+    event.preventDefault();
+    const p=payload();
+    const error=validateClient(p);if(error){setStatus(error,true);return;}
+    const button=byId('saveTrainingChange');button.disabled=true;setStatus('Сохранение…');
+    google.script.run.withSuccessHandler(result=>{
+      button.disabled=false;
+      const count=(result.recordIds||[]).length;
+      setStatus(`Сохранено: ${count} подходов. TRAINING_PLAN не изменён.`);
+      editState=result.state||editState;renderPlan();updatePreview();
+    }).withFailureHandler(err=>{button.disabled=false;setStatus(err&&err.message?err.message:String(err),true)}).submitTrainingExerciseChange(p);
+  }
+
+  function setStatus(text,isError){const el=byId('trainingChangeStatus');el.textContent=text||'';el.className='sync '+(isError?'error':'notice')}
+
+  byId('closeTrainingChange').addEventListener('click',closeSheet);
+  byId('trainingChangeSheet').addEventListener('click',event=>{if(event.target===byId('trainingChangeSheet'))closeSheet()});
+  byId('trainingModeReplace').addEventListener('click',()=>setMode('REPLACE'));
+  byId('trainingModeAdd').addEventListener('click',()=>setMode('ADD'));
+  byId('trainingChangeForm').addEventListener('submit',save);
+  ['trainingExerciseName','trainingSetCount','trainingWeightPattern','trainingRepsPattern','trainingRirPattern'].forEach(id=>byId(id).addEventListener('input',updatePreview));
+  document.addEventListener('DOMContentLoaded',boot);
+  if(document.readyState!=='loading')setTimeout(boot,0);
+})();
+</script>
