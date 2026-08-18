@@ -6,20 +6,23 @@ Purpose: deploy PR #2 to the existing R/Form Mobile **sandbox Apps Script projec
 
 `feature/training-exercise-overrides-v0.1`
 
-## Files to transfer
+## Minimal manual-transfer package
+
+The existing sandbox was bootstrapped with the bundled `dist/Code.gs`, so use the bundle-compatible path below.
 
 Add to the sandbox Apps Script project:
 
-1. `apps-script/TrainingExerciseService.gs`
-2. `apps-script/TrainingExerciseRegression.gs`
-3. `apps-script/TrainingExerciseControls.html`
+1. `apps-script/TrainingExerciseService.gs` as script file `TrainingExerciseService`.
+2. `apps-script/TrainingExerciseRegression.gs` as script file `TrainingExerciseRegression`.
+3. `apps-script/TrainingExerciseControls.html` as HTML file `TrainingExerciseControls`.
 
-Replace with the branch versions:
+Replace the existing bundled script file `Code` with:
 
-4. `apps-script/Code.gs`
-5. `apps-script/TrainingAdapterLegacyV21.gs`
+4. `apps-script/dist/Code.gs` from this branch.
 
-Do not modify Script Properties. The sandbox datastore guard in `Config.gs` remains mandatory.
+Do **not** add a second `TrainingAdapterLegacyV21.gs` when the sandbox uses bundled `Code.gs`; the updated adapter is already included in the bundle.
+
+Do not modify Script Properties. The sandbox datastore guard remains mandatory.
 
 ## Regression before web-app test
 
@@ -44,7 +47,7 @@ Confirm:
 
 ## UI smoke test
 
-Open the sandbox R/Form Mobile web app on a planned training day.
+Create/update a **sandbox-only test deployment**, then open the sandbox R/Form Mobile web app on a planned training day.
 
 Training card must contain **Изменить упражнения** below the legacy Training Mobile launch.
 
