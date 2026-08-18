@@ -1,7 +1,13 @@
 'use strict';
 
 function doGet() {
-  return HtmlService.createHtmlOutputFromFile('Index')
+  const base = HtmlService.createHtmlOutputFromFile('Index').getContent();
+  const trainingControls = HtmlService.createHtmlOutputFromFile('TrainingExerciseControls').getContent();
+  const html = base.indexOf('</body>') >= 0
+    ? base.replace('</body>', `${trainingControls}\n</body>`)
+    : `${base}\n${trainingControls}`;
+
+  return HtmlService.createHtmlOutput(html)
     .setTitle('R/Form Mobile — Sandbox');
 }
 
@@ -32,6 +38,7 @@ function buildAppBootstrap_(config) {
       today: true,
       nutrition: false,
       trainingLegacy: true,
+      trainingStructuredChanges: true,
       measurements: false,
       dayClose: false
     }
