@@ -49,6 +49,39 @@ function runTrainingExerciseRegression() {
     );
   });
 
+  check('inbox schema accepts structured training change events', () => {
+    const ss = getMasterSpreadsheet_();
+    const dictionaries = ss.getSheetByName('DICTIONARIES');
+    const inbox = ss.getSheetByName('INBOX_LOG');
+    assert_(Boolean(dictionaries), 'DICTIONARIES_MISSING');
+    assert_(Boolean(inbox), 'INBOX_LOG_MISSING');
+
+    const dictionaryHeaders = getHeaderMap_(dictionaries);
+    const inboxHeaders = getHeaderMap_(inbox);
+    const typeColumn = dictionaryHeaders.INBOX_EVENT_TYPE;
+    const eventColumn = inboxHeaders.Event_Type;
+    assert_(Boolean(typeColumn), 'INBOX_EVENT_TYPE_COLUMN_MISSING');
+    assert_(Boolean(eventColumn), 'INBOX_EVENT_TYPE_VALIDATION_COLUMN_MISSING');
+
+    const lastRow = Math.max(2, dictionaries.getLastRow());
+    const allowed = dictionaries.getRange(2, typeColumn, lastRow - 1, 1).getDisplayValues()
+      .flat().map(x => String(x || '').trim()).filter(Boolean);
+    assert_(allowed.includes('TRAINING_EXERCISE_REPLACEMENT'), 'TRAINING_EXERCISE_REPLACEMENT_NOT_REGISTERED');
+    assert_(allowed.includes('TRAINING_EXERCISE_ADD'), 'TRAINING_EXERCISE_ADD_NOT_REGISTERED');
+
+    const probeRow = Math.max(2, inbox.getLastRow() + 1);
+    const validation = inbox.getRange(probeRow, eventColumn).getDataValidation();
+    assert_(Boolean(validation), 'INBOX_EVENT_TYPE_VALIDATION_MISSING');
+    assert_(validation.getCriteriaType() === SpreadsheetApp.DataValidationCriteria.VALUE_IN_RANGE, 'INBOX_EVENT_TYPE_VALIDATION_TYPE');
+    const criteria = validation.getCriteriaValues();
+    const sourceRange = criteria && criteria[0];
+    assert_(sourceRange && typeof sourceRange.getA1Notation === 'function', 'INBOX_EVENT_TYPE_VALIDATION_RANGE');
+    assert_(sourceRange.getSheet().getName() === 'DICTIONARIES', 'INBOX_EVENT_TYPE_VALIDATION_SHEET');
+    const sourceValues = sourceRange.getDisplayValues().flat().map(x => String(x || '').trim()).filter(Boolean);
+    assert_(sourceValues.includes('TRAINING_EXERCISE_REPLACEMENT'), 'INBOX_VALIDATION_MISSES_REPLACEMENT');
+    assert_(sourceValues.includes('TRAINING_EXERCISE_ADD'), 'INBOX_VALIDATION_MISSES_ADD');
+  });
+
   check('record key formula uses actual exercise identity', () => {
     const row = trainingExerciseFactRowValues_(548, {
       setId: 'SET-20260817-A-08',
