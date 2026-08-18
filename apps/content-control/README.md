@@ -10,7 +10,7 @@
 - рейтинг событий из `DATA_EVENTS`;
 - диагностика обязательных полей и повторяющихся идентификаторов;
 - явный demo-режим на синтетических данных;
-- доступ к Google Sheets только со scope `spreadsheets.readonly`.
+- подписанное read-only подключение через Google Apps Script без Google Cloud.
 
 ## Локальный запуск
 
@@ -24,15 +24,15 @@ streamlit run app.py
 
 Без `secrets.toml` приложение запускается в режиме `DEMO / FIXTURE`.
 
-## Подключение Google Sheets
+## Подключение Google Sheets без Google Cloud
 
-1. Создать service account в Google Cloud и включить Google Sheets API.
-2. Открыть мастер-таблицу для email service account с ролью Viewer.
+1. Развернуть `../../automation/content_read_api_v0_1.gs` как отдельный Apps Script web app.
+2. Выполнить инструкцию `../../automation/CONTENT_READ_API.md`.
 3. Скопировать `.streamlit/secrets.example.toml` в `.streamlit/secrets.toml`.
-4. Заполнить `spreadsheet_id` и поля service account.
+4. Заполнить deployment URL и общий секрет.
 5. Перезапустить приложение и проверить экран «Диагностика».
 
-Файл `.streamlit/secrets.toml` исключён из Git. Не добавляйте в приложение Telegram-токен: публикация остаётся в существующем Apps Script.
+Файл `.streamlit/secrets.toml` исключён из Git. API-секрет нельзя передавать в чат или добавлять в репозиторий. Telegram-токен этому приложению не требуется.
 
 ## Streamlit Community Cloud
 
@@ -42,7 +42,7 @@ streamlit run app.py
 - Secrets: содержимое локального `.streamlit/secrets.toml`
 - Доступ к приложению: Private
 
-После первого запуска проверьте, что в верхней строке указан `GOOGLE SHEETS`, а не `DEMO / FIXTURE`, и что экран «Диагностика» не сообщает об отсутствующих обязательных полях.
+После первого запуска проверьте, что в верхней строке указан `APPS SCRIPT / READ ONLY`, а не `DEMO / FIXTURE`, и что экран «Диагностика» не сообщает об отсутствующих обязательных полях.
 
 ## Проверка
 

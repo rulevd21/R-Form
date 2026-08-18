@@ -112,8 +112,8 @@ def _secret_section(name: str) -> dict[str, Any]:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def _cached_bundle(app_config: dict[str, Any], credentials: dict[str, Any]):
-    return load_bundle(APP_ROOT, app_config, credentials)
+def _cached_bundle(app_config: dict[str, Any], api_secrets: dict[str, Any]):
+    return load_bundle(APP_ROOT, app_config, api_secrets)
 
 
 def _value(row: pd.Series, name: str, fallback: str = "—") -> str:
@@ -397,12 +397,12 @@ def render_diagnostics(bundle) -> None:
 
 
 app_config = _secret_section("app")
-credentials = _secret_section("google_service_account")
+api_secrets = _secret_section("content_api")
 
 try:
-    bundle = _cached_bundle(app_config, credentials)
+    bundle = _cached_bundle(app_config, api_secrets)
 except DataSourceError as exc:
-    render_header("GOOGLE SHEETS / ERROR")
+    render_header("APPS SCRIPT / ERROR")
     st.error(str(exc))
     st.caption("Приложение остановлено: при ошибке live-источника demo fallback намеренно не включается.")
     st.stop()

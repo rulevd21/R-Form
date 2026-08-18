@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import secrets
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import pandas as pd
+import requests
 
 from .lifecycle import PUBLICATION_PRIORITY, derive_lifecycle_state, is_action_required, readiness_issues
 
-
-READ_ONLY_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly"
 
 REQUIRED_QUEUE_COLUMNS = {
     "Content_ID",
@@ -62,15 +67,6 @@ def _drop_blank_rows(frame: pd.DataFrame) -> pd.DataFrame:
         return frame.copy()
     populated = frame.fillna("").astype(str).apply(lambda column: column.str.strip())
     return frame.loc[populated.ne("").any(axis=1)].reset_index(drop=True)
-
-
-def _frame_from_values(values: list[list[Any]]) -> pd.DataFrame:
-    if not values:
-        return pd.DataFrame()
-    headers = [str(value).strip() for value in values[0]]
-    width = len(headers)
-    rows = [list(row[:width]) + [""] * max(0, width - len(row)) for row in values[1:]]
-    return _drop_blank_rows(pd.DataFrame(rows, columns=headers))
 
 
 def prepare_queue(frame: pd.DataFrame) -> pd.DataFrame:
@@ -124,74 +120,115 @@ def _load_fixtures(app_root: Path, note: str = "") -> DataBundle:
     )
 
 
-def _load_google(
-    spreadsheet_id: str,
-    queue_sheet: str,
-    events_sheet: str,
-    service_account_info: dict[str, Any],
-) -> DataBundle:
+def build_api_request_auth(
+    secret: str,
+    *,
+    timestamp: int | None = None,
+    nonce: str | None = None,
+) -> dict[str, str | int]:
+    """Build the short-lived HMAC envelope expected by the Apps Script API."""
+
+    request_timestamp = int(time.time()) if timestamp is None else int(timestamp)
+    request_nonce = secrets.token_hex(16) if nonce is None else str(nonce)
+    if len(request_nonce) != 32 or any(char not in "0123456789abcdef" for char in request_nonce):
+        raise ValueError("nonce must contain exactly 32 lowercase hexadecimal characters")
+    message = f"{request_timestamp}.{request_nonce}".encode("utf-8")
+    digest = hmac.new(secret.encode("utf-8"), message, hashlib.sha256).digest()
+    signature = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+    return {
+        "timestamp": request_timestamp,
+        "nonce": request_nonce,
+        "signature": signature,
+    }
+
+
+def _validate_apps_script_url(endpoint_url: str) -> None:
+    parsed = urlparse(endpoint_url)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "script.google.com"
+        or not parsed.path.startswith("/macros/s/")
+        or not parsed.path.endswith("/exec")
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise DataSourceError("Apps Script URL должен быть HTTPS deployment URL вида /macros/s/.../exec")
+
+
+def _parse_generated_at(value: Any) -> datetime:
     try:
-        from google.oauth2.service_account import Credentials
-        from googleapiclient.discovery import build
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return datetime.now(timezone.utc)
 
-        credentials = Credentials.from_service_account_info(
-            service_account_info,
-            scopes=[READ_ONLY_SCOPE],
-        )
-        service = build("sheets", "v4", credentials=credentials, cache_discovery=False)
-        ranges = [f"'{queue_sheet}'!A:ZZ", f"'{events_sheet}'!A:ZZ"]
-        response = (
-            service.spreadsheets()
-            .values()
-            .batchGet(spreadsheetId=spreadsheet_id, ranges=ranges, majorDimension="ROWS")
-            .execute()
-        )
-        value_ranges = response.get("valueRanges", [])
-        if len(value_ranges) != 2:
-            raise DataSourceError("Google Sheets вернул неполный набор диапазонов")
 
-        queue = _frame_from_values(value_ranges[0].get("values", []))
-        events = _frame_from_values(value_ranges[1].get("values", []))
-        return DataBundle(
-            queue=prepare_queue(queue),
-            events=prepare_events(events),
-            source=f"GOOGLE SHEETS / {spreadsheet_id[-6:]}",
-            loaded_at=datetime.now(timezone.utc),
-            note="Подключение использует только scope spreadsheets.readonly.",
+def _load_apps_script(endpoint_url: str, secret: str, timeout_seconds: int) -> DataBundle:
+    _validate_apps_script_url(endpoint_url)
+    try:
+        response = requests.post(
+            endpoint_url,
+            json=build_api_request_auth(secret),
+            headers={"Accept": "application/json"},
+            timeout=timeout_seconds,
         )
-    except DataSourceError:
-        raise
-    except Exception as exc:  # pragma: no cover - exercised only against Google APIs
-        raise DataSourceError(f"Не удалось прочитать Google Sheets: {exc}") from exc
+        response.raise_for_status()
+        payload = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise DataSourceError(f"Не удалось прочитать Apps Script API: {exc}") from exc
+
+    if not isinstance(payload, dict) or payload.get("ok") is not True:
+        message = payload.get("message", "API отклонил запрос") if isinstance(payload, dict) else "Некорректный ответ API"
+        raise DataSourceError(f"Apps Script API: {message}")
+
+    queue_records = payload.get("queue")
+    event_records = payload.get("events")
+    if not isinstance(queue_records, list) or not isinstance(event_records, list):
+        raise DataSourceError("Apps Script API вернул некорректную структуру данных")
+
+    queue_columns = payload.get("queue_fields") or None
+    event_columns = payload.get("event_fields") or None
+    queue = pd.DataFrame.from_records(queue_records, columns=queue_columns)
+    events = pd.DataFrame.from_records(event_records, columns=event_columns)
+    return DataBundle(
+        queue=prepare_queue(queue),
+        events=prepare_events(events),
+        source="APPS SCRIPT / READ ONLY",
+        loaded_at=_parse_generated_at(payload.get("generated_at")),
+        note="Данные получены подписанным POST-запросом; запись в Google Sheets отсутствует.",
+    )
 
 
 def load_bundle(
     app_root: Path,
     app_config: dict[str, Any] | None = None,
-    service_account_info: dict[str, Any] | None = None,
+    api_secrets: dict[str, Any] | None = None,
 ) -> DataBundle:
     """Load live data when fully configured; otherwise use explicit demo data."""
 
     config = app_config or {}
-    credentials = service_account_info or {}
+    secret_config = api_secrets or {}
     mode = str(config.get("data_mode", "fixture")).strip().lower()
 
-    if mode != "google":
+    if mode == "fixture":
         return _load_fixtures(app_root)
+    if mode != "apps_script":
+        raise DataSourceError(f"Неизвестный data_mode: {mode}")
 
-    spreadsheet_id = str(config.get("spreadsheet_id", "")).strip()
-    if not spreadsheet_id or not credentials.get("client_email") or not credentials.get("private_key"):
+    endpoint_url = str(config.get("apps_script_url", "")).strip()
+    secret = str(secret_config.get("secret", "")).strip()
+    if not endpoint_url or not secret:
         return _load_fixtures(
             app_root,
-            note="Режим Google выбран, но секреты ещё не заполнены. Показаны синтетические данные.",
+            note="Режим Apps Script выбран, но URL или секрет ещё не заполнены. Показаны синтетические данные.",
         )
 
-    return _load_google(
-        spreadsheet_id=spreadsheet_id,
-        queue_sheet=str(config.get("queue_sheet", "CONTENT_QUEUE")),
-        events_sheet=str(config.get("events_sheet", "DATA_EVENTS")),
-        service_account_info=credentials,
-    )
+    try:
+        timeout_seconds = int(config.get("request_timeout_seconds", 20))
+    except (TypeError, ValueError):
+        timeout_seconds = 20
+    timeout_seconds = min(max(timeout_seconds, 5), 60)
+    return _load_apps_script(endpoint_url, secret, timeout_seconds)
 
 
 def diagnostics(bundle: DataBundle) -> dict[str, Any]:

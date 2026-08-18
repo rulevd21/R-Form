@@ -2,10 +2,17 @@ from __future__ import annotations
 
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import pandas as pd
 
-from rform_content.repository import diagnostics, load_bundle, prepare_queue
+from rform_content.repository import (
+    DataSourceError,
+    build_api_request_auth,
+    diagnostics,
+    load_bundle,
+    prepare_queue,
+)
 
 
 APP_ROOT = Path(__file__).resolve().parents[1]
@@ -21,15 +28,69 @@ class RepositoryTests(unittest.TestCase):
         self.assertGreater(report["queue_rows"], 0)
         self.assertGreater(report["event_rows"], 0)
 
-    def test_incomplete_google_config_falls_back_explicitly(self) -> None:
-        bundle = load_bundle(APP_ROOT, {"data_mode": "google"}, {})
+    def test_incomplete_apps_script_config_falls_back_explicitly(self) -> None:
+        bundle = load_bundle(APP_ROOT, {"data_mode": "apps_script"}, {})
         self.assertEqual(bundle.source, "DEMO / FIXTURE")
-        self.assertIn("секреты", bundle.note.lower())
+        self.assertIn("url или секрет", bundle.note.lower())
 
     def test_prepare_queue_handles_missing_optional_dates(self) -> None:
         prepared = prepare_queue(pd.DataFrame([{"Content_ID": "A-1"}]))
         self.assertEqual(prepared.iloc[0]["Lifecycle_State"], "DRAFT")
         self.assertTrue(pd.isna(prepared.iloc[0]["Publish_Sort"]))
+
+    def test_hmac_envelope_is_deterministic(self) -> None:
+        auth = build_api_request_auth(
+            "test-secret",
+            timestamp=1_700_000_000,
+            nonce="ab" * 16,
+        )
+        self.assertEqual(auth["timestamp"], 1_700_000_000)
+        self.assertEqual(auth["nonce"], "ab" * 16)
+        self.assertEqual(auth["signature"], "4KXLnQtfIXcvHUrlDOoR_FfZpx_DuKjxF8hFSTa8AfI")
+
+    def test_apps_script_live_bundle_uses_signed_post(self) -> None:
+        queue = pd.read_csv(APP_ROOT / "fixtures" / "content_queue.csv", keep_default_na=False)
+        events = pd.read_csv(APP_ROOT / "fixtures" / "data_events.csv", keep_default_na=False)
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "ok": True,
+            "generated_at": "2026-08-18T18:00:00.000Z",
+            "queue_fields": list(queue.columns),
+            "event_fields": list(events.columns),
+            "queue": queue.to_dict(orient="records"),
+            "events": events.to_dict(orient="records"),
+        }
+
+        with patch("rform_content.repository.requests.post", return_value=response) as post:
+            bundle = load_bundle(
+                APP_ROOT,
+                {
+                    "data_mode": "apps_script",
+                    "apps_script_url": "https://script.google.com/macros/s/demo-deployment/exec",
+                    "request_timeout_seconds": 12,
+                },
+                {"secret": "live-secret"},
+            )
+
+        self.assertEqual(bundle.source, "APPS SCRIPT / READ ONLY")
+        self.assertEqual(len(bundle.queue), len(queue))
+        self.assertEqual(len(bundle.events), len(events))
+        request = post.call_args.kwargs
+        self.assertEqual(request["timeout"], 12)
+        self.assertNotIn("live-secret", str(request))
+        self.assertEqual(set(request["json"]), {"timestamp", "nonce", "signature"})
+
+    def test_apps_script_endpoint_is_allowlisted(self) -> None:
+        with self.assertRaises(DataSourceError):
+            load_bundle(
+                APP_ROOT,
+                {
+                    "data_mode": "apps_script",
+                    "apps_script_url": "https://example.com/content",
+                },
+                {"secret": "live-secret"},
+            )
 
 
 if __name__ == "__main__":
