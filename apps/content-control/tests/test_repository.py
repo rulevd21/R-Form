@@ -38,6 +38,20 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(prepared.iloc[0]["Lifecycle_State"], "DRAFT")
         self.assertTrue(pd.isna(prepared.iloc[0]["Publish_Sort"]))
 
+    def test_prepare_queue_assigns_operational_priority(self) -> None:
+        prepared = prepare_queue(
+            pd.DataFrame(
+                [
+                    {"Content_ID": "published", "Publication_Status": "PUBLISHED"},
+                    {"Content_ID": "planned", "Publication_Status": "PLANNED"},
+                    {"Content_ID": "error", "Publication_Status": "ERROR"},
+                ]
+            )
+        )
+        priorities = prepared.set_index("Content_ID")["Lifecycle_Priority"]
+        self.assertLess(priorities["error"], priorities["planned"])
+        self.assertLess(priorities["planned"], priorities["published"])
+
     def test_hmac_envelope_is_deterministic(self) -> None:
         auth = build_api_request_auth(
             "test-secret",

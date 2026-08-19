@@ -1,8 +1,4 @@
-"""Lifecycle and publishing-readiness rules shared by UI and tests.
-
-The order mirrors the existing Channel Control Apps Script so the Streamlit
-view does not introduce a second interpretation of production status.
-"""
+"""Правила жизненного цикла и готовности публикаций для интерфейса и тестов."""
 
 from __future__ import annotations
 
@@ -11,7 +7,20 @@ from typing import Any
 
 
 ACTIVE_PUBLICATION_STATES = ("SCHEDULED", "APPROVED", "REVIEW", "PLANNED")
-PUBLICATION_PRIORITY = {state: index for index, state in enumerate(ACTIVE_PUBLICATION_STATES)}
+TERMINAL_PUBLICATION_STATES = ("PUBLISHED", "SUPERSEDED", "CANCELLED")
+OPERATIONAL_PRIORITY = {
+    "ERROR": 0,
+    "SCHEDULED": 1,
+    "APPROVED": 2,
+    "REVIEW": 3,
+    "PLANNED": 4,
+    "DRAFT": 5,
+    "IDEA": 6,
+    "HOLD": 7,
+    "PUBLISHED": 90,
+    "SUPERSEDED": 91,
+    "CANCELLED": 92,
+}
 
 
 def normalize(value: Any) -> str:
@@ -40,18 +49,20 @@ def derive_lifecycle_state(row: Mapping[str, Any]) -> str:
     publish_error = normalize(row.get("Publish_Error"))
     blocking_issue = normalize(row.get("Blocking_Issue"))
 
-    if publish_error or blocking_issue or publication in {"ERROR", "PUBLISHING"}:
-        return "ERROR"
+    # Финальные статусы важнее устаревших блокировок, которые могли остаться
+    # в исторической строке после успешной публикации или закрытия материала.
     if publication == "SUPERSEDED" or text_status == "SUPERSEDED" or _contains_any(
         pipeline, ("SUPERSEDED", "ЗАМЕНЕНО")
     ):
         return "SUPERSEDED"
     if publication == "CANCELLED" or _contains_any(pipeline, ("CANCELLED", "ОТМЕНЕНО")):
         return "CANCELLED"
-    if publication == "HOLD" or _contains_any(pipeline, ("HOLD", "ПАУЗА")):
-        return "HOLD"
     if publication == "PUBLISHED" or _contains_any(pipeline, ("PUBLISHED", "ОПУБЛИКОВАНО")):
         return "PUBLISHED"
+    if publish_error or blocking_issue or publication in {"ERROR", "PUBLISHING"}:
+        return "ERROR"
+    if publication == "HOLD" or _contains_any(pipeline, ("HOLD", "ПАУЗА")):
+        return "HOLD"
     if publication == "SCHEDULED" or _contains_any(pipeline, ("SCHEDULED", "ЗАПЛАНИРОВАНО")):
         return "SCHEDULED"
     if approval == "APPROVED":
@@ -74,6 +85,9 @@ def visual_required(row: Mapping[str, Any]) -> bool:
 
 def readiness_issues(row: Mapping[str, Any]) -> list[str]:
     """Return the reasons why a row cannot be scheduled safely."""
+
+    if derive_lifecycle_state(row) in TERMINAL_PUBLICATION_STATES:
+        return []
 
     issues: list[str] = []
     if normalize(row.get("Public_Data_Allowed")) not in {"YES", "ДА", "TRUE", "1"}:
@@ -99,6 +113,8 @@ def is_action_required(row: Mapping[str, Any]) -> bool:
         normalize(row.get("Blocking_Issue")) or normalize(row.get("Publish_Error"))
     )
 
+    if state in TERMINAL_PUBLICATION_STATES:
+        return False
     if state == "ERROR" or explicit_issue:
         return True
     if duplicate in {"YES", "ДА", "TRUE", "1", "DUPLICATE"}:

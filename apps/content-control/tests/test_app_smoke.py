@@ -27,6 +27,20 @@ class AppSmokeTests(unittest.TestCase):
                 app.radio[0].set_value(page).run()
                 self.assertEqual(list(app.exception), [])
 
+    def test_queue_defaults_to_russian_operational_view(self) -> None:
+        app = AppTest.from_file(str(APP_ROOT / "app.py"), default_timeout=30).run()
+        app.radio[0].set_value("Очередь").run()
+
+        self.assertFalse(app.toggle[0].value)
+        self.assertEqual(
+            list(app.dataframe[0].value.columns),
+            ["Код материала", "Статус", "Дата публикации", "Рубрика", "Тип материала"],
+        )
+        self.assertNotIn("Опубликовано", set(app.dataframe[0].value["Статус"]))
+        self.assertTrue(
+            any("закрытые материалы скрыты" in caption.value for caption in app.caption)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

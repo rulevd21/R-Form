@@ -6,7 +6,7 @@ from rform_content.lifecycle import derive_lifecycle_state, is_action_required, 
 
 
 class LifecycleTests(unittest.TestCase):
-    def test_state_precedence_matches_channel_control(self) -> None:
+    def test_state_precedence_for_operational_view(self) -> None:
         cases = [
             ({"Content_ID": "1", "Publication_Status": "ERROR"}, "ERROR"),
             ({"Content_ID": "1", "Publication_Status": "SUPERSEDED"}, "SUPERSEDED"),
@@ -62,6 +62,26 @@ class LifecycleTests(unittest.TestCase):
         self.assertTrue(
             is_action_required({"Content_ID": "1", "Preview_Review_Status": "RECHECK_REQUIRED"})
         )
+
+    def test_published_state_overrides_stale_blockers(self) -> None:
+        row = {
+            "Content_ID": "1",
+            "Publication_Status": "PUBLISHED",
+            "Blocking_Issue": "Старая блокировка",
+            "Publish_Error": "Старая ошибка",
+        }
+        self.assertEqual(derive_lifecycle_state(row), "PUBLISHED")
+        self.assertEqual(readiness_issues(row), [])
+        self.assertFalse(is_action_required(row))
+
+    def test_cancelled_state_is_not_action_required(self) -> None:
+        row = {
+            "Content_ID": "1",
+            "Publication_Status": "CANCELLED",
+            "Blocking_Issue": "Больше не актуально",
+        }
+        self.assertEqual(derive_lifecycle_state(row), "CANCELLED")
+        self.assertFalse(is_action_required(row))
 
 
 if __name__ == "__main__":

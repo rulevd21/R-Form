@@ -1,15 +1,20 @@
-"""R/Form Content Control: private read-only Streamlit operator console."""
+"""R/Form: приватная панель управления контентом в режиме чтения."""
 
 from __future__ import annotations
 
 from html import escape
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
 
-from rform_content.lifecycle import ACTIVE_PUBLICATION_STATES
+from rform_content.lifecycle import (
+    ACTIVE_PUBLICATION_STATES,
+    OPERATIONAL_PRIORITY,
+    TERMINAL_PUBLICATION_STATES,
+)
 from rform_content.repository import DataSourceError, diagnostics, load_bundle
 
 
@@ -27,10 +32,111 @@ STATE_LABELS = {
     "CANCELLED": "Отменено",
     "SUPERSEDED": "Заменено",
 }
+FIELD_LABELS = {
+    "Content_ID": "Код материала",
+    "Lifecycle_State": "Статус",
+    "Display_Date": "Дата публикации",
+    "Publish_At": "Дата публикации",
+    "Date": "Дата",
+    "Rubric": "Рубрика",
+    "Content_Type": "Тип материала",
+    "Approval_Status": "Согласование",
+    "Publication_Status": "Публикация",
+    "Readiness_Issues": "Что мешает публикации",
+    "Blocking_Issue": "Блокировка",
+    "Publish_Error": "Ошибка публикации",
+    "Preview_Review_Status": "Проверка предпросмотра",
+    "Public_Data_Allowed": "Публичные данные разрешены",
+    "Text_Status": "Статус текста",
+    "Visual_Status": "Статус визуала",
+    "Pipeline_Status": "Статус процесса",
+    "Distribution_Mode": "Формат публикации",
+    "Telegram_Text": "Текст для Telegram",
+    "Duplicate_Flag": "Признак дубликата",
+    "Event_ID": "Код события",
+    "Event_Type": "Тип события",
+    "Fact": "Факт",
+    "Content_Value_Score": "Ценность для контента",
+    "Editorial_Trigger": "Редакционный триггер",
+    "Manual_Gate": "Ручная проверка",
+    "Status": "Статус",
+    "Owner_Action": "Действие владельца",
+}
+COMMON_VALUE_LABELS = {
+    "YES": "Да",
+    "NO": "Нет",
+    "TRUE": "Да",
+    "FALSE": "Нет",
+    "APPROVED": "Утверждено",
+    "PENDING": "Ожидает решения",
+    "NOT_READY": "Не готово",
+    "READY": "Готово",
+    "DRAFT": "Черновик",
+    "REVIEWED": "Проверено",
+    "NOT_REVIEWED": "Не проверено",
+    "RECHECK_REQUIRED": "Требуется повторная проверка",
+    "PUBLISHED": "Опубликовано",
+    "PLANNED": "В плане",
+    "SCHEDULED": "Запланировано",
+    "HOLD": "Пауза",
+    "CANCELLED": "Отменено",
+    "SUPERSEDED": "Заменено",
+    "ERROR": "Ошибка",
+    "CANDIDATE": "Кандидат",
+}
+FIELD_VALUE_LABELS = {
+    "Rubric": {
+        "TRAINING_LOG": "Дневник тренировок",
+        "NUTRITION_CASE": "Разбор питания",
+        "METHODOLOGY": "Методология",
+        "WEEKLY CONTROL": "Недельный контроль",
+        "SERIES": "Серия",
+        "AI CHECK": "Проверка ИИ",
+    },
+    "Content_Type": {
+        "PROOF": "Подтверждение",
+        "PRODUCT_BRIDGE": "Связь с продуктом",
+        "HUB": "Навигация",
+        "HELP": "Помощь",
+        "CASE": "Кейс",
+        "CONTROL": "Контроль",
+        "CHECK": "Проверка",
+        "DECISION": "Решение",
+    },
+    "Distribution_Mode": {
+        "ORGANIC": "Органическая публикация",
+        "TEXT_ONLY": "Только текст",
+        "TEXT": "Только текст",
+        "MEDIA_CAPTION": "Визуал с подписью",
+    },
+    "Target_Segment": {
+        "BUSY_MAN": "Занятый мужчина",
+    },
+    "Entity": {
+        "TRAINING": "Тренировки",
+        "NUTRITION": "Питание",
+        "CONTROL": "Контроль",
+    },
+    "Event_Type": {
+        "PLAN_FACT_GAP": "Отклонение плана от факта",
+        "REPEATED_DEVIATION": "Повторяющееся отклонение",
+        "STABLE_SIGNAL": "Стабильный сигнал",
+    },
+    "Editorial_Trigger": {
+        "DECISION_REQUIRED": "Требуется решение",
+        "REAL_LIFE": "Реальная ситуация",
+        "CONTROL": "Контроль",
+    },
+}
+SOURCE_LABELS = {
+    "APPS SCRIPT / READ ONLY": "Apps Script / только чтение",
+    "DEMO / FIXTURE": "Демо / тестовые данные",
+    "APPS SCRIPT / ERROR": "Apps Script / ошибка",
+}
 
 
 st.set_page_config(
-    page_title="R/Form · Content Control",
+    page_title="R/Form · Управление контентом",
     page_icon="R/F",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -128,6 +234,83 @@ def _columns(frame: pd.DataFrame, names: list[str]) -> list[str]:
     return [name for name in names if name in frame.columns]
 
 
+def _display_value(field: str, value: Any, fallback: str = "—") -> str:
+    if value is None or (not isinstance(value, str) and pd.isna(value)):
+        return fallback
+    text = str(value).strip()
+    if not text:
+        return fallback
+    normalized = " ".join(text.upper().split())
+    if field == "Lifecycle_State":
+        return STATE_LABELS.get(normalized, text)
+    return FIELD_VALUE_LABELS.get(field, {}).get(
+        normalized,
+        COMMON_VALUE_LABELS.get(normalized, text),
+    )
+
+
+def _display_date(value: Any, fallback: str = "—") -> str:
+    if value is None or (not isinstance(value, str) and pd.isna(value)):
+        return fallback
+    text = str(value).strip()
+    if not text:
+        return fallback
+    is_iso_order = len(text) >= 10 and text[4:5] == "-" and text[7:8] == "-"
+    parsed = pd.to_datetime(text, errors="coerce", dayfirst=not is_iso_order)
+    if pd.isna(parsed):
+        return text
+    if parsed.hour or parsed.minute:
+        return parsed.strftime("%d.%m.%Y %H:%M")
+    return parsed.strftime("%d.%m.%Y")
+
+
+def _display_table(frame: pd.DataFrame, fields: list[str]) -> pd.DataFrame:
+    selected = _columns(frame, fields)
+    view = frame[selected].copy()
+    for field in selected:
+        if field in {"Date", "Publish_At", "Display_Date"}:
+            view[field] = view[field].map(_display_date)
+        elif field in FIELD_VALUE_LABELS or field in {
+            "Lifecycle_State",
+            "Approval_Status",
+            "Publication_Status",
+            "Preview_Review_Status",
+            "Public_Data_Allowed",
+            "Text_Status",
+            "Visual_Status",
+            "Duplicate_Flag",
+            "Manual_Gate",
+            "Status",
+        }:
+            view[field] = view[field].map(lambda value, name=field: _display_value(name, value))
+    return view.rename(columns={field: FIELD_LABELS.get(field, field) for field in selected})
+
+
+def _planned_dates(frame: pd.DataFrame) -> pd.Series:
+    publish = frame.get("Publish_At", pd.Series("", index=frame.index)).fillna("").astype(str).str.strip()
+    dates = frame.get("Date", pd.Series("", index=frame.index)).fillna("").astype(str).str.strip()
+    return publish.where(publish.ne(""), dates)
+
+
+def _sort_queue(frame: pd.DataFrame) -> pd.DataFrame:
+    if frame.empty:
+        return frame.copy()
+    result = frame.copy()
+    if "Lifecycle_Priority" not in result:
+        result["Lifecycle_Priority"] = result["Lifecycle_State"].map(OPERATIONAL_PRIORITY).fillna(89)
+    if "Publish_Sort" not in result:
+        result["Publish_Sort"] = pd.to_datetime(_planned_dates(result), errors="coerce", utc=True)
+    return result.sort_values(
+        ["Lifecycle_Priority", "Publish_Sort"],
+        ascending=[True, True],
+        na_position="last",
+    )
+
+
+def _source_label(source: str) -> str:
+    return SOURCE_LABELS.get(source, source)
+
+
 def _candidate_queue(queue: pd.DataFrame) -> pd.DataFrame:
     if queue.empty or "Lifecycle_State" not in queue:
         return queue.iloc[0:0]
@@ -142,7 +325,7 @@ def _candidate_queue(queue: pd.DataFrame) -> pd.DataFrame:
 def _state_badge(state: str) -> str:
     css = "rf-badge rf-badge-error" if state == "ERROR" else "rf-badge"
     label = STATE_LABELS.get(state, state)
-    return f'<span class="{css}">{escape(state)} · {escape(label)}</span>'
+    return f'<span class="{css}">{escape(label)}</span>'
 
 
 def _link(label: str, url: str) -> None:
@@ -151,22 +334,23 @@ def _link(label: str, url: str) -> None:
 
 
 def render_header(source: str) -> None:
-    st.markdown('<div class="rf-kicker">R/Form · Content Operations</div>', unsafe_allow_html=True)
-    st.markdown('<div class="rf-title">Content Control</div>', unsafe_allow_html=True)
+    st.markdown('<div class="rf-kicker">R/Form · Контент-операции</div>', unsafe_allow_html=True)
+    st.markdown('<div class="rf-title">Управление контентом</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="rf-subtitle">Единая точка контроля подготовки и публикации контента. '
-        'На первом этапе приложение только читает данные и не меняет источник истины.</div>',
+        'Приложение читает данные и не изменяет мастер-таблицу.</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
-        f'<div style="margin-top:.8rem"><span class="rf-badge">READ ONLY · v0.1</span> '
-        f'<span class="rf-source">SOURCE: {escape(source)}</span></div><div class="rf-rule"></div>',
+        f'<div style="margin-top:.8rem"><span class="rf-badge">ТОЛЬКО ЧТЕНИЕ · v0.2</span> '
+        f'<span class="rf-source">ИСТОЧНИК: {escape(_source_label(source))}</span></div>'
+        '<div class="rf-rule"></div>',
         unsafe_allow_html=True,
     )
 
 
 def render_control(queue: pd.DataFrame, events: pd.DataFrame) -> None:
-    action_required = queue[queue.get("Is_Action_Required", False) == True]  # noqa: E712
+    action_required = _sort_queue(queue[queue.get("Is_Action_Required", False) == True])  # noqa: E712
     state_counts = queue.get("Lifecycle_State", pd.Series(dtype="object")).value_counts()
     candidates = _candidate_queue(queue)
 
@@ -178,7 +362,7 @@ def render_control(queue: pd.DataFrame, events: pd.DataFrame) -> None:
 
     st.subheader("Следующая публикация")
     if candidates.empty:
-        st.info("В активной очереди нет публикаций со статусом SCHEDULED, APPROVED, REVIEW или PLANNED.")
+        st.info("В активной очереди нет запланированных или готовящихся публикаций.")
     else:
         row = candidates.iloc[0]
         left, right = st.columns([1.35, 1])
@@ -187,16 +371,18 @@ def render_control(queue: pd.DataFrame, events: pd.DataFrame) -> None:
                 '<div class="rf-card rf-card-decision">'
                 f'<div class="rf-label">Контент</div><div class="rf-value">{escape(_value(row, "Content_ID"))}</div>'
                 f'<div style="margin-top:.55rem">{_state_badge(_value(row, "Lifecycle_State"))}</div>'
-                f'<div class="rf-detail">{escape(_value(row, "Rubric"))} · {escape(_value(row, "Content_Type"))}</div>'
+                f'<div class="rf-detail">{escape(_display_value("Rubric", row.get("Rubric")))} · '
+                f'{escape(_display_value("Content_Type", row.get("Content_Type")))}</div>'
                 '</div>',
                 unsafe_allow_html=True,
             )
         with right:
             st.markdown(
                 '<div class="rf-card">'
-                f'<div class="rf-label">Публикация</div><div class="rf-value rf-mono">{escape(_value(row, "Publish_At", _value(row, "Date")))}</div>'
-                f'<div class="rf-detail">{escape(_value(row, "Distribution_Mode"))}</div>'
-                f'<div class="rf-detail">Сегмент: {escape(_value(row, "Target_Segment"))}</div>'
+                f'<div class="rf-label">Публикация</div><div class="rf-value rf-mono">'
+                f'{escape(_display_date(_value(row, "Publish_At", _value(row, "Date"))))}</div>'
+                f'<div class="rf-detail">{escape(_display_value("Distribution_Mode", row.get("Distribution_Mode")))}</div>'
+                f'<div class="rf-detail">Сегмент: {escape(_display_value("Target_Segment", row.get("Target_Segment")))}</div>'
                 '</div>',
                 unsafe_allow_html=True,
             )
@@ -208,8 +394,12 @@ def render_control(queue: pd.DataFrame, events: pd.DataFrame) -> None:
         if view.empty:
             st.caption("Нет активных материалов.")
         else:
+            view = view.assign(Display_Date=_planned_dates(view))
             st.dataframe(
-                view[_columns(view, ["Content_ID", "Lifecycle_State", "Publish_At", "Date", "Rubric"])],
+                _display_table(
+                    view,
+                    ["Content_ID", "Lifecycle_State", "Display_Date", "Rubric"],
+                ),
                 hide_index=True,
                 width="stretch",
             )
@@ -219,20 +409,32 @@ def render_control(queue: pd.DataFrame, events: pd.DataFrame) -> None:
             st.markdown('<div class="rf-card"><span class="rf-ok">Критических блокировок нет.</span></div>', unsafe_allow_html=True)
         else:
             st.dataframe(
-                action_required[_columns(action_required, ["Content_ID", "Lifecycle_State", "Blocking_Issue", "Publish_Error", "Preview_Review_Status"])].head(8),
+                _display_table(
+                    action_required.head(8),
+                    [
+                        "Content_ID",
+                        "Lifecycle_State",
+                        "Blocking_Issue",
+                        "Publish_Error",
+                        "Preview_Review_Status",
+                    ],
+                ),
                 hide_index=True,
                 width="stretch",
             )
 
     st.subheader("Сильные события для контента")
     if events.empty:
-        st.caption("В DATA_EVENTS пока нет событий.")
+        st.caption("В журнале данных пока нет событий.")
     else:
         ranked = events.sort_values(
             ["Content_Value_Score_Num", "Event_Date_Sort"], ascending=[False, False], na_position="last"
         ).head(6)
         st.dataframe(
-            ranked[_columns(ranked, ["Event_ID", "Date", "Event_Type", "Fact", "Content_Value_Score", "Owner_Action"])],
+            _display_table(
+                ranked,
+                ["Event_ID", "Date", "Event_Type", "Fact", "Content_Value_Score", "Owner_Action"],
+            ),
             hide_index=True,
             width="stretch",
         )
@@ -241,17 +443,45 @@ def render_control(queue: pd.DataFrame, events: pd.DataFrame) -> None:
 def render_queue(queue: pd.DataFrame) -> None:
     st.subheader("Очередь контента")
     if queue.empty:
-        st.info("CONTENT_QUEUE не содержит строк.")
+        st.info("Очередь контента пока пуста.")
         return
 
-    filter_a, filter_b, filter_c = st.columns([1, 1, 1.4])
-    states = sorted(queue["Lifecycle_State"].dropna().astype(str).unique().tolist())
-    selected_states = filter_a.multiselect("Статус", states, default=states)
-    rubrics = sorted(queue.get("Rubric", pd.Series(dtype="object")).dropna().astype(str).unique().tolist())
-    selected_rubrics = filter_b.multiselect("Рубрика", rubrics)
-    query = filter_c.text_input("Поиск", placeholder="Content ID или текст")
+    show_archive = st.toggle(
+        "Показать опубликованные и закрытые материалы",
+        value=False,
+        help="По умолчанию архив скрыт, чтобы в очереди оставалась только текущая работа.",
+    )
+    if show_archive:
+        queue_scope = queue.copy()
+    else:
+        queue_scope = queue[~queue["Lifecycle_State"].isin(TERMINAL_PUBLICATION_STATES)].copy()
 
-    filtered = queue[queue["Lifecycle_State"].isin(selected_states)].copy()
+    filter_a, filter_b, filter_c = st.columns([1, 1, 1.4])
+    states = sorted(
+        queue_scope["Lifecycle_State"].dropna().astype(str).unique().tolist(),
+        key=lambda state: OPERATIONAL_PRIORITY.get(state, 89),
+    )
+    selected_states = filter_a.multiselect(
+        "Статус",
+        states,
+        default=states,
+        format_func=lambda state: STATE_LABELS.get(state, state),
+        placeholder="Выберите статусы",
+        key=f"queue_states_{show_archive}",
+    )
+    rubrics = sorted(
+        queue_scope.get("Rubric", pd.Series(dtype="object")).dropna().astype(str).unique().tolist()
+    )
+    selected_rubrics = filter_b.multiselect(
+        "Рубрика",
+        rubrics,
+        format_func=lambda rubric: _display_value("Rubric", rubric),
+        placeholder="Выберите рубрики",
+        key=f"queue_rubrics_{show_archive}",
+    )
+    query = filter_c.text_input("Поиск", placeholder="Код материала или текст")
+
+    filtered = queue_scope[queue_scope["Lifecycle_State"].isin(selected_states)].copy()
     if selected_rubrics and "Rubric" in filtered:
         filtered = filtered[filtered["Rubric"].astype(str).isin(selected_rubrics)]
     if query:
@@ -259,9 +489,17 @@ def render_queue(queue: pd.DataFrame) -> None:
         mask = searchable.apply(lambda column: column.str.contains(query, case=False, regex=False)).any(axis=1)
         filtered = filtered[mask]
 
-    st.caption(f"Показано: {len(filtered)} из {len(queue)}")
+    filtered = _sort_queue(filtered)
+    st.caption(
+        f"Показано: {len(filtered)} из {len(queue)}. "
+        + ("Архив включён." if show_archive else "Опубликованные и закрытые материалы скрыты.")
+    )
+    table = filtered.assign(Display_Date=_planned_dates(filtered))
     st.dataframe(
-        filtered[_columns(filtered, ["Content_ID", "Lifecycle_State", "Publish_At", "Date", "Rubric", "Content_Type", "Approval_Status", "Publication_Status", "Readiness_Issues"])],
+        _display_table(
+            table,
+            ["Content_ID", "Lifecycle_State", "Display_Date", "Rubric", "Content_Type"],
+        ),
         hide_index=True,
         width="stretch",
     )
@@ -270,7 +508,19 @@ def render_queue(queue: pd.DataFrame) -> None:
     options = [value for value in ids.tolist() if value]
     if not options:
         return
-    selected_id = st.selectbox("Открыть карточку", options)
+    option_labels = {
+        _value(row, "Content_ID", ""): (
+            f'{_value(row, "Content_ID", "")} · '
+            f'{_display_value("Lifecycle_State", row.get("Lifecycle_State"))} · '
+            f'{_display_date(_value(row, "Publish_At", _value(row, "Date")))}'
+        )
+        for _, row in filtered.iterrows()
+    }
+    selected_id = st.selectbox(
+        "Открыть карточку материала",
+        options,
+        format_func=lambda content_id: option_labels.get(content_id, content_id),
+    )
     row = filtered[filtered["Content_ID"].astype(str) == selected_id].iloc[0]
     st.markdown(f"### {_value(row, 'Content_ID')}  ")
     st.markdown(_state_badge(_value(row, "Lifecycle_State")), unsafe_allow_html=True)
@@ -281,13 +531,16 @@ def render_queue(queue: pd.DataFrame) -> None:
         st.write(_value(row, "Decision"))
         st.markdown("#### Направление")
         st.write(_value(row, "Editorial_Direction"))
-        st.markdown("#### Telegram preview")
+        st.markdown("#### Предпросмотр публикации в Telegram")
         st.markdown('<div class="rf-card">', unsafe_allow_html=True)
         st.write(_value(row, "Telegram_Text"))
         st.markdown("</div>", unsafe_allow_html=True)
     with tab_readiness:
         issues = _value(row, "Readiness_Issues", "")
-        if issues:
+        state = _value(row, "Lifecycle_State", "")
+        if state in TERMINAL_PUBLICATION_STATES:
+            st.info("Материал закрыт; повторная проверка готовности не требуется.")
+        elif issues:
             st.warning(issues)
         else:
             st.success("Все обязательные условия для планирования выполнены.")
@@ -296,9 +549,10 @@ def render_queue(queue: pd.DataFrame) -> None:
             "Publication_Status", "Preview_Review_Status", "Duplicate_Flag",
         ]
         st.dataframe(
-            pd.DataFrame(
-                {"Поле": readiness_fields, "Значение": [_value(row, name) for name in readiness_fields]}
-            ),
+            pd.DataFrame({
+                "Показатель": [FIELD_LABELS.get(name, name) for name in readiness_fields],
+                "Значение": [_display_value(name, row.get(name)) for name in readiness_fields],
+            }),
             hide_index=True,
             width="stretch",
         )
@@ -317,16 +571,29 @@ def render_queue(queue: pd.DataFrame) -> None:
 
 
 def render_events(events: pd.DataFrame) -> None:
-    st.subheader("События данных")
+    st.subheader("События для контента")
     if events.empty:
-        st.info("DATA_EVENTS не содержит строк.")
+        st.info("Журнал событий пока пуст.")
         return
 
     ranked = events.sort_values(
         ["Content_Value_Score_Num", "Event_Date_Sort"], ascending=[False, False], na_position="last"
     )
     st.dataframe(
-        ranked[_columns(ranked, ["Event_ID", "Date", "Event_Type", "Fact", "Content_Value_Score", "Editorial_Trigger", "Manual_Gate", "Status", "Owner_Action"])],
+        _display_table(
+            ranked,
+            [
+                "Event_ID",
+                "Date",
+                "Event_Type",
+                "Fact",
+                "Content_Value_Score",
+                "Editorial_Trigger",
+                "Manual_Gate",
+                "Status",
+                "Owner_Action",
+            ],
+        ),
         hide_index=True,
         width="stretch",
     )
@@ -346,9 +613,9 @@ def render_events(events: pd.DataFrame) -> None:
         st.write(_value(row, "Owner_Action"))
         st.markdown("</div>", unsafe_allow_html=True)
     with right:
-        st.metric("Content Value Score", _value(row, "Content_Value_Score"))
-        st.caption(f"Триггер: {_value(row, 'Editorial_Trigger')}")
-        st.caption(f"Ручной контроль: {_value(row, 'Manual_Gate')}")
+        st.metric("Ценность для контента", _value(row, "Content_Value_Score"))
+        st.caption(f"Триггер: {_display_value('Editorial_Trigger', row.get('Editorial_Trigger'))}")
+        st.caption(f"Ручная проверка: {_display_value('Manual_Gate', row.get('Manual_Gate'))}")
     st.markdown("#### Рекомендуемые углы")
     for index in range(1, 4):
         angle = _value(row, f"Recommended_Angle_{index}", "")
@@ -361,35 +628,38 @@ def render_diagnostics(bundle) -> None:
     st.subheader("Диагностика")
     st.markdown(
         '<div class="rf-card"><div class="rf-label">Режим доступа</div>'
-        '<div class="rf-value">READ ONLY</div>'
-        '<div class="rf-detail">В коде нет операций записи в Google Sheets и нет Telegram-токена.</div></div>',
+        '<div class="rf-value">ТОЛЬКО ЧТЕНИЕ</div>'
+        '<div class="rf-detail">В коде нет операций записи в Google Таблицы и нет токена Telegram.</div></div>',
         unsafe_allow_html=True,
     )
 
     col_a, col_b = st.columns(2)
-    col_a.metric("Строк CONTENT_QUEUE", report["queue_rows"])
-    col_b.metric("Строк DATA_EVENTS", report["event_rows"])
-    st.caption(f"Источник: {bundle.source}")
-    st.caption(f"Загружено UTC: {bundle.loaded_at.isoformat(timespec='seconds')}")
+    col_a.metric("Материалов в очереди", report["queue_rows"])
+    col_b.metric("Событий в журнале", report["event_rows"])
+    st.caption(f"Источник: {_source_label(bundle.source)}")
+    loaded_at = bundle.loaded_at.astimezone(ZoneInfo("Europe/Riga"))
+    st.caption(f"Время загрузки: {loaded_at.strftime('%d.%m.%Y %H:%M:%S')} (Рига)")
 
     st.markdown("#### Схема данных")
     if report["queue_missing"]:
-        st.warning("CONTENT_QUEUE: отсутствуют поля: " + ", ".join(report["queue_missing"]))
+        missing = [FIELD_LABELS.get(field, field) for field in report["queue_missing"]]
+        st.warning("Очередь контента: отсутствуют поля: " + ", ".join(missing))
     else:
-        st.success("CONTENT_QUEUE: обязательные поля присутствуют.")
+        st.success("Очередь контента: обязательные поля присутствуют.")
     if report["event_missing"]:
-        st.warning("DATA_EVENTS: отсутствуют поля: " + ", ".join(report["event_missing"]))
+        missing = [FIELD_LABELS.get(field, field) for field in report["event_missing"]]
+        st.warning("Журнал событий: отсутствуют поля: " + ", ".join(missing))
     else:
-        st.success("DATA_EVENTS: обязательные поля присутствуют.")
+        st.success("Журнал событий: обязательные поля присутствуют.")
 
     st.markdown("#### Уникальность")
     if report["queue_duplicates"] or report["event_duplicates"]:
         st.warning(
-            f"Повторяющиеся идентификаторы: CONTENT_QUEUE — {report['queue_duplicates']}; "
-            f"DATA_EVENTS — {report['event_duplicates']}."
+            f"Повторяющиеся идентификаторы: очередь контента — {report['queue_duplicates']}; "
+            f"журнал событий — {report['event_duplicates']}."
         )
     else:
-        st.success("Повторяющиеся Content_ID и Event_ID не найдены.")
+        st.success("Повторяющиеся коды материалов и событий не найдены.")
 
     if st.button("Обновить данные"):
         st.cache_data.clear()
@@ -404,7 +674,7 @@ try:
 except DataSourceError as exc:
     render_header("APPS SCRIPT / ERROR")
     st.error(str(exc))
-    st.caption("Приложение остановлено: при ошибке live-источника demo fallback намеренно не включается.")
+    st.caption("Приложение остановлено: при ошибке рабочего источника тестовые данные не подставляются.")
     st.stop()
 
 render_header(bundle.source)
@@ -417,8 +687,8 @@ with st.sidebar:
     st.markdown('<div class="rf-kicker">Навигация</div>', unsafe_allow_html=True)
     page = st.radio("Раздел", ["Контроль", "Очередь", "События", "Диагностика"], label_visibility="collapsed")
     st.markdown("---")
-    st.caption("R/Form Content Control v0.1")
-    st.caption("Источник истины остаётся в Google Sheets.")
+    st.caption("R/Form · Управление контентом v0.2")
+    st.caption("Источник истины остаётся в Google Таблицах.")
 
 if page == "Контроль":
     render_control(bundle.queue, bundle.events)

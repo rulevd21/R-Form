@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 import pandas as pd
 import requests
 
-from .lifecycle import PUBLICATION_PRIORITY, derive_lifecycle_state, is_action_required, readiness_issues
+from .lifecycle import OPERATIONAL_PRIORITY, derive_lifecycle_state, is_action_required, readiness_issues
 
 
 REQUIRED_QUEUE_COLUMNS = {
@@ -74,7 +74,13 @@ def prepare_queue(frame: pd.DataFrame) -> pd.DataFrame:
 
     queue = _drop_blank_rows(frame)
     if queue.empty:
-        for column in ("Lifecycle_State", "Readiness_Issues", "Is_Action_Required", "Publish_Sort"):
+        for column in (
+            "Lifecycle_State",
+            "Readiness_Issues",
+            "Is_Action_Required",
+            "Publish_Sort",
+            "Lifecycle_Priority",
+        ):
             queue[column] = pd.Series(dtype="object")
         return queue
 
@@ -89,7 +95,7 @@ def prepare_queue(frame: pd.DataFrame) -> pd.DataFrame:
     publish_at = pd.to_datetime(publish_source, errors="coerce", utc=True)
     date_only = pd.to_datetime(date_source, errors="coerce", utc=True)
     queue["Publish_Sort"] = publish_at.fillna(date_only)
-    queue["Lifecycle_Priority"] = queue["Lifecycle_State"].map(PUBLICATION_PRIORITY).fillna(99)
+    queue["Lifecycle_Priority"] = queue["Lifecycle_State"].map(OPERATIONAL_PRIORITY).fillna(89)
     return queue
 
 
@@ -195,7 +201,7 @@ def _load_apps_script(endpoint_url: str, secret: str, timeout_seconds: int) -> D
         events=prepare_events(events),
         source="APPS SCRIPT / READ ONLY",
         loaded_at=_parse_generated_at(payload.get("generated_at")),
-        note="Данные получены подписанным POST-запросом; запись в Google Sheets отсутствует.",
+        note="Данные получены подписанным запросом; изменения в Google Таблицы не вносятся.",
     )
 
 
