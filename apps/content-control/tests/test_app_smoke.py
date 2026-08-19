@@ -18,16 +18,26 @@ class AppSmokeTests(unittest.TestCase):
         self.assertEqual(len(app.metric), 4)
         self.assertEqual(
             list(app.radio[0].options),
-            ["Контроль", "Очередь", "События", "Диагностика"],
+            ["Контроль", "Предложения", "Очередь", "События", "Диагностика"],
         )
         self.assertTrue(any("синтетические данные" in warning.value for warning in app.warning))
 
     def test_all_navigation_pages_render(self) -> None:
         app = AppTest.from_file(str(APP_ROOT / "app.py"), default_timeout=30).run()
-        for page in ("Очередь", "События", "Диагностика"):
+        for page in ("Предложения", "Очередь", "События", "Диагностика"):
             with self.subTest(page=page):
                 app.radio[0].set_value(page).run()
                 self.assertEqual(list(app.exception), [])
+
+    def test_suggestions_page_is_simple_and_prompt_is_available(self) -> None:
+        app = AppTest.from_file(str(APP_ROOT / "app.py"), default_timeout=30).run()
+        app.radio[0].set_value("Предложения").run()
+        labels = [button.label for button in app.button]
+        self.assertIn("Сохранить изменения", labels)
+        self.assertIn("Промпт для инфографики", labels)
+        self.assertIn("В публикацию", labels)
+        self.assertIn("В Weekly", labels)
+        self.assertIn("Пропустить", labels)
 
     def test_queue_defaults_to_russian_operational_view(self) -> None:
         app = AppTest.from_file(str(APP_ROOT / "app.py"), default_timeout=30).run()
