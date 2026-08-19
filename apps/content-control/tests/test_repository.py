@@ -10,6 +10,9 @@ from rform_content.repository import (
     DataSourceError,
     build_api_request_auth,
     build_content_action_request,
+    build_event_decision_request,
+    build_event_media_request,
+    build_event_review_request,
     diagnostics,
     execute_content_action,
     load_bundle,
@@ -83,6 +86,51 @@ class RepositoryTests(unittest.TestCase):
             request["signature"],
             "lHmEkuLRlVKmeRrJEKG43Mk7AKZvdAMwls5gwVXsruU",
         )
+
+    def test_event_review_envelope_is_deterministic(self) -> None:
+        request = build_event_review_request(
+            "test-secret",
+            "EVT-001",
+            "Факт",
+            "Главная мысль",
+            "Комментарий",
+            timestamp=1_700_000_000,
+            nonce="ab" * 16,
+            action_id="cd" * 16,
+        )
+        self.assertEqual(request["operation"], "event_review")
+        self.assertEqual(request["signature"], "CqMOzdF541vD7s9CGX7Pxk6-SQr3f9pjDrhpUWVKx-o")
+
+    def test_event_decision_envelope_is_deterministic(self) -> None:
+        request = build_event_decision_request(
+            "test-secret",
+            "EVT-001",
+            "TO_PUBLICATION",
+            "Факт",
+            "Главная мысль",
+            "Комментарий",
+            timestamp=1_700_000_000,
+            nonce="ab" * 16,
+            action_id="cd" * 16,
+        )
+        self.assertEqual(request["operation"], "event_decision")
+        self.assertEqual(request["decision"], "TO_PUBLICATION")
+        self.assertEqual(request["signature"], "a7SqcLtgyLkXJTv4ih6T0YlwldGK8W3Z1QJ4OelasLA")
+
+    def test_event_media_envelope_is_deterministic(self) -> None:
+        request = build_event_media_request(
+            "test-secret",
+            "EVT-001",
+            "photo.jpg",
+            "image/jpeg",
+            b"abc",
+            timestamp=1_700_000_000,
+            nonce="ab" * 16,
+            action_id="cd" * 16,
+        )
+        self.assertEqual(request["operation"], "event_media")
+        self.assertEqual(request["size"], 3)
+        self.assertEqual(request["signature"], "nsdHZ1FRQGgU1m19nvwDGWqbXSQX55oW03zKBnG4Sio")
 
     def test_content_action_rejects_unknown_action(self) -> None:
         with self.assertRaises(ValueError):
