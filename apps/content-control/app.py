@@ -1,4 +1,4 @@
-"""R/Form: приватная панель управления контентом в режиме чтения."""
+"""R/Form · приватная панель управления контентом."""
 
 from __future__ import annotations
 
@@ -21,9 +21,11 @@ from rform_content.repository import (
     execute_content_action,
     load_bundle,
 )
+from rform_content.suggestions import render_suggestions
 
 
 APP_ROOT = Path(__file__).resolve().parent
+
 STATE_LABELS = {
     "ERROR": "Требует действия",
     "SCHEDULED": "Запланировано",
@@ -40,12 +42,14 @@ STATE_LABELS = {
     "CANCELLED": "Отменено",
     "SUPERSEDED": "Заменено",
 }
+
 ACTION_LABELS = {
     "APPROVE": "Утвердить",
     "RETURN_FOR_REVISION": "Вернуть на доработку",
     "HOLD": "Поставить на паузу",
     "READY_TO_PUBLISH": "Готово к публикации",
 }
+
 FIELD_LABELS = {
     "Content_ID": "Код материала",
     "Lifecycle_State": "Статус",
@@ -75,7 +79,11 @@ FIELD_LABELS = {
     "Manual_Gate": "Ручная проверка",
     "Status": "Статус",
     "Owner_Action": "Действие владельца",
+    "Owner_Fact": "Факт для публикации",
+    "Owner_Angle": "Главная мысль",
+    "Owner_Review_Status": "Решение владельца",
 }
+
 COMMON_VALUE_LABELS = {
     "YES": "Да",
     "NO": "Нет",
@@ -99,7 +107,12 @@ COMMON_VALUE_LABELS = {
     "SUPERSEDED": "Заменено",
     "ERROR": "Ошибка",
     "CANDIDATE": "Кандидат",
+    "PUBLICATION": "В публикацию",
+    "WEEKLY": "В Weekly",
+    "DISMISSED": "Пропущено",
+    "EDITED": "Отредактировано",
 }
+
 FIELD_VALUE_LABELS = {
     "Rubric": {
         "TRAINING_LOG": "Дневник тренировок",
@@ -108,6 +121,7 @@ FIELD_VALUE_LABELS = {
         "WEEKLY CONTROL": "Недельный контроль",
         "SERIES": "Серия",
         "AI CHECK": "Проверка ИИ",
+        "DECISION / AI_CHECK": "Решение / проверка ИИ",
     },
     "Content_Type": {
         "PROOF": "Подтверждение",
@@ -133,17 +147,8 @@ FIELD_VALUE_LABELS = {
         "NUTRITION": "Питание",
         "CONTROL": "Контроль",
     },
-    "Event_Type": {
-        "PLAN_FACT_GAP": "Отклонение плана от факта",
-        "REPEATED_DEVIATION": "Повторяющееся отклонение",
-        "STABLE_SIGNAL": "Стабильный сигнал",
-    },
-    "Editorial_Trigger": {
-        "DECISION_REQUIRED": "Требуется решение",
-        "REAL_LIFE": "Реальная ситуация",
-        "CONTROL": "Контроль",
-    },
 }
+
 SOURCE_LABELS = {
     "APPS SCRIPT / READ ONLY": "Apps Script / только чтение",
     "APPS SCRIPT / CONTROLLED": "Apps Script / управляемый доступ",
@@ -158,7 +163,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
 
 st.markdown(
     """
@@ -184,7 +188,7 @@ st.markdown(
       p, label, .stMarkdown { color: var(--rf-white); }
       .rf-kicker { color: var(--rf-steel); font: 600 0.72rem/1.4 "IBM Plex Mono", monospace; letter-spacing: 0.14em; text-transform: uppercase; }
       .rf-title { color: var(--rf-white); font: 650 clamp(1.9rem, 4vw, 3.4rem)/1.04 "Onest", sans-serif; letter-spacing: -0.045em; margin: 0.35rem 0 0.5rem; }
-      .rf-subtitle { color: var(--rf-muted); max-width: 760px; font-size: 0.98rem; }
+      .rf-subtitle { color: var(--rf-muted); max-width: 820px; font-size: 0.98rem; }
       .rf-rule { border-top: 1px solid var(--rf-line); margin: 1.2rem 0 1.5rem; }
       .rf-card { background: linear-gradient(180deg, rgba(23,33,43,.78), rgba(17,25,34,.94)); border: 1px solid var(--rf-line); border-radius: 12px; padding: 1rem 1.05rem; min-height: 100%; }
       .rf-card-decision { border-left: 3px solid var(--rf-brass); }
@@ -197,24 +201,12 @@ st.markdown(
       [data-testid="stMetric"] { background: var(--rf-panel); border: 1px solid var(--rf-line); border-radius: 10px; padding: .9rem 1rem; }
       [data-testid="stMetricLabel"] { color: var(--rf-steel); }
       [data-testid="stMetricValue"] { color: var(--rf-white); }
-      [data-testid="stAlertContainer"] {
-        background: rgba(127, 168, 188, .08) !important;
-        border: 1px solid var(--rf-line) !important;
-        color: var(--rf-white) !important;
-      }
+      [data-testid="stAlertContainer"] { background: rgba(127, 168, 188, .08) !important; border: 1px solid var(--rf-line) !important; color: var(--rf-white) !important; }
       [data-testid="stAlertContainer"] p { color: var(--rf-white) !important; }
-      [data-testid="stRadioOption"][data-selected="true"] > div > div > div:first-child {
-        background-color: var(--rf-steel) !important;
-        border-color: var(--rf-steel) !important;
-      }
-      [data-testid="stRadioOption"][data-selected="true"] > div > div > div:first-child > div {
-        background-color: var(--rf-carbon) !important;
-      }
       .stButton > button, .stDownloadButton > button, .stLinkButton > a { border: 1px solid var(--rf-brass); background: transparent; color: var(--rf-white); border-radius: 8px; }
       .stButton > button:hover, .stLinkButton > a:hover { border-color: var(--rf-white); color: var(--rf-white); }
       [data-testid="stDataFrame"] { border: 1px solid var(--rf-line); border-radius: 10px; overflow: hidden; }
       .rf-ok { color: var(--rf-green); }
-      .rf-warn { color: var(--rf-brass); }
       .rf-footer { color: var(--rf-muted); font: 400 .68rem/1.5 "IBM Plex Mono", monospace; margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--rf-line); }
       @media (max-width: 700px) {
         .block-container { padding: 1.1rem .85rem 3rem; }
@@ -247,10 +239,6 @@ def _value(row: pd.Series, name: str, fallback: str = "—") -> str:
     return text or fallback
 
 
-def _columns(frame: pd.DataFrame, names: list[str]) -> list[str]:
-    return [name for name in names if name in frame.columns]
-
-
 def _display_value(field: str, value: Any, fallback: str = "—") -> str:
     if value is None or (not isinstance(value, str) and pd.isna(value)):
         return fallback
@@ -281,6 +269,10 @@ def _display_date(value: Any, fallback: str = "—") -> str:
     return parsed.strftime("%d.%m.%Y")
 
 
+def _columns(frame: pd.DataFrame, names: list[str]) -> list[str]:
+    return [name for name in names if name in frame.columns]
+
+
 def _display_table(frame: pd.DataFrame, fields: list[str]) -> pd.DataFrame:
     selected = _columns(frame, fields)
     view = frame[selected].copy()
@@ -288,16 +280,10 @@ def _display_table(frame: pd.DataFrame, fields: list[str]) -> pd.DataFrame:
         if field in {"Date", "Publish_At", "Display_Date"}:
             view[field] = view[field].map(_display_date)
         elif field in FIELD_VALUE_LABELS or field in {
-            "Lifecycle_State",
-            "Approval_Status",
-            "Publication_Status",
-            "Preview_Review_Status",
-            "Public_Data_Allowed",
-            "Text_Status",
-            "Visual_Status",
-            "Duplicate_Flag",
-            "Manual_Gate",
-            "Status",
+            "Lifecycle_State", "Approval_Status", "Publication_Status",
+            "Preview_Review_Status", "Public_Data_Allowed", "Text_Status",
+            "Visual_Status", "Duplicate_Flag", "Manual_Gate", "Status",
+            "Owner_Review_Status",
         }:
             view[field] = view[field].map(lambda value, name=field: _display_value(name, value))
     return view.rename(columns={field: FIELD_LABELS.get(field, field) for field in selected})
@@ -318,25 +304,15 @@ def _sort_queue(frame: pd.DataFrame) -> pd.DataFrame:
     if "Publish_Sort" not in result:
         result["Publish_Sort"] = pd.to_datetime(_planned_dates(result), errors="coerce", utc=True)
     return result.sort_values(
-        ["Lifecycle_Priority", "Publish_Sort"],
-        ascending=[True, True],
-        na_position="last",
+        ["Lifecycle_Priority", "Publish_Sort"], ascending=[True, True], na_position="last"
     )
-
-
-def _source_label(source: str) -> str:
-    return SOURCE_LABELS.get(source, source)
 
 
 def _candidate_queue(queue: pd.DataFrame) -> pd.DataFrame:
     if queue.empty or "Lifecycle_State" not in queue:
         return queue.iloc[0:0]
     result = queue[queue["Lifecycle_State"].isin(ACTIVE_PUBLICATION_STATES)].copy()
-    return result.sort_values(
-        ["Lifecycle_Priority", "Publish_Sort"],
-        ascending=[True, True],
-        na_position="last",
-    )
+    return _sort_queue(result)
 
 
 def _state_badge(state: str) -> str:
@@ -345,107 +321,28 @@ def _state_badge(state: str) -> str:
     return f'<span class="{css}">{escape(label)}</span>'
 
 
-def _link(label: str, url: str) -> None:
-    if url.startswith(("https://", "http://")):
-        st.link_button(label, url, width="stretch")
-
-
 def _actions_enabled(bundle) -> bool:
     return "content.action" in set(bundle.capabilities)
 
 
-def _render_content_actions(
-    row: pd.Series,
-    bundle,
-    app_config: dict[str, Any],
-    api_secrets: dict[str, Any],
-) -> None:
-    st.markdown("#### Управление материалом")
-    state = _value(row, "Lifecycle_State", "")
-    content_id = _value(row, "Content_ID", "")
-    if state in TERMINAL_PUBLICATION_STATES:
-        st.info("Материал закрыт. Изменение финального статуса из приложения запрещено.")
-        return
-    if not _actions_enabled(bundle):
-        st.info(
-            "Действия пока отключены: шлюз Apps Script необходимо обновить до версии 0.3. "
-            "Просмотр данных продолжает работать."
-        )
-        return
-
-    st.warning(
-        "Действие изменит только разрешённые поля мастер-таблицы и будет записано "
-        "в журнал. Публикация в Telegram не запускается."
-    )
-    action = st.radio(
-        "Выберите действие",
-        list(ACTION_LABELS),
-        format_func=lambda value: ACTION_LABELS[value],
-        horizontal=True,
-        key=f"content_action::{content_id}",
-    )
-    comment_required = action in {"RETURN_FOR_REVISION", "HOLD"}
-    comment = st.text_area(
-        "Комментарий" + (" — обязателен" if comment_required else " — необязательно"),
-        max_chars=500,
-        placeholder=(
-            "Кратко укажите причину и следующее действие"
-            if comment_required
-            else "При необходимости добавьте пояснение"
-        ),
-        key=f"content_action_comment::{content_id}",
-    )
-    confirmed = st.checkbox(
-        "Подтверждаю изменение мастер-таблицы",
-        value=False,
-        key=f"content_action_confirm::{content_id}",
-    )
-    disabled = not confirmed or (comment_required and not comment.strip())
-    if st.button(
-        "Применить действие",
-        type="primary",
-        disabled=disabled,
-        key=f"content_action_submit::{content_id}",
-    ):
-        endpoint_url = str(app_config.get("apps_script_url", "")).strip()
-        secret = str(api_secrets.get("secret", "")).strip()
-        try:
-            timeout_seconds = int(app_config.get("request_timeout_seconds", 20))
-        except (TypeError, ValueError):
-            timeout_seconds = 20
-        try:
-            result = execute_content_action(
-                endpoint_url,
-                secret,
-                content_id,
-                action,
-                comment,
-                timeout_seconds=timeout_seconds,
-            )
-        except (DataSourceError, ValueError) as exc:
-            st.error(str(exc))
-        else:
-            status = str(result.get("status") or "APPLIED")
-            suffix = "Уже было применено ранее." if status == "ALREADY_APPLIED" else "Изменение записано в журнал."
-            st.session_state["content_action_success"] = (
-                f'«{ACTION_LABELS[action]}»: {content_id}. {suffix}'
-            )
-            st.cache_data.clear()
-            st.rerun()
+def _source_label(source: str) -> str:
+    return SOURCE_LABELS.get(source, source)
 
 
-def render_header(source: str, actions_enabled: bool = False) -> None:
-    badge = "КОНТРОЛИРУЕМЫЕ ДЕЙСТВИЯ · v0.3" if actions_enabled else "ТОЛЬКО ЧТЕНИЕ · v0.3"
-    subtitle = (
-        "Изменения доступны только через подтверждённые действия и записываются в журнал."
-        if actions_enabled
-        else "Приложение читает данные и не изменяет мастер-таблицу."
+def render_header(source: str, capabilities: tuple[str, ...]) -> None:
+    event_enabled = all(
+        capability in set(capabilities)
+        for capability in ("event.review", "event.decision", "event.media")
+    )
+    actions_enabled = "content.action" in set(capabilities)
+    badge = "КОНТЕНТ + СОБЫТИЯ · v0.4" if event_enabled else (
+        "КОНТРОЛИРУЕМЫЕ ДЕЙСТВИЯ · v0.3" if actions_enabled else "ТОЛЬКО ЧТЕНИЕ"
     )
     st.markdown('<div class="rf-kicker">R/Form · Контент-операции</div>', unsafe_allow_html=True)
     st.markdown('<div class="rf-title">Управление контентом</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="rf-subtitle">Единая точка контроля подготовки и публикации контента. '
-        f'{escape(subtitle)}</div>',
+        '<div class="rf-subtitle">Один интерфейс для очереди публикаций и предложений Event Detector. '
+        'Финальное решение всегда остаётся за владельцем.</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -466,12 +363,7 @@ def render_control(queue: pd.DataFrame, events: pd.DataFrame) -> None:
     cols[1].metric("Запланировано", int(state_counts.get("SCHEDULED", 0)))
     cols[2].metric(
         "На подготовке",
-        int(
-            sum(
-                state_counts.get(s, 0)
-                for s in ("READY_TO_PUBLISH", "REVIEW", "APPROVED", "PLANNED")
-            )
-        ),
+        int(sum(state_counts.get(s, 0) for s in ("READY_TO_PUBLISH", "REVIEW", "APPROVED", "PLANNED"))),
     )
     cols[3].metric("Опубликовано", int(state_counts.get("PUBLISHED", 0)))
 
@@ -497,13 +389,12 @@ def render_control(queue: pd.DataFrame, events: pd.DataFrame) -> None:
                 f'<div class="rf-label">Публикация</div><div class="rf-value rf-mono">'
                 f'{escape(_display_date(_value(row, "Publish_At", _value(row, "Date"))))}</div>'
                 f'<div class="rf-detail">{escape(_display_value("Distribution_Mode", row.get("Distribution_Mode")))}</div>'
-                f'<div class="rf-detail">Сегмент: {escape(_display_value("Target_Segment", row.get("Target_Segment")))}</div>'
                 '</div>',
                 unsafe_allow_html=True,
             )
 
-    col_a, col_b = st.columns([1.15, 1])
-    with col_a:
+    left, right = st.columns([1.15, 1])
+    with left:
         st.subheader("Активная очередь")
         view = candidates.head(8)
         if view.empty:
@@ -511,55 +402,91 @@ def render_control(queue: pd.DataFrame, events: pd.DataFrame) -> None:
         else:
             view = view.assign(Display_Date=_planned_dates(view))
             st.dataframe(
-                _display_table(
-                    view,
-                    ["Content_ID", "Lifecycle_State", "Display_Date", "Rubric"],
-                ),
+                _display_table(view, ["Content_ID", "Lifecycle_State", "Display_Date", "Rubric"]),
                 hide_index=True,
                 width="stretch",
             )
-    with col_b:
+    with right:
         st.subheader("Требует решения")
         if action_required.empty:
-            st.markdown('<div class="rf-card"><span class="rf-ok">Критических блокировок нет.</span></div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="rf-card"><span class="rf-ok">Критических блокировок нет.</span></div>',
+                unsafe_allow_html=True,
+            )
         else:
             st.dataframe(
                 _display_table(
                     action_required.head(8),
-                    [
-                        "Content_ID",
-                        "Lifecycle_State",
-                        "Blocking_Issue",
-                        "Publish_Error",
-                        "Preview_Review_Status",
-                    ],
+                    ["Content_ID", "Lifecycle_State", "Blocking_Issue", "Publish_Error"],
                 ),
                 hide_index=True,
                 width="stretch",
             )
 
-    st.subheader("Сильные события для контента")
-    if events.empty:
-        st.caption("В журнале данных пока нет событий.")
-    else:
-        ranked = events.sort_values(
-            ["Content_Value_Score_Num", "Event_Date_Sort"], ascending=[False, False], na_position="last"
-        ).head(6)
-        st.dataframe(
-            _display_table(
-                ranked,
-                ["Event_ID", "Date", "Event_Type", "Fact", "Content_Value_Score", "Owner_Action"],
-            ),
-            hide_index=True,
-            width="stretch",
-        )
 
-
-def render_queue(
+def _render_content_actions(
+    row: pd.Series,
     bundle,
     app_config: dict[str, Any],
     api_secrets: dict[str, Any],
 ) -> None:
+    st.markdown("#### Управление материалом")
+    state = _value(row, "Lifecycle_State", "")
+    content_id = _value(row, "Content_ID", "")
+    if state in TERMINAL_PUBLICATION_STATES:
+        st.info("Материал закрыт. Изменение финального статуса из приложения запрещено.")
+        return
+    if not _actions_enabled(bundle):
+        st.info("Действия пока отключены; просмотр данных работает.")
+        return
+
+    action = st.radio(
+        "Выберите действие",
+        list(ACTION_LABELS),
+        format_func=lambda value: ACTION_LABELS[value],
+        horizontal=True,
+        key=f"content_action::{content_id}",
+    )
+    comment_required = action in {"RETURN_FOR_REVISION", "HOLD"}
+    comment = st.text_area(
+        "Комментарий" + (" — обязателен" if comment_required else " — необязательно"),
+        max_chars=500,
+        key=f"content_action_comment::{content_id}",
+    )
+    confirmed = st.checkbox(
+        "Подтверждаю изменение мастер-таблицы",
+        value=False,
+        key=f"content_action_confirm::{content_id}",
+    )
+    disabled = not confirmed or (comment_required and not comment.strip())
+    if st.button(
+        "Применить действие",
+        type="primary",
+        disabled=disabled,
+        key=f"content_action_submit::{content_id}",
+    ):
+        endpoint_url = str(app_config.get("apps_script_url", "")).strip()
+        secret = str(api_secrets.get("secret", "")).strip()
+        try:
+            timeout_seconds = int(app_config.get("request_timeout_seconds", 20))
+        except (TypeError, ValueError):
+            timeout_seconds = 20
+        try:
+            result = execute_content_action(
+                endpoint_url, secret, content_id, action, comment,
+                timeout_seconds=timeout_seconds,
+            )
+        except (DataSourceError, ValueError) as exc:
+            st.error(str(exc))
+        else:
+            status = str(result.get("status") or "APPLIED")
+            suffix = "Уже было применено ранее." if status == "ALREADY_APPLIED" else "Изменение записано в журнал."
+            st.session_state["content_action_success"] = f'«{ACTION_LABELS[action]}»: {content_id}. {suffix}'
+            st.cache_data.clear()
+            st.rerun()
+
+
+def render_queue(bundle, app_config: dict[str, Any], api_secrets: dict[str, Any]) -> None:
     queue = bundle.queue
     st.subheader("Очередь контента")
     success_message = st.session_state.pop("content_action_success", "")
@@ -574,35 +501,23 @@ def render_queue(
         value=False,
         help="По умолчанию архив скрыт, чтобы в очереди оставалась только текущая работа.",
     )
-    if show_archive:
-        queue_scope = queue.copy()
-    else:
-        queue_scope = queue[~queue["Lifecycle_State"].isin(TERMINAL_PUBLICATION_STATES)].copy()
+    queue_scope = queue.copy() if show_archive else queue[~queue["Lifecycle_State"].isin(TERMINAL_PUBLICATION_STATES)].copy()
 
-    filter_a, filter_b, filter_c = st.columns([1, 1, 1.4])
+    f1, f2, f3 = st.columns([1, 1, 1.4])
     states = sorted(
         queue_scope["Lifecycle_State"].dropna().astype(str).unique().tolist(),
         key=lambda state: OPERATIONAL_PRIORITY.get(state, 89),
     )
-    selected_states = filter_a.multiselect(
-        "Статус",
-        states,
-        default=states,
+    selected_states = f1.multiselect(
+        "Статус", states, default=states,
         format_func=lambda state: STATE_LABELS.get(state, state),
-        placeholder="Выберите статусы",
-        key=f"queue_states_{show_archive}",
     )
-    rubrics = sorted(
-        queue_scope.get("Rubric", pd.Series(dtype="object")).dropna().astype(str).unique().tolist()
-    )
-    selected_rubrics = filter_b.multiselect(
-        "Рубрика",
-        rubrics,
+    rubrics = sorted(queue_scope.get("Rubric", pd.Series(dtype="object")).dropna().astype(str).unique().tolist())
+    selected_rubrics = f2.multiselect(
+        "Рубрика", rubrics,
         format_func=lambda rubric: _display_value("Rubric", rubric),
-        placeholder="Выберите рубрики",
-        key=f"queue_rubrics_{show_archive}",
     )
-    query = filter_c.text_input("Поиск", placeholder="Код материала или текст")
+    query = f3.text_input("Поиск", placeholder="Код материала или текст")
 
     filtered = queue_scope[queue_scope["Lifecycle_State"].isin(selected_states)].copy()
     if selected_rubrics and "Rubric" in filtered:
@@ -619,33 +534,17 @@ def render_queue(
     )
     table = filtered.assign(Display_Date=_planned_dates(filtered))
     st.dataframe(
-        _display_table(
-            table,
-            ["Content_ID", "Lifecycle_State", "Display_Date", "Rubric", "Content_Type"],
-        ),
+        _display_table(table, ["Content_ID", "Lifecycle_State", "Display_Date", "Rubric", "Content_Type"]),
         hide_index=True,
         width="stretch",
     )
 
-    ids = filtered.get("Content_ID", pd.Series(dtype="object")).astype(str).str.strip()
-    options = [value for value in ids.tolist() if value]
+    options = [value for value in filtered.get("Content_ID", pd.Series(dtype="object")).astype(str).str.strip().tolist() if value]
     if not options:
         return
-    option_labels = {
-        _value(row, "Content_ID", ""): (
-            f'{_value(row, "Content_ID", "")} · '
-            f'{_display_value("Lifecycle_State", row.get("Lifecycle_State"))} · '
-            f'{_display_date(_value(row, "Publish_At", _value(row, "Date")))}'
-        )
-        for _, row in filtered.iterrows()
-    }
-    selected_id = st.selectbox(
-        "Открыть карточку материала",
-        options,
-        format_func=lambda content_id: option_labels.get(content_id, content_id),
-    )
+    selected_id = st.selectbox("Открыть карточку материала", options)
     row = filtered[filtered["Content_ID"].astype(str) == selected_id].iloc[0]
-    st.markdown(f"### {_value(row, 'Content_ID')}  ")
+    st.markdown(f"### {_value(row, 'Content_ID')}")
     st.markdown(_state_badge(_value(row, "Lifecycle_State")), unsafe_allow_html=True)
 
     tab_content, tab_readiness, tab_links = st.tabs(["Материал", "Готовность", "Ссылки"])
@@ -654,19 +553,16 @@ def render_queue(
         st.write(_value(row, "Decision"))
         st.markdown("#### Направление")
         st.write(_value(row, "Editorial_Direction"))
-        st.markdown("#### Предпросмотр публикации в Telegram")
-        st.markdown('<div class="rf-card">', unsafe_allow_html=True)
+        st.markdown("#### Предпросмотр Telegram")
         st.write(_value(row, "Telegram_Text"))
-        st.markdown("</div>", unsafe_allow_html=True)
     with tab_readiness:
         issues = _value(row, "Readiness_Issues", "")
-        state = _value(row, "Lifecycle_State", "")
-        if state in TERMINAL_PUBLICATION_STATES:
-            st.info("Материал закрыт; повторная проверка готовности не требуется.")
+        if _value(row, "Lifecycle_State", "") in TERMINAL_PUBLICATION_STATES:
+            st.info("Материал закрыт; повторная проверка не требуется.")
         elif issues:
             st.warning(issues)
         else:
-            st.success("Все обязательные условия для планирования выполнены.")
+            st.success("Все обязательные условия выполнены.")
         readiness_fields = [
             "Public_Data_Allowed", "Text_Status", "Visual_Status", "Approval_Status",
             "Publication_Status", "Preview_Review_Status", "Duplicate_Flag",
@@ -690,109 +586,62 @@ def render_queue(
         if not valid:
             st.caption("Ссылки для этой карточки не заполнены.")
         for label, url in valid:
-            _link(label, url)
+            st.link_button(label, url, width="stretch")
 
     _render_content_actions(row, bundle, app_config, api_secrets)
 
 
 def render_events(events: pd.DataFrame) -> None:
-    st.subheader("События для контента")
+    st.subheader("Журнал событий")
+    st.caption("Технический журнал Event Detector. Для ежедневной работы используйте раздел «Предложения». ")
     if events.empty:
         st.info("Журнал событий пока пуст.")
         return
-
     ranked = events.sort_values(
         ["Content_Value_Score_Num", "Event_Date_Sort"], ascending=[False, False], na_position="last"
     )
     st.dataframe(
         _display_table(
             ranked,
-            [
-                "Event_ID",
-                "Date",
-                "Event_Type",
-                "Fact",
-                "Content_Value_Score",
-                "Editorial_Trigger",
-                "Manual_Gate",
-                "Status",
-                "Owner_Action",
-            ],
+            ["Event_ID", "Date", "Event_Type", "Fact", "Content_Value_Score", "Manual_Gate", "Status", "Owner_Review_Status"],
         ),
         hide_index=True,
         width="stretch",
     )
 
-    ids = ranked.get("Event_ID", pd.Series(dtype="object")).astype(str).str.strip().tolist()
-    ids = [value for value in ids if value]
-    if not ids:
-        return
-    selected_id = st.selectbox("Открыть событие", ids)
-    row = ranked[ranked["Event_ID"].astype(str) == selected_id].iloc[0]
-    left, right = st.columns([1.4, 1])
-    with left:
-        st.markdown('<div class="rf-card rf-card-decision">', unsafe_allow_html=True)
-        st.markdown("#### Факт")
-        st.write(_value(row, "Fact"))
-        st.markdown("#### Действие владельца")
-        st.write(_value(row, "Owner_Action"))
-        st.markdown("</div>", unsafe_allow_html=True)
-    with right:
-        st.metric("Ценность для контента", _value(row, "Content_Value_Score"))
-        st.caption(f"Триггер: {_display_value('Editorial_Trigger', row.get('Editorial_Trigger'))}")
-        st.caption(f"Ручная проверка: {_display_value('Manual_Gate', row.get('Manual_Gate'))}")
-    st.markdown("#### Рекомендуемые углы")
-    for index in range(1, 4):
-        angle = _value(row, f"Recommended_Angle_{index}", "")
-        if angle:
-            st.write(f"{index}. {angle}")
-
 
 def render_diagnostics(bundle) -> None:
     report = diagnostics(bundle)
-    actions_enabled = _actions_enabled(bundle)
-    access_mode = "УПРАВЛЯЕМЫЙ ДОСТУП" if actions_enabled else "ТОЛЬКО ЧТЕНИЕ"
-    access_note = (
-        "Доступны четыре подтверждаемых действия. Каждое изменение журналируется; Telegram не вызывается."
-        if actions_enabled
-        else "В коде нет доступных операций записи и нет токена Telegram."
-    )
+    capabilities = set(bundle.capabilities)
     st.subheader("Диагностика")
-    st.markdown(
-        '<div class="rf-card"><div class="rf-label">Режим доступа</div>'
-        f'<div class="rf-value">{escape(access_mode)}</div>'
-        f'<div class="rf-detail">{escape(access_note)}</div></div>',
-        unsafe_allow_html=True,
-    )
-
-    col_a, col_b = st.columns(2)
-    col_a.metric("Материалов в очереди", report["queue_rows"])
-    col_b.metric("Событий в журнале", report["event_rows"])
-    st.caption(f"Источник: {_source_label(bundle.source)}")
     st.caption(f"Версия шлюза: {bundle.api_version or 'не указана'}")
+    st.caption("Возможности: " + (", ".join(sorted(capabilities)) if capabilities else "только просмотр"))
     loaded_at = bundle.loaded_at.astimezone(ZoneInfo("Europe/Riga"))
     st.caption(f"Время загрузки: {loaded_at.strftime('%d.%m.%Y %H:%M:%S')} (Рига)")
 
-    st.markdown("#### Схема данных")
-    if report["queue_missing"]:
-        missing = [FIELD_LABELS.get(field, field) for field in report["queue_missing"]]
-        st.warning("Очередь контента: отсутствуют поля: " + ", ".join(missing))
-    else:
-        st.success("Очередь контента: обязательные поля присутствуют.")
-    if report["event_missing"]:
-        missing = [FIELD_LABELS.get(field, field) for field in report["event_missing"]]
-        st.warning("Журнал событий: отсутствуют поля: " + ", ".join(missing))
-    else:
-        st.success("Журнал событий: обязательные поля присутствуют.")
+    c1, c2 = st.columns(2)
+    c1.metric("Материалов в очереди", report["queue_rows"])
+    c2.metric("Событий в журнале", report["event_rows"])
 
-    st.markdown("#### Уникальность")
+    if report["queue_missing"]:
+        st.warning("Очередь: отсутствуют поля: " + ", ".join(report["queue_missing"]))
+    else:
+        st.success("Очередь: обязательные поля присутствуют.")
+    if report["event_missing"]:
+        st.warning("События: отсутствуют базовые поля: " + ", ".join(report["event_missing"]))
+    else:
+        st.success("События: базовые поля присутствуют.")
+    if report.get("event_owner_missing"):
+        st.info("Для полного режима v0.4 не хватает полей: " + ", ".join(report["event_owner_missing"]))
+    elif all(cap in capabilities for cap in ("event.review", "event.decision", "event.media")):
+        st.success("Предложения R/Form: редактирование, решения и медиа доступны.")
+
     if report["queue_duplicates"] or report["event_duplicates"]:
         st.warning(
-            f"Повторяющиеся идентификаторы: очередь контента — {report['queue_duplicates']}; "
-            f"журнал событий — {report['event_duplicates']}."
+            f"Повторяющиеся идентификаторы: очередь — {report['queue_duplicates']}; события — {report['event_duplicates']}."
         )
     else:
-        st.success("Повторяющиеся коды материалов и событий не найдены.")
+        st.success("Повторяющиеся идентификаторы не найдены.")
 
     if st.button("Обновить данные"):
         st.cache_data.clear()
@@ -805,12 +654,12 @@ api_secrets = _secret_section("content_api")
 try:
     bundle = _cached_bundle(app_config, api_secrets)
 except DataSourceError as exc:
-    render_header("APPS SCRIPT / ERROR")
+    render_header("APPS SCRIPT / ERROR", ())
     st.error(str(exc))
     st.caption("Приложение остановлено: при ошибке рабочего источника тестовые данные не подставляются.")
     st.stop()
 
-render_header(bundle.source, _actions_enabled(bundle))
+render_header(bundle.source, bundle.capabilities)
 if bundle.source.startswith("DEMO"):
     st.warning(bundle.note)
 else:
@@ -818,13 +667,19 @@ else:
 
 with st.sidebar:
     st.markdown('<div class="rf-kicker">Навигация</div>', unsafe_allow_html=True)
-    page = st.radio("Раздел", ["Контроль", "Очередь", "События", "Диагностика"], label_visibility="collapsed")
+    page = st.radio(
+        "Раздел",
+        ["Контроль", "Предложения", "Очередь", "События", "Диагностика"],
+        label_visibility="collapsed",
+    )
     st.markdown("---")
-    st.caption("R/Form · Управление контентом v0.3")
+    st.caption("R/Form · Управление контентом v0.4")
     st.caption("Источник истины остаётся в Google Таблицах.")
 
 if page == "Контроль":
     render_control(bundle.queue, bundle.events)
+elif page == "Предложения":
+    render_suggestions(bundle, app_config, api_secrets)
 elif page == "Очередь":
     render_queue(bundle, app_config, api_secrets)
 elif page == "События":
