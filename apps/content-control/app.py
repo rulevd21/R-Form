@@ -15,13 +15,21 @@ from rform_content.lifecycle import (
     OPERATIONAL_PRIORITY,
     TERMINAL_PUBLICATION_STATES,
 )
-from rform_content.repository import DataSourceError, diagnostics, load_bundle
+from rform_content.repository import (
+    DataSourceError,
+    diagnostics,
+    execute_content_action,
+    load_bundle,
+)
 
 
 APP_ROOT = Path(__file__).resolve().parent
 STATE_LABELS = {
     "ERROR": "Требует действия",
     "SCHEDULED": "Запланировано",
+    "READY_FOR_PUBLICATION": "Готово к публикации",
+    "REWORK": "На доработке",
+    "READY_TO_PUBLISH": "Готово к публикации",
     "APPROVED": "Утверждено",
     "REVIEW": "На проверке",
     "PLANNED": "В плане",
@@ -31,6 +39,12 @@ STATE_LABELS = {
     "HOLD": "Пауза",
     "CANCELLED": "Отменено",
     "SUPERSEDED": "Заменено",
+}
+ACTION_LABELS = {
+    "APPROVE": "Утвердить",
+    "RETURN_FOR_REVISION": "Вернуть на доработку",
+    "HOLD": "Поставить на паузу",
+    "READY_TO_PUBLISH": "Готово к публикации",
 }
 FIELD_LABELS = {
     "Content_ID": "Код материала",
@@ -78,6 +92,8 @@ COMMON_VALUE_LABELS = {
     "PUBLISHED": "Опубликовано",
     "PLANNED": "В плане",
     "SCHEDULED": "Запланировано",
+    "READY_FOR_PUBLICATION": "Готово к публикации",
+    "REWORK": "На доработке",
     "HOLD": "Пауза",
     "CANCELLED": "Отменено",
     "SUPERSEDED": "Заменено",
@@ -130,6 +146,7 @@ FIELD_VALUE_LABELS = {
 }
 SOURCE_LABELS = {
     "APPS SCRIPT / READ ONLY": "Apps Script / только чтение",
+    "APPS SCRIPT / CONTROLLED": "Apps Script / управляемый доступ",
     "DEMO / FIXTURE": "Демо / тестовые данные",
     "APPS SCRIPT / ERROR": "Apps Script / ошибка",
 }
@@ -333,16 +350,106 @@ def _link(label: str, url: str) -> None:
         st.link_button(label, url, width="stretch")
 
 
-def render_header(source: str) -> None:
+def _actions_enabled(bundle) -> bool:
+    return "content.action" in set(bundle.capabilities)
+
+
+def _render_content_actions(
+    row: pd.Series,
+    bundle,
+    app_config: dict[str, Any],
+    api_secrets: dict[str, Any],
+) -> None:
+    st.markdown("#### Управление материалом")
+    state = _value(row, "Lifecycle_State", "")
+    content_id = _value(row, "Content_ID", "")
+    if state in TERMINAL_PUBLICATION_STATES:
+        st.info("Материал закрыт. Изменение финального статуса из приложения запрещено.")
+        return
+    if not _actions_enabled(bundle):
+        st.info(
+            "Действия пока отключены: шлюз Apps Script необходимо обновить до версии 0.3. "
+            "Просмотр данных продолжает работать."
+        )
+        return
+
+    st.warning(
+        "Действие изменит только разрешённые поля мастер-таблицы и будет записано "
+        "в журнал. Публикация в Telegram не запускается."
+    )
+    action = st.radio(
+        "Выберите действие",
+        list(ACTION_LABELS),
+        format_func=lambda value: ACTION_LABELS[value],
+        horizontal=True,
+        key=f"content_action::{content_id}",
+    )
+    comment_required = action in {"RETURN_FOR_REVISION", "HOLD"}
+    comment = st.text_area(
+        "Комментарий" + (" — обязателен" if comment_required else " — необязательно"),
+        max_chars=500,
+        placeholder=(
+            "Кратко укажите причину и следующее действие"
+            if comment_required
+            else "При необходимости добавьте пояснение"
+        ),
+        key=f"content_action_comment::{content_id}",
+    )
+    confirmed = st.checkbox(
+        "Подтверждаю изменение мастер-таблицы",
+        value=False,
+        key=f"content_action_confirm::{content_id}",
+    )
+    disabled = not confirmed or (comment_required and not comment.strip())
+    if st.button(
+        "Применить действие",
+        type="primary",
+        disabled=disabled,
+        key=f"content_action_submit::{content_id}",
+    ):
+        endpoint_url = str(app_config.get("apps_script_url", "")).strip()
+        secret = str(api_secrets.get("secret", "")).strip()
+        try:
+            timeout_seconds = int(app_config.get("request_timeout_seconds", 20))
+        except (TypeError, ValueError):
+            timeout_seconds = 20
+        try:
+            result = execute_content_action(
+                endpoint_url,
+                secret,
+                content_id,
+                action,
+                comment,
+                timeout_seconds=timeout_seconds,
+            )
+        except (DataSourceError, ValueError) as exc:
+            st.error(str(exc))
+        else:
+            status = str(result.get("status") or "APPLIED")
+            suffix = "Уже было применено ранее." if status == "ALREADY_APPLIED" else "Изменение записано в журнал."
+            st.session_state["content_action_success"] = (
+                f'«{ACTION_LABELS[action]}»: {content_id}. {suffix}'
+            )
+            st.cache_data.clear()
+            st.rerun()
+
+
+def render_header(source: str, actions_enabled: bool = False) -> None:
+    badge = "КОНТРОЛИРУЕМЫЕ ДЕЙСТВИЯ · v0.3" if actions_enabled else "ТОЛЬКО ЧТЕНИЕ · v0.3"
+    subtitle = (
+        "Изменения доступны только через подтверждённые действия и записываются в журнал."
+        if actions_enabled
+        else "Приложение читает данные и не изменяет мастер-таблицу."
+    )
     st.markdown('<div class="rf-kicker">R/Form · Контент-операции</div>', unsafe_allow_html=True)
     st.markdown('<div class="rf-title">Управление контентом</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="rf-subtitle">Единая точка контроля подготовки и публикации контента. '
-        'Приложение читает данные и не изменяет мастер-таблицу.</div>',
+        f'{escape(subtitle)}</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
-        f'<div style="margin-top:.8rem"><span class="rf-badge">ТОЛЬКО ЧТЕНИЕ · v0.2</span> '
+        f'<div style="margin-top:.8rem"><span class="rf-badge">{escape(badge)}</span> '
         f'<span class="rf-source">ИСТОЧНИК: {escape(_source_label(source))}</span></div>'
         '<div class="rf-rule"></div>',
         unsafe_allow_html=True,
@@ -357,7 +464,15 @@ def render_control(queue: pd.DataFrame, events: pd.DataFrame) -> None:
     cols = st.columns(4)
     cols[0].metric("Требует действия", int(len(action_required)))
     cols[1].metric("Запланировано", int(state_counts.get("SCHEDULED", 0)))
-    cols[2].metric("На подготовке", int(sum(state_counts.get(s, 0) for s in ("REVIEW", "APPROVED", "PLANNED"))))
+    cols[2].metric(
+        "На подготовке",
+        int(
+            sum(
+                state_counts.get(s, 0)
+                for s in ("READY_TO_PUBLISH", "REVIEW", "APPROVED", "PLANNED")
+            )
+        ),
+    )
     cols[3].metric("Опубликовано", int(state_counts.get("PUBLISHED", 0)))
 
     st.subheader("Следующая публикация")
@@ -440,8 +555,16 @@ def render_control(queue: pd.DataFrame, events: pd.DataFrame) -> None:
         )
 
 
-def render_queue(queue: pd.DataFrame) -> None:
+def render_queue(
+    bundle,
+    app_config: dict[str, Any],
+    api_secrets: dict[str, Any],
+) -> None:
+    queue = bundle.queue
     st.subheader("Очередь контента")
+    success_message = st.session_state.pop("content_action_success", "")
+    if success_message:
+        st.success(success_message)
     if queue.empty:
         st.info("Очередь контента пока пуста.")
         return
@@ -569,6 +692,8 @@ def render_queue(queue: pd.DataFrame) -> None:
         for label, url in valid:
             _link(label, url)
 
+    _render_content_actions(row, bundle, app_config, api_secrets)
+
 
 def render_events(events: pd.DataFrame) -> None:
     st.subheader("События для контента")
@@ -625,11 +750,18 @@ def render_events(events: pd.DataFrame) -> None:
 
 def render_diagnostics(bundle) -> None:
     report = diagnostics(bundle)
+    actions_enabled = _actions_enabled(bundle)
+    access_mode = "УПРАВЛЯЕМЫЙ ДОСТУП" if actions_enabled else "ТОЛЬКО ЧТЕНИЕ"
+    access_note = (
+        "Доступны четыре подтверждаемых действия. Каждое изменение журналируется; Telegram не вызывается."
+        if actions_enabled
+        else "В коде нет доступных операций записи и нет токена Telegram."
+    )
     st.subheader("Диагностика")
     st.markdown(
         '<div class="rf-card"><div class="rf-label">Режим доступа</div>'
-        '<div class="rf-value">ТОЛЬКО ЧТЕНИЕ</div>'
-        '<div class="rf-detail">В коде нет операций записи в Google Таблицы и нет токена Telegram.</div></div>',
+        f'<div class="rf-value">{escape(access_mode)}</div>'
+        f'<div class="rf-detail">{escape(access_note)}</div></div>',
         unsafe_allow_html=True,
     )
 
@@ -637,6 +769,7 @@ def render_diagnostics(bundle) -> None:
     col_a.metric("Материалов в очереди", report["queue_rows"])
     col_b.metric("Событий в журнале", report["event_rows"])
     st.caption(f"Источник: {_source_label(bundle.source)}")
+    st.caption(f"Версия шлюза: {bundle.api_version or 'не указана'}")
     loaded_at = bundle.loaded_at.astimezone(ZoneInfo("Europe/Riga"))
     st.caption(f"Время загрузки: {loaded_at.strftime('%d.%m.%Y %H:%M:%S')} (Рига)")
 
@@ -677,7 +810,7 @@ except DataSourceError as exc:
     st.caption("Приложение остановлено: при ошибке рабочего источника тестовые данные не подставляются.")
     st.stop()
 
-render_header(bundle.source)
+render_header(bundle.source, _actions_enabled(bundle))
 if bundle.source.startswith("DEMO"):
     st.warning(bundle.note)
 else:
@@ -687,13 +820,13 @@ with st.sidebar:
     st.markdown('<div class="rf-kicker">Навигация</div>', unsafe_allow_html=True)
     page = st.radio("Раздел", ["Контроль", "Очередь", "События", "Диагностика"], label_visibility="collapsed")
     st.markdown("---")
-    st.caption("R/Form · Управление контентом v0.2")
+    st.caption("R/Form · Управление контентом v0.3")
     st.caption("Источник истины остаётся в Google Таблицах.")
 
 if page == "Контроль":
     render_control(bundle.queue, bundle.events)
 elif page == "Очередь":
-    render_queue(bundle.queue)
+    render_queue(bundle, app_config, api_secrets)
 elif page == "События":
     render_events(bundle.events)
 else:

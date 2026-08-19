@@ -1,4 +1,4 @@
-"""Read-only data access and normalization for Content Control."""
+"""Signed data access, allowlisted actions, and normalization for Content Control."""
 
 from __future__ import annotations
 
@@ -60,6 +60,8 @@ class DataBundle:
     source: str
     loaded_at: datetime
     note: str = ""
+    api_version: str = ""
+    capabilities: tuple[str, ...] = ()
 
 
 def _drop_blank_rows(frame: pd.DataFrame) -> pd.DataFrame:
@@ -148,6 +150,66 @@ def build_api_request_auth(
     }
 
 
+CONTENT_ACTIONS = {
+    "APPROVE",
+    "RETURN_FOR_REVISION",
+    "HOLD",
+    "READY_TO_PUBLISH",
+}
+
+
+def build_content_action_request(
+    secret: str,
+    content_id: str,
+    action: str,
+    comment: str = "",
+    *,
+    timestamp: int | None = None,
+    nonce: str | None = None,
+    action_id: str | None = None,
+) -> dict[str, str | int]:
+    """Build a signed, idempotent request for one allowlisted content action."""
+
+    normalized_action = str(action).strip().upper()
+    normalized_content_id = str(content_id).strip()
+    normalized_comment = str(comment).strip()
+    if normalized_action not in CONTENT_ACTIONS:
+        raise ValueError("action is not allowlisted")
+    if not normalized_content_id:
+        raise ValueError("content_id is required")
+    request_timestamp = int(time.time()) if timestamp is None else int(timestamp)
+    request_nonce = secrets.token_hex(16) if nonce is None else str(nonce)
+    request_action_id = secrets.token_hex(16) if action_id is None else str(action_id)
+    for name, value in (("nonce", request_nonce), ("action_id", request_action_id)):
+        if len(value) != 32 or any(char not in "0123456789abcdef" for char in value):
+            raise ValueError(f"{name} must contain exactly 32 lowercase hexadecimal characters")
+
+    comment_hash = hashlib.sha256(normalized_comment.encode("utf-8")).hexdigest()
+    message = "\n".join(
+        [
+            str(request_timestamp),
+            request_nonce,
+            "content_action",
+            request_action_id,
+            normalized_content_id,
+            normalized_action,
+            comment_hash,
+        ]
+    ).encode("utf-8")
+    digest = hmac.new(secret.encode("utf-8"), message, hashlib.sha256).digest()
+    signature = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+    return {
+        "timestamp": request_timestamp,
+        "nonce": request_nonce,
+        "signature": signature,
+        "operation": "content_action",
+        "action_id": request_action_id,
+        "content_id": normalized_content_id,
+        "action": normalized_action,
+        "comment": normalized_comment,
+    }
+
+
 def _validate_apps_script_url(endpoint_url: str) -> None:
     parsed = urlparse(endpoint_url)
     if (
@@ -196,13 +258,56 @@ def _load_apps_script(endpoint_url: str, secret: str, timeout_seconds: int) -> D
     event_columns = payload.get("event_fields") or None
     queue = pd.DataFrame.from_records(queue_records, columns=queue_columns)
     events = pd.DataFrame.from_records(event_records, columns=event_columns)
+    capabilities = tuple(
+        str(value) for value in (payload.get("capabilities") or []) if str(value).strip()
+    )
     return DataBundle(
         queue=prepare_queue(queue),
         events=prepare_events(events),
-        source="APPS SCRIPT / READ ONLY",
+        source=(
+            "APPS SCRIPT / CONTROLLED"
+            if "content.action" in capabilities
+            else "APPS SCRIPT / READ ONLY"
+        ),
         loaded_at=_parse_generated_at(payload.get("generated_at")),
-        note="Данные получены подписанным запросом; изменения в Google Таблицы не вносятся.",
+        note=(
+            "Данные получены подписанным запросом; изменения доступны только через подтверждённые действия."
+            if "content.action" in capabilities
+            else "Данные получены подписанным запросом; изменения в Google Таблицы не вносятся."
+        ),
+        api_version=str(payload.get("version") or ""),
+        capabilities=capabilities,
     )
+
+
+def execute_content_action(
+    endpoint_url: str,
+    secret: str,
+    content_id: str,
+    action: str,
+    comment: str = "",
+    *,
+    timeout_seconds: int = 20,
+) -> dict[str, Any]:
+    """Apply one signed allowlisted action through Content Control API v0.3+."""
+
+    _validate_apps_script_url(endpoint_url)
+    request = build_content_action_request(secret, content_id, action, comment)
+    try:
+        response = requests.post(
+            endpoint_url,
+            json=request,
+            headers={"Accept": "application/json"},
+            timeout=min(max(int(timeout_seconds), 5), 60),
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise DataSourceError(f"Не удалось выполнить действие: {exc}") from exc
+    if not isinstance(payload, dict) or payload.get("ok") is not True:
+        message = payload.get("message", "API отклонил действие") if isinstance(payload, dict) else "Некорректный ответ API"
+        raise DataSourceError(f"Действие отклонено: {message}")
+    return payload
 
 
 def load_bundle(

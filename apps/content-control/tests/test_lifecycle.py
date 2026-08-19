@@ -14,6 +14,8 @@ class LifecycleTests(unittest.TestCase):
             ({"Content_ID": "1", "Publication_Status": "HOLD"}, "HOLD"),
             ({"Content_ID": "1", "Publication_Status": "PUBLISHED"}, "PUBLISHED"),
             ({"Content_ID": "1", "Publication_Status": "SCHEDULED"}, "SCHEDULED"),
+            ({"Content_ID": "1", "Pipeline_Status": "READY_FOR_PUBLICATION"}, "READY_TO_PUBLISH"),
+            ({"Content_ID": "1", "Pipeline_Status": "REWORK"}, "REWORK"),
             ({"Content_ID": "1", "Approval_Status": "APPROVED"}, "APPROVED"),
             ({"Content_ID": "1", "Text_Status": "READY"}, "REVIEW"),
             ({"Content_ID": "1", "Pipeline_Status": "PLANNED"}, "PLANNED"),
@@ -82,6 +84,23 @@ class LifecycleTests(unittest.TestCase):
         }
         self.assertEqual(derive_lifecycle_state(row), "CANCELLED")
         self.assertFalse(is_action_required(row))
+
+    def test_rework_state_requires_action(self) -> None:
+        row = {
+            "Content_ID": "1",
+            "Pipeline_Status": "REWORK",
+            "Blocking_Issue": "Нужна доработка",
+        }
+        self.assertEqual(derive_lifecycle_state(row), "REWORK")
+        self.assertTrue(is_action_required(row))
+
+    def test_hold_state_overrides_stale_blocker(self) -> None:
+        row = {
+            "Content_ID": "1",
+            "Publication_Status": "HOLD",
+            "Blocking_Issue": "Старая блокировка",
+        }
+        self.assertEqual(derive_lifecycle_state(row), "HOLD")
 
 
 if __name__ == "__main__":

@@ -6,17 +6,25 @@ from collections.abc import Mapping
 from typing import Any
 
 
-ACTIVE_PUBLICATION_STATES = ("SCHEDULED", "APPROVED", "REVIEW", "PLANNED")
+ACTIVE_PUBLICATION_STATES = (
+    "SCHEDULED",
+    "READY_TO_PUBLISH",
+    "APPROVED",
+    "REVIEW",
+    "PLANNED",
+)
 TERMINAL_PUBLICATION_STATES = ("PUBLISHED", "SUPERSEDED", "CANCELLED")
 OPERATIONAL_PRIORITY = {
     "ERROR": 0,
     "SCHEDULED": 1,
-    "APPROVED": 2,
-    "REVIEW": 3,
-    "PLANNED": 4,
-    "DRAFT": 5,
-    "IDEA": 6,
-    "HOLD": 7,
+    "READY_TO_PUBLISH": 2,
+    "APPROVED": 3,
+    "REVIEW": 4,
+    "PLANNED": 5,
+    "REWORK": 6,
+    "DRAFT": 7,
+    "IDEA": 8,
+    "HOLD": 9,
     "PUBLISHED": 90,
     "SUPERSEDED": 91,
     "CANCELLED": 92,
@@ -59,12 +67,16 @@ def derive_lifecycle_state(row: Mapping[str, Any]) -> str:
         return "CANCELLED"
     if publication == "PUBLISHED" or _contains_any(pipeline, ("PUBLISHED", "ОПУБЛИКОВАНО")):
         return "PUBLISHED"
-    if publish_error or blocking_issue or publication in {"ERROR", "PUBLISHING"}:
-        return "ERROR"
     if publication == "HOLD" or _contains_any(pipeline, ("HOLD", "ПАУЗА")):
         return "HOLD"
+    if _contains_any(pipeline, ("REWORK", "ДОРАБОТКА")):
+        return "REWORK"
+    if publish_error or blocking_issue or publication in {"ERROR", "PUBLISHING"}:
+        return "ERROR"
     if publication == "SCHEDULED" or _contains_any(pipeline, ("SCHEDULED", "ЗАПЛАНИРОВАНО")):
         return "SCHEDULED"
+    if _contains_any(pipeline, ("READY_FOR_PUBLICATION", "ГОТОВО_К_ПУБЛИКАЦИИ")):
+        return "READY_TO_PUBLISH"
     if approval == "APPROVED":
         return "APPROVED"
     if text_status in {"APPROVED", "READY"} or _contains_any(pipeline, ("READY", "ГОТОВО")):
@@ -115,7 +127,7 @@ def is_action_required(row: Mapping[str, Any]) -> bool:
 
     if state in TERMINAL_PUBLICATION_STATES:
         return False
-    if state == "ERROR" or explicit_issue:
+    if state in {"ERROR", "REWORK"} or explicit_issue:
         return True
     if duplicate in {"YES", "ДА", "TRUE", "1", "DUPLICATE"}:
         return True
