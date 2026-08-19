@@ -8,6 +8,11 @@ on:
       - 'apps/content-control/**'
       - 'automation/content_control_api_v0_4.gs'
       - '.github/workflows/content-control-tests.yml'
+  pull_request:
+    paths:
+      - 'apps/content-control/**'
+      - 'automation/content_control_api_v0_4.gs'
+      - '.github/workflows/content-control-tests.yml'
   workflow_dispatch:
 
 jobs:
