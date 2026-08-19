@@ -32,5 +32,7 @@ jobs:
           cache-dependency-path: apps/content-control/requirements.txt
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
+      - name: Check Apps Script syntax
+        run: cp ../../automation/content_control_api_v0_4.gs /tmp/content_control_api_v0_4.js && node --check /tmp/content_control_api_v0_4.js
       - name: Run tests
         run: python -m unittest discover -s tests -v
