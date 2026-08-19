@@ -48,6 +48,25 @@ REQUIRED_EVENT_COLUMNS = {
     "Owner_Action",
 }
 
+EVENT_OWNER_COLUMNS = {
+    "Owner_Fact",
+    "Owner_Angle",
+    "Owner_Note",
+    "Owner_Media_URLs",
+    "Owner_Media_Folder_URL",
+    "Owner_Review_Status",
+    "Owner_Updated_At",
+}
+
+CONTENT_ACTIONS = {
+    "APPROVE",
+    "RETURN_FOR_REVISION",
+    "HOLD",
+    "READY_TO_PUBLISH",
+}
+EVENT_DECISIONS = {"TO_PUBLICATION", "TO_WEEKLY", "DISMISS"}
+MAX_EVENT_MEDIA_BYTES = 30 * 1024 * 1024
+
 
 class DataSourceError(RuntimeError):
     """Raised when a configured live source cannot be read safely."""
@@ -128,6 +147,31 @@ def _load_fixtures(app_root: Path, note: str = "") -> DataBundle:
     )
 
 
+def _sha256_text(value: str) -> str:
+    return hashlib.sha256(str(value).encode("utf-8")).hexdigest()
+
+
+def _sign_message(secret: str, lines: list[str]) -> str:
+    message = "\n".join(lines).encode("utf-8")
+    digest = hmac.new(secret.encode("utf-8"), message, hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+
+
+def _request_identity(
+    *,
+    timestamp: int | None = None,
+    nonce: str | None = None,
+    action_id: str | None = None,
+) -> tuple[int, str, str]:
+    request_timestamp = int(time.time()) if timestamp is None else int(timestamp)
+    request_nonce = secrets.token_hex(16) if nonce is None else str(nonce)
+    request_action_id = secrets.token_hex(16) if action_id is None else str(action_id)
+    for name, value in (("nonce", request_nonce), ("action_id", request_action_id)):
+        if len(value) != 32 or any(char not in "0123456789abcdef" for char in value):
+            raise ValueError(f"{name} must contain exactly 32 lowercase hexadecimal characters")
+    return request_timestamp, request_nonce, request_action_id
+
+
 def build_api_request_auth(
     secret: str,
     *,
@@ -150,14 +194,6 @@ def build_api_request_auth(
     }
 
 
-CONTENT_ACTIONS = {
-    "APPROVE",
-    "RETURN_FOR_REVISION",
-    "HOLD",
-    "READY_TO_PUBLISH",
-}
-
-
 def build_content_action_request(
     secret: str,
     content_id: str,
@@ -177,15 +213,11 @@ def build_content_action_request(
         raise ValueError("action is not allowlisted")
     if not normalized_content_id:
         raise ValueError("content_id is required")
-    request_timestamp = int(time.time()) if timestamp is None else int(timestamp)
-    request_nonce = secrets.token_hex(16) if nonce is None else str(nonce)
-    request_action_id = secrets.token_hex(16) if action_id is None else str(action_id)
-    for name, value in (("nonce", request_nonce), ("action_id", request_action_id)):
-        if len(value) != 32 or any(char not in "0123456789abcdef" for char in value):
-            raise ValueError(f"{name} must contain exactly 32 lowercase hexadecimal characters")
-
-    comment_hash = hashlib.sha256(normalized_comment.encode("utf-8")).hexdigest()
-    message = "\n".join(
+    request_timestamp, request_nonce, request_action_id = _request_identity(
+        timestamp=timestamp, nonce=nonce, action_id=action_id
+    )
+    signature = _sign_message(
+        secret,
         [
             str(request_timestamp),
             request_nonce,
@@ -193,11 +225,9 @@ def build_content_action_request(
             request_action_id,
             normalized_content_id,
             normalized_action,
-            comment_hash,
-        ]
-    ).encode("utf-8")
-    digest = hmac.new(secret.encode("utf-8"), message, hashlib.sha256).digest()
-    signature = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+            _sha256_text(normalized_comment),
+        ],
+    )
     return {
         "timestamp": request_timestamp,
         "nonce": request_nonce,
@@ -207,6 +237,176 @@ def build_content_action_request(
         "content_id": normalized_content_id,
         "action": normalized_action,
         "comment": normalized_comment,
+    }
+
+
+def build_event_review_request(
+    secret: str,
+    event_id: str,
+    fact: str,
+    angle: str,
+    note: str = "",
+    *,
+    timestamp: int | None = None,
+    nonce: str | None = None,
+    action_id: str | None = None,
+) -> dict[str, str | int]:
+    """Build a signed request that saves the owner's publication-facing event edits."""
+
+    normalized_event_id = str(event_id).strip()
+    normalized_fact = str(fact).strip()
+    normalized_angle = str(angle).strip()
+    normalized_note = str(note).strip()
+    if not normalized_event_id:
+        raise ValueError("event_id is required")
+    if not normalized_fact:
+        raise ValueError("fact is required")
+    if not normalized_angle:
+        raise ValueError("angle is required")
+    request_timestamp, request_nonce, request_action_id = _request_identity(
+        timestamp=timestamp, nonce=nonce, action_id=action_id
+    )
+    signature = _sign_message(
+        secret,
+        [
+            str(request_timestamp),
+            request_nonce,
+            "event_review",
+            request_action_id,
+            normalized_event_id,
+            _sha256_text(normalized_fact),
+            _sha256_text(normalized_angle),
+            _sha256_text(normalized_note),
+        ],
+    )
+    return {
+        "timestamp": request_timestamp,
+        "nonce": request_nonce,
+        "signature": signature,
+        "operation": "event_review",
+        "action_id": request_action_id,
+        "event_id": normalized_event_id,
+        "fact": normalized_fact,
+        "angle": normalized_angle,
+        "note": normalized_note,
+    }
+
+
+def build_event_decision_request(
+    secret: str,
+    event_id: str,
+    decision: str,
+    fact: str,
+    angle: str,
+    note: str = "",
+    *,
+    timestamp: int | None = None,
+    nonce: str | None = None,
+    action_id: str | None = None,
+) -> dict[str, str | int]:
+    """Build a signed editorial decision request for one DATA_EVENTS row."""
+
+    normalized_decision = str(decision).strip().upper()
+    normalized_event_id = str(event_id).strip()
+    normalized_fact = str(fact).strip()
+    normalized_angle = str(angle).strip()
+    normalized_note = str(note).strip()
+    if normalized_decision not in EVENT_DECISIONS:
+        raise ValueError("event decision is not allowlisted")
+    if not normalized_event_id:
+        raise ValueError("event_id is required")
+    if not normalized_fact:
+        raise ValueError("fact is required")
+    if not normalized_angle:
+        raise ValueError("angle is required")
+    request_timestamp, request_nonce, request_action_id = _request_identity(
+        timestamp=timestamp, nonce=nonce, action_id=action_id
+    )
+    signature = _sign_message(
+        secret,
+        [
+            str(request_timestamp),
+            request_nonce,
+            "event_decision",
+            request_action_id,
+            normalized_event_id,
+            normalized_decision,
+            _sha256_text(normalized_fact),
+            _sha256_text(normalized_angle),
+            _sha256_text(normalized_note),
+        ],
+    )
+    return {
+        "timestamp": request_timestamp,
+        "nonce": request_nonce,
+        "signature": signature,
+        "operation": "event_decision",
+        "action_id": request_action_id,
+        "event_id": normalized_event_id,
+        "decision": normalized_decision,
+        "fact": normalized_fact,
+        "angle": normalized_angle,
+        "note": normalized_note,
+    }
+
+
+def build_event_media_request(
+    secret: str,
+    event_id: str,
+    filename: str,
+    mime_type: str,
+    data: bytes,
+    *,
+    timestamp: int | None = None,
+    nonce: str | None = None,
+    action_id: str | None = None,
+) -> dict[str, str | int]:
+    """Build a signed request for one private event media upload to Google Drive."""
+
+    normalized_event_id = str(event_id).strip()
+    normalized_filename = Path(str(filename)).name.strip()
+    normalized_mime = str(mime_type).strip().lower()
+    raw = bytes(data)
+    if not normalized_event_id:
+        raise ValueError("event_id is required")
+    if not normalized_filename:
+        raise ValueError("filename is required")
+    if not normalized_mime:
+        raise ValueError("mime_type is required")
+    if not raw:
+        raise ValueError("file is empty")
+    if len(raw) > MAX_EVENT_MEDIA_BYTES:
+        raise ValueError("file exceeds the 30 MB upload limit")
+    digest_hex = hashlib.sha256(raw).hexdigest()
+    request_timestamp, request_nonce, request_action_id = _request_identity(
+        timestamp=timestamp, nonce=nonce, action_id=action_id
+    )
+    signature = _sign_message(
+        secret,
+        [
+            str(request_timestamp),
+            request_nonce,
+            "event_media",
+            request_action_id,
+            normalized_event_id,
+            normalized_filename,
+            normalized_mime,
+            str(len(raw)),
+            digest_hex,
+        ],
+    )
+    return {
+        "timestamp": request_timestamp,
+        "nonce": request_nonce,
+        "signature": signature,
+        "operation": "event_media",
+        "action_id": request_action_id,
+        "event_id": normalized_event_id,
+        "filename": normalized_filename,
+        "mime_type": normalized_mime,
+        "size": len(raw),
+        "sha256": digest_hex,
+        "data_base64": base64.b64encode(raw).decode("ascii"),
     }
 
 
@@ -229,6 +429,25 @@ def _parse_generated_at(value: Any) -> datetime:
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
     except (TypeError, ValueError):
         return datetime.now(timezone.utc)
+
+
+def _post_signed(endpoint_url: str, request: dict[str, Any], timeout_seconds: int, label: str) -> dict[str, Any]:
+    _validate_apps_script_url(endpoint_url)
+    try:
+        response = requests.post(
+            endpoint_url,
+            json=request,
+            headers={"Accept": "application/json"},
+            timeout=min(max(int(timeout_seconds), 5), 90),
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise DataSourceError(f"Не удалось выполнить {label}: {exc}") from exc
+    if not isinstance(payload, dict) or payload.get("ok") is not True:
+        message = payload.get("message", "API отклонил запрос") if isinstance(payload, dict) else "Некорректный ответ API"
+        raise DataSourceError(f"{label.capitalize()} отклонено: {message}")
+    return payload
 
 
 def _load_apps_script(endpoint_url: str, secret: str, timeout_seconds: int) -> DataBundle:
@@ -261,18 +480,18 @@ def _load_apps_script(endpoint_url: str, secret: str, timeout_seconds: int) -> D
     capabilities = tuple(
         str(value) for value in (payload.get("capabilities") or []) if str(value).strip()
     )
+    has_write = any(
+        capability in capabilities
+        for capability in ("content.action", "event.review", "event.decision", "event.media")
+    )
     return DataBundle(
         queue=prepare_queue(queue),
         events=prepare_events(events),
-        source=(
-            "APPS SCRIPT / CONTROLLED"
-            if "content.action" in capabilities
-            else "APPS SCRIPT / READ ONLY"
-        ),
+        source="APPS SCRIPT / CONTROLLED" if has_write else "APPS SCRIPT / READ ONLY",
         loaded_at=_parse_generated_at(payload.get("generated_at")),
         note=(
-            "Данные получены подписанным запросом; изменения доступны только через подтверждённые действия."
-            if "content.action" in capabilities
+            "Данные получены подписанным запросом; изменения доступны только через подтверждённые операции."
+            if has_write
             else "Данные получены подписанным запросом; изменения в Google Таблицы не вносятся."
         ),
         api_version=str(payload.get("version") or ""),
@@ -289,25 +508,53 @@ def execute_content_action(
     *,
     timeout_seconds: int = 20,
 ) -> dict[str, Any]:
-    """Apply one signed allowlisted action through Content Control API v0.3+."""
+    """Apply one signed allowlisted content action through Content Control API v0.3+."""
 
-    _validate_apps_script_url(endpoint_url)
     request = build_content_action_request(secret, content_id, action, comment)
-    try:
-        response = requests.post(
-            endpoint_url,
-            json=request,
-            headers={"Accept": "application/json"},
-            timeout=min(max(int(timeout_seconds), 5), 60),
-        )
-        response.raise_for_status()
-        payload = response.json()
-    except (requests.RequestException, ValueError) as exc:
-        raise DataSourceError(f"Не удалось выполнить действие: {exc}") from exc
-    if not isinstance(payload, dict) or payload.get("ok") is not True:
-        message = payload.get("message", "API отклонил действие") if isinstance(payload, dict) else "Некорректный ответ API"
-        raise DataSourceError(f"Действие отклонено: {message}")
-    return payload
+    return _post_signed(endpoint_url, request, timeout_seconds, "действие")
+
+
+def execute_event_review(
+    endpoint_url: str,
+    secret: str,
+    event_id: str,
+    fact: str,
+    angle: str,
+    note: str = "",
+    *,
+    timeout_seconds: int = 20,
+) -> dict[str, Any]:
+    request = build_event_review_request(secret, event_id, fact, angle, note)
+    return _post_signed(endpoint_url, request, timeout_seconds, "сохранение события")
+
+
+def execute_event_decision(
+    endpoint_url: str,
+    secret: str,
+    event_id: str,
+    decision: str,
+    fact: str,
+    angle: str,
+    note: str = "",
+    *,
+    timeout_seconds: int = 20,
+) -> dict[str, Any]:
+    request = build_event_decision_request(secret, event_id, decision, fact, angle, note)
+    return _post_signed(endpoint_url, request, timeout_seconds, "редакционное решение")
+
+
+def upload_event_media(
+    endpoint_url: str,
+    secret: str,
+    event_id: str,
+    filename: str,
+    mime_type: str,
+    data: bytes,
+    *,
+    timeout_seconds: int = 60,
+) -> dict[str, Any]:
+    request = build_event_media_request(secret, event_id, filename, mime_type, data)
+    return _post_signed(endpoint_url, request, timeout_seconds, "загрузку файла")
 
 
 def load_bundle(
@@ -345,6 +592,7 @@ def load_bundle(
 def diagnostics(bundle: DataBundle) -> dict[str, Any]:
     queue_missing = sorted(REQUIRED_QUEUE_COLUMNS - set(bundle.queue.columns))
     event_missing = sorted(REQUIRED_EVENT_COLUMNS - set(bundle.events.columns))
+    event_owner_missing = sorted(EVENT_OWNER_COLUMNS - set(bundle.events.columns))
 
     queue_duplicates = 0
     if "Content_ID" in bundle.queue.columns:
@@ -359,6 +607,7 @@ def diagnostics(bundle: DataBundle) -> dict[str, Any]:
     return {
         "queue_missing": queue_missing,
         "event_missing": event_missing,
+        "event_owner_missing": event_owner_missing,
         "queue_duplicates": queue_duplicates,
         "event_duplicates": event_duplicates,
         "queue_rows": len(bundle.queue),
