@@ -20,6 +20,13 @@ from .repository import (
 SYSTEM_PROCESSED = {"PUBLISHED", "ALREADY_IN_PIPELINE", "FILTERED_OUT_V03"}
 OWNER_PROCESSED = {"PUBLICATION", "WEEKLY", "DISMISSED"}
 
+EVENT_TYPE_LABELS = {
+    "PLAN_FACT_GAP": "Отклонение плана от факта",
+    "REPEATED_DEVIATION": "Повторяющееся отклонение",
+    "STABLE_SIGNAL": "Стабильный сигнал",
+    "TRAINING_DEVIATION": "Сигнал тренировки",
+}
+
 
 def _text(row: pd.Series, field: str, fallback: str = "") -> str:
     value = row.get(field, "")
@@ -45,6 +52,16 @@ def _score_label(value: float) -> str:
     if value >= 65:
         return "Кандидат"
     return "В запас"
+
+
+def _display_date(value: str) -> str:
+    text = str(value).strip()
+    if not text:
+        return "—"
+    parsed = pd.to_datetime(text, errors="coerce", dayfirst=False)
+    if pd.isna(parsed):
+        return text
+    return parsed.strftime("%d.%m.%Y")
 
 
 def _manual_gate(row: pd.Series) -> bool:
@@ -79,6 +96,23 @@ def _open_events(events: pd.DataFrame) -> pd.DataFrame:
         ["Content_Value_Score_Num", "Event_Date_Sort"],
         ascending=[False, False],
         na_position="last",
+    )
+
+
+def _event_type_label(value: str) -> str:
+    normalized = str(value).strip().upper()
+    return EVENT_TYPE_LABELS.get(normalized, value or "Событие")
+
+
+def _recommended_decision(score: float) -> tuple[str, str]:
+    if score >= 80:
+        return (
+            "Добавить в публикации",
+            "Сильный сигнал: создать черновик материала и передать его в обычную подготовку.",
+        )
+    return (
+        "Сохранить для Weekly",
+        "Полезный сигнал: сохранить для недельного вывода, не создавая отдельную публикацию.",
     )
 
 
@@ -145,6 +179,9 @@ Event_ID: {event_id}
 4. Блок «РЕШЕНИЕ» или «ВЫВОД» с главным смыслом: {angle}
 5. Нижний маркер: R/Form · ПЛАН → ФАКТ → РЕШЕНИЕ.
 
+ПОЧЕМУ ЭТО РАБОТАЕТ
+После результата кратко объясни, как выбранная композиция отделяет проверяемый факт от интерпретации, направляет внимание к решению и сохраняет визуальную систему R/Form.
+
 Сначала проверь, что ни один факт не был добавлен от себя. Затем создай финальную инфографику в стилистике R/Form."""
 
 
@@ -202,14 +239,8 @@ def _apply_decision(
     st.rerun()
 
 
-def render_suggestions(bundle, app_config: dict[str, Any], api_secrets: dict[str, Any]) -> None:
-    """Render the minimal owner-facing Event Detector workflow."""
-
-    st.subheader("Предложения R/Form")
-    st.caption(
-        "Event Detector показывает только сильные необработанные события. "
-        "Вы можете поправить формулировку, добавить фото/видео и одним действием выбрать судьбу материала."
-    )
+def render_suggestions(bundle, app_config: dict[str, Any], api_secrets: dict[str, Any]) -> bool:
+    """Render one clear owner decision and keep preparation tools optional."""
 
     success = st.session_state.pop("event_success", "")
     if success:
@@ -217,73 +248,79 @@ def render_suggestions(bundle, app_config: dict[str, Any], api_secrets: dict[str
 
     candidates = _open_events(bundle.events)
     if candidates.empty:
-        st.success("Новых событий, требующих редакционного решения, сейчас нет.")
-        return
+        st.success("Новых предложений, требующих вашего решения, сейчас нет.")
+        return False
 
-    manual_count = int(candidates.apply(_manual_gate, axis=1).sum())
-    priority_count = int((candidates["Content_Value_Score_Num"] >= 80).sum())
-    a, b, c = st.columns(3)
-    a.metric("Новых предложений", len(candidates))
-    b.metric("Приоритетных", priority_count)
-    c.metric("Нужна ваша проверка", manual_count)
+    st.subheader("Что решить сейчас")
+    if len(candidates) == 1:
+        st.caption("Одно предложение за раз. Обычное решение занимает меньше минуты.")
+    else:
+        st.caption(
+            f"Одно предложение за раз. Сейчас показано первое из {len(candidates)}; "
+            "остальные подождут."
+        )
 
     option_labels: dict[str, str] = {}
     for _, item in candidates.iterrows():
         event_id = _text(item, "Event_ID")
-        score = _score(item)
+        score_value = _score(item)
         option_labels[event_id] = (
-            f"{_text(item, 'Date', '—')} · {int(score)}/100 · "
-            f"{_score_label(score)} · {_text(item, 'Event_Type', 'Событие')}"
+            f"{_display_date(_text(item, 'Date'))} · {int(score_value)}/100 · "
+            f"{_event_type_label(_text(item, 'Event_Type', 'Событие'))}"
         )
     event_ids = list(option_labels)
-    selected_id = st.selectbox(
-        "Выберите событие",
-        event_ids,
-        format_func=lambda value: option_labels.get(value, value),
-        key="event_suggestion_selected",
-    )
+    selected_key = "event_suggestion_selected"
+    if st.session_state.get(selected_key) not in event_ids:
+        st.session_state[selected_key] = event_ids[0]
+
+    if len(event_ids) > 1:
+        with st.expander(f"Другие предложения: {len(event_ids) - 1}"):
+            st.selectbox(
+                "Перейти к другому предложению",
+                event_ids,
+                format_func=lambda value: option_labels.get(value, value),
+                key=selected_key,
+            )
+    selected_id = str(st.session_state[selected_key])
     row = candidates[candidates["Event_ID"].astype(str) == selected_id].iloc[0]
     score = _score(row)
+    event_type = _event_type_label(_text(row, "Event_Type", "Событие"))
+    recommendation, recommendation_note = _recommended_decision(score)
+
+    original_fact = _text(row, "Fact")
+    default_fact = _text(row, "Owner_Fact", original_fact)
+    default_angle = _text(row, "Owner_Angle") or _text(row, "Recommended_Angle_1")
+    default_note = _text(row, "Owner_Note")
+    fact_key = f"event_fact::{selected_id}"
+    angle_key = f"event_angle::{selected_id}"
+    note_key = f"event_note::{selected_id}"
+    if fact_key not in st.session_state:
+        st.session_state[fact_key] = default_fact
+    if angle_key not in st.session_state:
+        st.session_state[angle_key] = default_angle
+    if note_key not in st.session_state:
+        st.session_state[note_key] = default_note
+    fact = str(st.session_state[fact_key]).strip()
+    angle = str(st.session_state[angle_key]).strip()
+    note = str(st.session_state[note_key]).strip()
 
     st.markdown(
         '<div class="rf-card rf-card-decision">'
-        '<div class="rf-label">Событие</div>'
-        f'<div class="rf-value">{escape(_text(row, "Event_Type", "Событие"))}</div>'
-        f'<div class="rf-detail">{escape(_text(row, "Date", "—"))} · '
+        '<div class="rf-label">Следующее решение</div>'
+        f'<div class="rf-value">{escape(event_type)}</div>'
+        f'<div class="rf-detail">{escape(_display_date(_text(row, "Date")))} · '
         f'{int(score)}/100 · {escape(_score_label(score))}</div>'
         '</div>',
         unsafe_allow_html=True,
     )
     if _manual_gate(row):
-        st.warning(
-            "Это событие требует вашего явного решения. Автоматически в публикацию оно не попадёт."
-        )
+        st.warning("Нужно ваше явное решение. Система ничего не отправит автоматически.")
 
-    original_fact = _text(row, "Fact")
-    fact = st.text_area(
-        "Факт для публикации",
-        value=_text(row, "Owner_Fact", original_fact),
-        height=145,
-        max_chars=5000,
-        help="Можно исправить формулировку. Исходная запись Event Detector при этом не удаляется.",
-        key=f"event_fact::{selected_id}",
-    )
-    default_angle = _text(row, "Owner_Angle") or _text(row, "Recommended_Angle_1")
-    angle = st.text_input(
-        "Главная мысль",
-        value=default_angle,
-        max_chars=700,
-        placeholder="Что должен понять читатель?",
-        key=f"event_angle::{selected_id}",
-    )
-    note = st.text_area(
-        "Комментарий — необязательно",
-        value=_text(row, "Owner_Note"),
-        height=80,
-        max_chars=2000,
-        placeholder="Контекст для подготовки поста, если он нужен",
-        key=f"event_note::{selected_id}",
-    )
+    st.markdown("#### Факт")
+    st.write(fact or "Факт не заполнен")
+    st.markdown("#### Главная мысль")
+    st.write(angle or "Главная мысль не заполнена")
+    st.info(f"Рекомендация: **{recommendation}**. {recommendation_note}")
 
     capabilities = set(bundle.capabilities)
     review_enabled = "event.review" in capabilities
@@ -291,96 +328,136 @@ def render_suggestions(bundle, app_config: dict[str, Any], api_secrets: dict[str
     media_enabled = "event.media" in capabilities
     endpoint_url, secret, timeout = _api_args(app_config, api_secrets)
 
-    save_col, prompt_col = st.columns(2)
-    with save_col:
-        if st.button(
-            "Сохранить изменения",
-            width="stretch",
-            disabled=not review_enabled or not fact.strip() or not angle.strip(),
-            key=f"event_save::{selected_id}",
-        ):
-            _save_review(endpoint_url, secret, timeout, selected_id, fact, angle, note)
-    with prompt_col:
-        if st.button(
-            "Промпт для инфографики",
-            width="stretch",
-            disabled=not fact.strip() or not angle.strip(),
-            key=f"event_prompt::{selected_id}",
-        ):
-            st.session_state[f"event_prompt_text::{selected_id}"] = _infographic_prompt(row, fact, angle)
-
-    prompt_text = st.session_state.get(f"event_prompt_text::{selected_id}", "")
-    if prompt_text:
-        st.caption("Скопируйте промпт кнопкой в правом верхнем углу блока и вставьте в ChatGPT.")
-        st.code(prompt_text, language=None, wrap_lines=True)
-
-    st.markdown("#### Фото и видео")
-    urls = _media_urls(row)
-    folder_url = _text(row, "Owner_Media_Folder_URL")
-    if urls:
-        st.caption(f"Уже прикреплено файлов: {len(urls)}")
-        link_cols = st.columns(min(len(urls), 3))
-        for index, url in enumerate(urls):
-            with link_cols[index % len(link_cols)]:
-                if url.startswith(("https://", "http://")):
-                    st.link_button(f"Файл {index + 1}", url, width="stretch")
-    elif folder_url:
-        st.link_button("Открыть папку медиа", folder_url, width="stretch")
-    else:
-        st.caption("Можно прикрепить исходное фото или короткое видео. Файлы сохраняются в Google Drive.")
-
-    uploads = st.file_uploader(
-        "Добавить фото/видео",
-        type=["jpg", "jpeg", "png", "webp", "mp4", "mov"],
-        accept_multiple_files=True,
-        help="До 30 МБ на файл. Файлы остаются приватными в RFORM_SYSTEM / CONTENT_ASSETS.",
-        key=f"event_media::{selected_id}",
-    )
-    if uploads:
-        too_large = [item.name for item in uploads if getattr(item, "size", 0) > 30 * 1024 * 1024]
-        if too_large:
-            st.warning("Файлы больше 30 МБ не будут загружены: " + ", ".join(too_large))
-        valid_uploads = [item for item in uploads if getattr(item, "size", 0) <= 30 * 1024 * 1024]
-        if st.button(
-            "Прикрепить выбранные файлы",
-            width="stretch",
-            disabled=not media_enabled or not valid_uploads,
-            key=f"event_media_submit::{selected_id}",
-        ):
-            uploaded = 0
-            with st.spinner("Сохраняю файлы в Google Drive…"):
-                for item in valid_uploads:
-                    try:
-                        upload_event_media(
-                            endpoint_url,
-                            secret,
-                            selected_id,
-                            item.name,
-                            item.type or "application/octet-stream",
-                            item.getvalue(),
-                            timeout_seconds=max(timeout, 60),
-                        )
-                    except (DataSourceError, ValueError) as exc:
-                        st.error(f"{item.name}: {exc}")
-                    else:
-                        uploaded += 1
-            if uploaded:
-                st.session_state["event_success"] = f"Прикреплено файлов: {uploaded}."
-                st.cache_data.clear()
-                st.rerun()
-
-    if not review_enabled or not decision_enabled or not media_enabled:
-        st.info(
-            "Интерфейс уже готов, но запись событий и загрузка медиа включатся после обновления "
-            "Apps Script шлюза до v0.4. Просмотр и генерация промпта работают уже сейчас."
+    if not decision_enabled:
+        st.warning(
+            "Решения пока недоступны: действующий Apps Script нужно обновить до v0.4. "
+            "До обновления можно только проверить формулировки."
         )
 
-    st.markdown("#### Что сделать с событием")
+    with st.expander("Изменить предложение или добавить материалы"):
+        fact = st.text_area(
+            "Факт для публикации",
+            height=130,
+            max_chars=5000,
+            help="Исходная запись Event Detector останется в истории.",
+            key=fact_key,
+        )
+        angle = st.text_input(
+            "Главная мысль",
+            max_chars=700,
+            placeholder="Что должен понять читатель?",
+            key=angle_key,
+        )
+        note = st.text_area(
+            "Комментарий — необязательно",
+            height=80,
+            max_chars=2000,
+            placeholder="Контекст для подготовки материала",
+            key=note_key,
+        )
+
+        save_col, prompt_col = st.columns(2)
+        with save_col:
+            if st.button(
+                "Сохранить черновик",
+                width="stretch",
+                disabled=not review_enabled or not fact.strip() or not angle.strip(),
+                key=f"event_save::{selected_id}",
+            ):
+                _save_review(endpoint_url, secret, timeout, selected_id, fact, angle, note)
+        with prompt_col:
+            if st.button(
+                "Задание для инфографики",
+                width="stretch",
+                disabled=not fact.strip() or not angle.strip(),
+                key=f"event_prompt::{selected_id}",
+            ):
+                st.session_state[f"event_prompt_text::{selected_id}"] = _infographic_prompt(
+                    row, fact, angle
+                )
+
+        prompt_text = st.session_state.get(f"event_prompt_text::{selected_id}", "")
+        if prompt_text:
+            st.caption("Скопируйте задание и вставьте его в ChatGPT.")
+            st.code(prompt_text, language=None, wrap_lines=True)
+
+        st.markdown("##### Фото и видео — необязательно")
+        urls = _media_urls(row)
+        folder_url = _text(row, "Owner_Media_Folder_URL")
+        if urls:
+            st.caption(f"Уже прикреплено файлов: {len(urls)}")
+            link_cols = st.columns(min(len(urls), 3))
+            for index, url in enumerate(urls):
+                with link_cols[index % len(link_cols)]:
+                    if url.startswith(("https://", "http://")):
+                        st.link_button(f"Файл {index + 1}", url, width="stretch")
+        elif folder_url:
+            st.link_button("Открыть папку медиа", folder_url, width="stretch")
+
+        uploads = st.file_uploader(
+            "Добавить фото/видео",
+            type=["jpg", "jpeg", "png", "webp", "mp4", "mov"],
+            accept_multiple_files=True,
+            help="До 30 МБ на файл. Файлы сохраняются приватно в Google Drive.",
+            key=f"event_media::{selected_id}",
+        )
+        if uploads:
+            too_large = [
+                item.name for item in uploads
+                if getattr(item, "size", 0) > 30 * 1024 * 1024
+            ]
+            if too_large:
+                st.warning("Файлы больше 30 МБ не будут загружены: " + ", ".join(too_large))
+            valid_uploads = [
+                item for item in uploads
+                if getattr(item, "size", 0) <= 30 * 1024 * 1024
+            ]
+            if st.button(
+                "Прикрепить выбранные файлы",
+                width="stretch",
+                disabled=not media_enabled or not valid_uploads,
+                key=f"event_media_submit::{selected_id}",
+            ):
+                uploaded = 0
+                with st.spinner("Сохраняю файлы в Google Drive…"):
+                    for item in valid_uploads:
+                        try:
+                            upload_event_media(
+                                endpoint_url,
+                                secret,
+                                selected_id,
+                                item.name,
+                                item.type or "application/octet-stream",
+                                item.getvalue(),
+                                timeout_seconds=max(timeout, 60),
+                            )
+                        except (DataSourceError, ValueError) as exc:
+                            st.error(f"{item.name}: {exc}")
+                        else:
+                            uploaded += 1
+                if uploaded:
+                    st.session_state["event_success"] = f"Прикреплено файлов: {uploaded}."
+                    st.cache_data.clear()
+                    st.rerun()
+
+        st.markdown("##### Исходные данные Event Detector")
+        st.write(original_fact or "—")
+        st.caption(f"Код события: {_text(row, 'Event_ID', '—')}")
+        st.caption(f"Источник: {_text(row, 'Source', '—')}")
+        angles = [_text(row, f"Recommended_Angle_{index}") for index in range(1, 4)]
+        angles = [value for value in angles if value]
+        if angles:
+            st.markdown("**Другие предложенные мысли:**")
+            for index, value in enumerate(angles, 1):
+                st.write(f"{index}. {value}")
+
+    st.markdown("### Ваше решение")
+    st.caption("Ни один вариант не публикует материал в Telegram.")
     col_publication, col_weekly, col_skip = st.columns(3)
     disabled = not decision_enabled or not fact.strip() or not angle.strip()
     with col_publication:
         if st.button(
-            "В публикацию",
+            "Добавить в публикации",
             type="primary",
             width="stretch",
             disabled=disabled,
@@ -390,9 +467,10 @@ def render_suggestions(bundle, app_config: dict[str, Any], api_secrets: dict[str
                 endpoint_url, secret, timeout, selected_id,
                 "TO_PUBLICATION", fact, angle, note,
             )
+        st.caption("Создаст черновик в очереди. Публикация не запускается.")
     with col_weekly:
         if st.button(
-            "В Weekly",
+            "Сохранить для Weekly",
             width="stretch",
             disabled=disabled,
             key=f"event_to_weekly::{selected_id}",
@@ -401,9 +479,10 @@ def render_suggestions(bundle, app_config: dict[str, Any], api_secrets: dict[str
                 endpoint_url, secret, timeout, selected_id,
                 "TO_WEEKLY", fact, angle, note,
             )
+        st.caption("Сохранит событие для недельного вывода без отдельного поста.")
     with col_skip:
         if st.button(
-            "Пропустить",
+            "Не использовать",
             width="stretch",
             disabled=disabled,
             key=f"event_dismiss::{selected_id}",
@@ -412,14 +491,6 @@ def render_suggestions(bundle, app_config: dict[str, Any], api_secrets: dict[str
                 endpoint_url, secret, timeout, selected_id,
                 "DISMISS", fact, angle, note,
             )
+        st.caption("Уберёт предложение из входящих. Исходное событие сохранится.")
 
-    with st.expander("Исходные данные Event Detector"):
-        st.write(original_fact or "—")
-        st.caption(f"Event ID: {_text(row, 'Event_ID', '—')}")
-        st.caption(f"Источник: {_text(row, 'Source', '—')}")
-        angles = [_text(row, f"Recommended_Angle_{index}") for index in range(1, 4)]
-        angles = [value for value in angles if value]
-        if angles:
-            st.markdown("**Предложенные системой углы:**")
-            for index, value in enumerate(angles, 1):
-                st.write(f"{index}. {value}")
+    return True

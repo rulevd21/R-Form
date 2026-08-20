@@ -330,19 +330,12 @@ def _source_label(source: str) -> str:
 
 
 def render_header(source: str, capabilities: tuple[str, ...]) -> None:
-    event_enabled = all(
-        capability in set(capabilities)
-        for capability in ("event.review", "event.decision", "event.media")
-    )
-    actions_enabled = "content.action" in set(capabilities)
-    badge = "КОНТЕНТ + СОБЫТИЯ · v0.4" if event_enabled else (
-        "КОНТРОЛИРУЕМЫЕ ДЕЙСТВИЯ · v0.3" if actions_enabled else "ТОЛЬКО ЧТЕНИЕ"
-    )
+    badge = "ЕЖЕДНЕВНЫЙ РЕЖИМ · v0.4.1"
     st.markdown('<div class="rf-kicker">R/Form · Контент-операции</div>', unsafe_allow_html=True)
     st.markdown('<div class="rf-title">Управление контентом</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="rf-subtitle">Один интерфейс для очереди публикаций и предложений Event Detector. '
-        'Финальное решение всегда остаётся за владельцем.</div>',
+        '<div class="rf-subtitle">Раздел «Сегодня» показывает только одно следующее решение. '
+        'Очередь, история и техническая информация вынесены отдельно.</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -669,20 +662,21 @@ with st.sidebar:
     st.markdown('<div class="rf-kicker">Навигация</div>', unsafe_allow_html=True)
     page = st.radio(
         "Раздел",
-        ["Контроль", "Предложения", "Очередь", "События", "Диагностика"],
+        ["Сегодня", "Материалы", "История", "Система"],
         label_visibility="collapsed",
     )
     st.markdown("---")
-    st.caption("R/Form · Управление контентом v0.4")
+    st.caption("R/Form · Управление контентом v0.4.1")
     st.caption("Источник истины остаётся в Google Таблицах.")
 
-if page == "Контроль":
-    render_control(bundle.queue, bundle.events)
-elif page == "Предложения":
-    render_suggestions(bundle, app_config, api_secrets)
-elif page == "Очередь":
+if page == "Сегодня":
+    proposal_shown = render_suggestions(bundle, app_config, api_secrets)
+    if not proposal_shown:
+        st.markdown("---")
+        render_control(bundle.queue, bundle.events)
+elif page == "Материалы":
     render_queue(bundle, app_config, api_secrets)
-elif page == "События":
+elif page == "История":
     render_events(bundle.events)
 else:
     render_diagnostics(bundle)
