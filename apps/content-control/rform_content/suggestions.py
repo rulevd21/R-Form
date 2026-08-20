@@ -25,6 +25,10 @@ EVENT_TYPE_LABELS = {
     "REPEATED_DEVIATION": "Повторяющееся отклонение",
     "STABLE_SIGNAL": "Стабильный сигнал",
     "TRAINING_DEVIATION": "Сигнал тренировки",
+    "PROGRAM_DEVIATION": "Отклонение от программы",
+    "CONTROL_POINT": "Контрольная точка",
+    "DECISION_CHANGED": "Решение изменено",
+    "DECISION_RECORDED": "Решение зафиксировано",
 }
 
 
@@ -111,7 +115,7 @@ def _recommended_decision(score: float) -> tuple[str, str]:
             "Сильный сигнал: создать черновик материала и передать его в обычную подготовку.",
         )
     return (
-        "Сохранить для Weekly",
+        "Сохранить для недельного обзора",
         "Полезный сигнал: сохранить для недельного вывода, не создавая отдельную публикацию.",
     )
 
@@ -231,7 +235,7 @@ def _apply_decision(
         if content_id:
             message += f" Материал: {content_id}."
     elif decision == "TO_WEEKLY":
-        message = "Событие сохранено для ближайшего Weekly Control."
+        message = "Событие сохранено для ближайшего недельного обзора."
     else:
         message = "Событие больше не будет предлагаться."
     st.session_state["event_success"] = message
@@ -339,7 +343,7 @@ def render_suggestions(bundle, app_config: dict[str, Any], api_secrets: dict[str
             "Факт для публикации",
             height=130,
             max_chars=5000,
-            help="Исходная запись Event Detector останется в истории.",
+            help="Исходная запись системы выявления событий останется в истории.",
             key=fact_key,
         )
         angle = st.text_input(
@@ -440,7 +444,7 @@ def render_suggestions(bundle, app_config: dict[str, Any], api_secrets: dict[str
                     st.cache_data.clear()
                     st.rerun()
 
-        st.markdown("##### Исходные данные Event Detector")
+        st.markdown("##### Исходные данные системы выявления событий")
         st.write(original_fact or "—")
         st.caption(f"Код события: {_text(row, 'Event_ID', '—')}")
         st.caption(f"Источник: {_text(row, 'Source', '—')}")
@@ -470,7 +474,7 @@ def render_suggestions(bundle, app_config: dict[str, Any], api_secrets: dict[str
         st.caption("Создаст черновик в очереди. Публикация не запускается.")
     with col_weekly:
         if st.button(
-            "Сохранить для Weekly",
+            "Сохранить для недельного обзора",
             width="stretch",
             disabled=disabled,
             key=f"event_to_weekly::{selected_id}",

@@ -7,6 +7,8 @@ from unittest.mock import Mock, patch
 import pandas as pd
 from streamlit.testing.v1 import AppTest
 
+from rform_content.suggestions import _event_type_label
+
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 
@@ -33,12 +35,18 @@ class AppSmokeTests(unittest.TestCase):
         app = AppTest.from_file(str(APP_ROOT / "app.py"), default_timeout=30).run()
         labels = [button.label for button in app.button]
         self.assertIn("Добавить в публикации", labels)
-        self.assertIn("Сохранить для Weekly", labels)
+        self.assertIn("Сохранить для недельного обзора", labels)
         self.assertIn("Не использовать", labels)
         self.assertIn("Сохранить черновик", labels)
         self.assertIn("Задание для инфографики", labels)
         self.assertEqual(len(app.metric), 0)
         self.assertTrue(any("Одно предложение за раз" in item.value for item in app.caption))
+
+    def test_event_types_are_shown_in_russian(self) -> None:
+        self.assertEqual(_event_type_label("PROGRAM_DEVIATION"), "Отклонение от программы")
+        self.assertEqual(_event_type_label("CONTROL_POINT"), "Контрольная точка")
+        self.assertEqual(_event_type_label("DECISION_CHANGED"), "Решение изменено")
+        self.assertEqual(_event_type_label("DECISION_RECORDED"), "Решение зафиксировано")
 
     def test_v04_gateway_enables_the_three_daily_decisions(self) -> None:
         queue = pd.read_csv(APP_ROOT / "fixtures" / "content_queue.csv", keep_default_na=False)
@@ -69,7 +77,7 @@ class AppSmokeTests(unittest.TestCase):
         with patch("rform_content.repository.requests.post", return_value=response):
             app.run()
 
-        for label in ("Добавить в публикации", "Сохранить для Weekly", "Не использовать"):
+        for label in ("Добавить в публикации", "Сохранить для недельного обзора", "Не использовать"):
             button = next(item for item in app.button if item.label == label)
             self.assertFalse(button.disabled)
         self.assertEqual(len(app.metric), 0)
@@ -109,6 +117,8 @@ class AppSmokeTests(unittest.TestCase):
         app.radio[0].set_value("Материалы").run()
 
         self.assertFalse(app.toggle[0].value)
+        rubric_filter = next(item for item in app.multiselect if item.label == "Рубрика")
+        self.assertEqual(rubric_filter.placeholder, "Выберите рубрику")
         self.assertEqual(
             list(app.dataframe[0].value.columns),
             ["Код материала", "Статус", "Дата публикации", "Рубрика", "Тип материала"],

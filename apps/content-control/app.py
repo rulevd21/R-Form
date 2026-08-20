@@ -108,7 +108,7 @@ COMMON_VALUE_LABELS = {
     "ERROR": "Ошибка",
     "CANDIDATE": "Кандидат",
     "PUBLICATION": "В публикацию",
-    "WEEKLY": "В Weekly",
+    "WEEKLY": "В недельный обзор",
     "DISMISSED": "Пропущено",
     "EDITED": "Отредактировано",
 }
@@ -330,7 +330,7 @@ def _source_label(source: str) -> str:
 
 
 def render_header(source: str, capabilities: tuple[str, ...]) -> None:
-    badge = "ЕЖЕДНЕВНЫЙ РЕЖИМ · v0.4.1"
+    badge = "ЕЖЕДНЕВНЫЙ РЕЖИМ · v0.4.2"
     st.markdown('<div class="rf-kicker">R/Form · Контент-операции</div>', unsafe_allow_html=True)
     st.markdown('<div class="rf-title">Управление контентом</div>', unsafe_allow_html=True)
     st.markdown(
@@ -509,6 +509,7 @@ def render_queue(bundle, app_config: dict[str, Any], api_secrets: dict[str, Any]
     selected_rubrics = f2.multiselect(
         "Рубрика", rubrics,
         format_func=lambda rubric: _display_value("Rubric", rubric),
+        placeholder="Выберите рубрику",
     )
     query = f3.text_input("Поиск", placeholder="Код материала или текст")
 
@@ -586,7 +587,7 @@ def render_queue(bundle, app_config: dict[str, Any], api_secrets: dict[str, Any]
 
 def render_events(events: pd.DataFrame) -> None:
     st.subheader("Журнал событий")
-    st.caption("Технический журнал Event Detector. Для ежедневной работы используйте раздел «Предложения». ")
+    st.caption("Технический журнал системы выявления событий. Для ежедневной работы используйте раздел «Сегодня».")
     if events.empty:
         st.info("Журнал событий пока пуст.")
         return
@@ -666,7 +667,7 @@ with st.sidebar:
         label_visibility="collapsed",
     )
     st.markdown("---")
-    st.caption("R/Form · Управление контентом v0.4.1")
+    st.caption("R/Form · Управление контентом v0.4.2")
     st.caption("Источник истины остаётся в Google Таблицах.")
 
 if page == "Сегодня":
