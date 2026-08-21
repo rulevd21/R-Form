@@ -23,7 +23,7 @@ from rform_content.repository import (
     load_bundle,
 )
 from rform_content.daily_review import render_daily_publication_review
-from rform_content.suggestions import render_suggestions
+from rform_content.material_plan import classify_materials
 
 
 APP_ROOT = Path(__file__).resolve().parent
@@ -327,6 +327,17 @@ def _material_kind(row: pd.Series) -> str:
 
 
 def _material_name(row: pd.Series) -> str:
+    content_id = str(row.get("Content_ID") or "").strip().upper()
+    named_topics = {
+        "SERIES-06-DIARIES": "Дневник без перегруза",
+        "SERIES-07-WEEKLY-REVIEW": "Недельный разбор",
+        "SERIES-08-VERSIONING": "Версионность решений",
+        "START-HERE": "Навигация START HERE",
+        "LEADMAGNET-TRAINING-CHECK": "R/Form Training Check",
+    }
+    topic = next((label for marker, label in named_topics.items() if marker in content_id), "")
+    if topic:
+        return " · ".join(part for part in (_material_source_date(row), topic) if part and part != "—")
     return " · ".join(
         part for part in (_material_source_date(row), _material_type(row), _material_kind(row))
         if part and part != "—"
@@ -417,7 +428,7 @@ def _source_label(source: str) -> str:
 
 
 def render_header(source: str, capabilities: tuple[str, ...]) -> None:
-    badge = "АВТОМАТИЧЕСКИЙ РЕЖИМ · v0.5.0"
+    badge = "АВТОМАТИЧЕСКИЙ РЕЖИМ · v0.5.1"
     st.markdown('<div class="rf-kicker">R/Form · Контент-операции</div>', unsafe_allow_html=True)
     st.markdown('<div class="rf-title">Управление контентом</div>', unsafe_allow_html=True)
     st.markdown(
@@ -679,6 +690,79 @@ def render_queue(bundle, app_config: dict[str, Any], api_secrets: dict[str, Any]
     _render_content_actions(row, bundle, app_config, api_secrets)
 
 
+def _plan_status(row: pd.Series) -> str:
+    publication = _value(row, "Publication_Status", "").upper()
+    if publication == "SCHEDULED":
+        return "Согласовано — будет отправлено автоматически"
+    return "В нужный день появится во вкладке «Сегодня»"
+
+
+def render_plan(bundle) -> None:
+    queue = _queue_with_material_names(bundle.queue, bundle.events)
+    plan = classify_materials(queue)
+    st.subheader("План публикаций")
+    st.caption(
+        "Здесь только будущие материалы. При наступлении даты готовые варианты появятся во вкладке «Сегодня»."
+    )
+
+    if plan.future.empty:
+        st.success("Будущих публикаций пока нет.")
+    else:
+        view = pd.DataFrame({
+            "Дата": plan.future["Plan_Date"].map(
+                lambda value: value.strftime("%d.%m.%Y") if value else "—"
+            ),
+            "Материал": plan.future["Display_Name"],
+            "Что произойдёт": plan.future.apply(_plan_status, axis=1),
+        })
+        st.dataframe(view, hide_index=True, width="stretch")
+
+    hidden_count = (
+        len(plan.published) + len(plan.archived) + len(plan.stale) + len(plan.technical)
+    )
+    with st.expander("Скрытые служебные записи"):
+        st.write(
+            f"Из рабочего интерфейса скрыто {hidden_count}: "
+            f"опубликовано — {len(plan.published)}, архив — {len(plan.archived)}, "
+            f"просрочено — {len(plan.stale)}, технические проверки — {len(plan.technical)}."
+        )
+        st.caption(
+            "Они остаются в мастер-таблице как журнал и защита от повторной публикации, "
+            "но больше не требуют вашего внимания."
+        )
+
+
+def render_today_clear(bundle) -> None:
+    queue = _queue_with_material_names(bundle.queue, bundle.events)
+    plan = classify_materials(queue)
+    scheduled_today = plan.today[
+        plan.today.get("Publication_Status", pd.Series("", index=plan.today.index))
+        .fillna("").astype(str).str.upper().eq("SCHEDULED")
+    ]
+    waiting_today = plan.today.drop(scheduled_today.index)
+
+    if not scheduled_today.empty:
+        st.subheader("На сегодня всё согласовано")
+        st.success("Выбранная публикация передана в автопостинг. Дополнительных действий не требуется.")
+    elif not waiting_today.empty:
+        st.subheader("Материал на сегодня найден")
+        st.info("Система ожидает закрытия новых данных и сама подготовит готовые варианты.")
+    else:
+        st.subheader("На сегодня решений нет")
+        st.caption("Новые данные и очередь проверены. Дополнительных действий не требуется.")
+
+    if not plan.future.empty:
+        row = plan.future.iloc[0]
+        st.markdown(
+            '<div class="rf-card">'
+            '<div class="rf-label">Следующая плановая публикация</div>'
+            f'<div class="rf-value">{escape(_value(row, "Display_Name"))}</div>'
+            '<div class="rf-detail">В нужный день система перенесёт решение во вкладку «Сегодня».</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+
 def render_events(events: pd.DataFrame) -> None:
     st.subheader("Журнал событий")
     st.caption("Технический журнал системы выявления событий. Для ежедневной работы используйте раздел «Сегодня».")
@@ -762,24 +846,19 @@ with st.sidebar:
     st.markdown('<div class="rf-kicker">Навигация</div>', unsafe_allow_html=True)
     page = st.radio(
         "Раздел",
-        ["Сегодня", "Материалы", "История", "Система"],
+        ["Сегодня", "План", "Система"],
         label_visibility="collapsed",
     )
     st.markdown("---")
-    st.caption("R/Form · Управление контентом v0.5.0")
+    st.caption("R/Form · Управление контентом v0.5.1")
     st.caption("Источник истины остаётся в Google Таблицах.")
 
 if page == "Сегодня":
     proposal_shown = render_daily_publication_review(bundle, app_config, api_secrets)
     if not proposal_shown:
-        proposal_shown = render_suggestions(bundle, app_config, api_secrets)
-    if not proposal_shown:
-        st.markdown("---")
-        render_control(_queue_with_material_names(bundle.queue, bundle.events), bundle.events)
-elif page == "Материалы":
-    render_queue(bundle, app_config, api_secrets)
-elif page == "История":
-    render_events(bundle.events)
+        render_today_clear(bundle)
+elif page == "План":
+    render_plan(bundle)
 else:
     render_diagnostics(bundle)
 

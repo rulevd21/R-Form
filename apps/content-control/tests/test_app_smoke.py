@@ -21,14 +21,14 @@ class AppSmokeTests(unittest.TestCase):
         navigation = next(item for item in app.radio if item.label == "Раздел")
         self.assertEqual(
             list(navigation.options),
-            ["Сегодня", "Материалы", "История", "Система"],
+            ["Сегодня", "План", "Система"],
         )
         self.assertEqual(app.subheader[0].value, "Готово к согласованию")
         self.assertTrue(any("синтетические данные" in warning.value for warning in app.warning))
 
     def test_all_navigation_pages_render(self) -> None:
         app = AppTest.from_file(str(APP_ROOT / "app.py"), default_timeout=30).run()
-        for page in ("Материалы", "История", "Система"):
+        for page in ("План", "Система"):
             with self.subTest(page=page):
                 navigation = next(item for item in app.radio if item.label == "Раздел")
                 navigation.set_value(page).run()
@@ -58,7 +58,7 @@ class AppSmokeTests(unittest.TestCase):
         queue.loc[0, [
             "Content_ID", "Date", "Rubric", "Content_Type", "Publication_Status",
             "Pipeline_Status", "Publish_At",
-        ]] = [content_id, "20.08.2026", "TRAINING_LOG", "PROOF", "PLANNED", "PLANNED", ""]
+        ]] = [content_id, "25.08.2026", "TRAINING_LOG", "PROOF", "PLANNED", "PLANNED", ""]
         events.loc[0, ["Candidate_Content_ID", "Entity", "Date"]] = [
             content_id, "S-20260814-C", "14.08.2026",
         ]
@@ -85,14 +85,12 @@ class AppSmokeTests(unittest.TestCase):
         with patch("rform_content.repository.requests.post", return_value=response):
             app.run()
             navigation = next(item for item in app.radio if item.label == "Раздел")
-            navigation.set_value("Материалы").run()
+            navigation.set_value("План").run()
             expected = "14.08.2026 · Тренировка C · Итоги и решение"
-            self.assertIn(expected, set(app.dataframe[0].value["Название материала"]))
-            card_selector = next(item for item in app.selectbox if item.label == "Открыть карточку материала")
-            card_selector.set_value(content_id).run()
-            self.assertTrue(any(f"Технический код: {content_id}" == item.value for item in app.caption))
+            self.assertIn(expected, set(app.dataframe[0].value["Материал"]))
+            self.assertNotIn(content_id, app.dataframe[0].value.to_string())
 
-    def test_v04_gateway_enables_the_three_daily_decisions(self) -> None:
+    def test_old_event_decisions_are_not_shown_in_daily_mode(self) -> None:
         queue = pd.read_csv(APP_ROOT / "fixtures" / "content_queue.csv", keep_default_na=False)
         events = pd.read_csv(APP_ROOT / "fixtures" / "data_events.csv", keep_default_na=False)
         response = Mock()
@@ -121,9 +119,10 @@ class AppSmokeTests(unittest.TestCase):
         with patch("rform_content.repository.requests.post", return_value=response):
             app.run()
 
-        for label in ("Добавить в публикации", "Сохранить для недельного обзора", "Не использовать"):
-            button = next(item for item in app.button if item.label == label)
-            self.assertFalse(button.disabled)
+        labels = [button.label for button in app.button]
+        self.assertNotIn("Добавить в публикации", labels)
+        self.assertNotIn("Сохранить для недельного обзора", labels)
+        self.assertNotIn("Не использовать", labels)
         self.assertEqual(len(app.metric), 0)
 
     def test_v05_gateway_enables_one_click_publication_approval(self) -> None:
@@ -161,7 +160,7 @@ class AppSmokeTests(unittest.TestCase):
         self.assertFalse(approve.disabled)
         self.assertEqual(app.subheader[0].value, "Готово к согласованию")
 
-    def test_today_falls_back_to_publication_control_when_proposals_are_done(self) -> None:
+    def test_today_does_not_fall_back_to_technical_dashboard(self) -> None:
         queue = pd.read_csv(APP_ROOT / "fixtures" / "content_queue.csv", keep_default_na=False)
         events = pd.read_csv(APP_ROOT / "fixtures" / "data_events.csv", keep_default_na=False)
         events["Candidate_Content_ID"] = [f"DONE-{index}" for index in range(len(events))]
@@ -188,27 +187,39 @@ class AppSmokeTests(unittest.TestCase):
         with patch("rform_content.repository.requests.post", return_value=response):
             app.run()
 
-        self.assertEqual(len(app.metric), 4)
-        self.assertTrue(any(item.value == "Следующая публикация" for item in app.subheader))
+        self.assertEqual(len(app.metric), 0)
+        self.assertFalse(any(item.value == "Следующая публикация" for item in app.subheader))
+        self.assertTrue(any(
+            item.value in {
+                "Материал на сегодня найден",
+                "На сегодня решений нет",
+                "На сегодня всё согласовано",
+            }
+            for item in app.subheader
+        ))
 
-    def test_queue_defaults_to_russian_operational_view(self) -> None:
+    def test_plan_shows_only_future_owner_facing_rows(self) -> None:
         app = AppTest.from_file(str(APP_ROOT / "app.py"), default_timeout=30).run()
         navigation = next(item for item in app.radio if item.label == "Раздел")
-        navigation.set_value("Материалы").run()
+        navigation.set_value("План").run()
 
-        self.assertFalse(app.toggle[0].value)
-        rubric_filter = next(item for item in app.multiselect if item.label == "Рубрика")
-        self.assertEqual(rubric_filter.placeholder, "Выберите рубрику")
         self.assertEqual(
             list(app.dataframe[0].value.columns),
-            ["Название материала", "Статус", "Дата публикации"],
+            ["Дата", "Материал", "Что произойдёт"],
         )
-        self.assertNotIn("Опубликовано", set(app.dataframe[0].value["Статус"]))
-        self.assertTrue(
-            any("закрытые материалы скрыты" in caption.value for caption in app.caption)
-        )
+        self.assertFalse(any("DEMO-" in value for value in app.dataframe[0].value.astype(str).to_numpy().flatten()))
+        self.assertEqual(len(app.multiselect), 0)
+        self.assertEqual(len(app.selectbox), 0)
 
-    def test_controlled_gateway_shows_four_confirmed_actions(self) -> None:
+    def test_future_series_have_plain_language_names(self) -> None:
+        app = AppTest.from_file(str(APP_ROOT / "app.py"), default_timeout=30).run()
+        navigation = next(item for item in app.radio if item.label == "Раздел")
+        navigation.set_value("План").run()
+
+        names = set(app.dataframe[0].value["Материал"])
+        self.assertIn("25.08.2026 · Недельный разбор", names)
+
+    def test_plan_has_no_manual_status_controls(self) -> None:
         queue = pd.read_csv(APP_ROOT / "fixtures" / "content_queue.csv", keep_default_na=False)
         events = pd.read_csv(APP_ROOT / "fixtures" / "data_events.csv", keep_default_na=False)
         response = Mock()
@@ -234,15 +245,10 @@ class AppSmokeTests(unittest.TestCase):
         with patch("rform_content.repository.requests.post", return_value=response):
             app.run()
             navigation = next(radio for radio in app.radio if radio.label == "Раздел")
-            navigation.set_value("Материалы").run()
+            navigation.set_value("План").run()
 
-        action = next(radio for radio in app.radio if radio.label == "Выберите действие")
-        self.assertEqual(
-            list(action.options),
-            ["Утвердить", "Вернуть на доработку", "Поставить на паузу", "Готово к публикации"],
-        )
-        submit = next(button for button in app.button if button.label == "Применить действие")
-        self.assertTrue(submit.disabled)
+        self.assertFalse(any(radio.label == "Выберите действие" for radio in app.radio))
+        self.assertFalse(any(button.label == "Применить действие" for button in app.button))
 
 
 if __name__ == "__main__":

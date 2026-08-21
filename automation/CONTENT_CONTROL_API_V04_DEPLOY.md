@@ -4,7 +4,7 @@
 
 ## Что уже подготовлено
 
-- Streamlit v0.5.0 в ветке `agent/content-control-streamlit-readonly`;
+- Streamlit v0.5.1 в ветке `agent/content-control-streamlit-readonly`;
 - `DATA_EVENTS` расширен owner-полями;
 - приватная папка `RFORM_SYSTEM / CONTENT_ASSETS` создана;
 - backend: `automation/content_control_api_v0_4.gs`;
@@ -47,7 +47,7 @@ capabilities:
 
 Production gate считается пройденным, если:
 
-- шапка показывает `АВТОМАТИЧЕСКИЙ РЕЖИМ · v0.5.0`;
+- шапка показывает `АВТОМАТИЧЕСКИЙ РЕЖИМ · v0.5.1`;
 - диагностика показывает `training.read`, `publication.propose`, `publication.approve_schedule`;
 - раздел `Сегодня` показывает тренировку C от 21.08.2026 и два готовых варианта;
 - кнопка `Согласовать и отправить` активна.
