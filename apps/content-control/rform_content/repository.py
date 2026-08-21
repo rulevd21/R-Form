@@ -58,6 +58,14 @@ EVENT_OWNER_COLUMNS = {
     "Owner_Updated_At",
 }
 
+REQUIRED_TRAINING_SESSION_COLUMNS = {
+    "Session_ID",
+    "Date",
+    "Session_Type",
+    "Main_Result",
+    "Session_Status",
+}
+
 CONTENT_ACTIONS = {
     "APPROVE",
     "RETURN_FOR_REVISION",
@@ -65,6 +73,7 @@ CONTENT_ACTIONS = {
     "READY_TO_PUBLISH",
 }
 EVENT_DECISIONS = {"TO_PUBLICATION", "TO_WEEKLY", "DISMISS"}
+PUBLICATION_PROPOSAL_MODES = {"UPDATE_EXISTING", "CREATE_NEW"}
 MAX_EVENT_MEDIA_BYTES = 30 * 1024 * 1024
 
 
@@ -76,6 +85,7 @@ class DataSourceError(RuntimeError):
 class DataBundle:
     queue: pd.DataFrame
     events: pd.DataFrame
+    sessions: pd.DataFrame
     source: str
     loaded_at: datetime
     note: str = ""
@@ -135,12 +145,37 @@ def prepare_events(frame: pd.DataFrame) -> pd.DataFrame:
     return events
 
 
+def prepare_sessions(frame: pd.DataFrame) -> pd.DataFrame:
+    sessions = _drop_blank_rows(frame)
+    if "Date" in sessions.columns:
+        text = sessions["Date"].fillna("").astype(str).str.strip()
+        is_iso = text.str.match(r"^\d{4}-\d{2}-\d{2}")
+        parsed = pd.Series(pd.NaT, index=sessions.index, dtype="datetime64[ns, UTC]")
+        if is_iso.any():
+            parsed.loc[is_iso] = pd.to_datetime(text.loc[is_iso], errors="coerce", utc=True)
+        if (~is_iso).any():
+            parsed.loc[~is_iso] = pd.to_datetime(
+                text.loc[~is_iso], errors="coerce", dayfirst=True, utc=True
+            )
+        sessions["Session_Date_Sort"] = parsed
+    else:
+        sessions["Session_Date_Sort"] = pd.Series(dtype="datetime64[ns, UTC]")
+    return sessions
+
+
 def _load_fixtures(app_root: Path, note: str = "") -> DataBundle:
     queue = pd.read_csv(app_root / "fixtures" / "content_queue.csv", keep_default_na=False)
     events = pd.read_csv(app_root / "fixtures" / "data_events.csv", keep_default_na=False)
+    sessions_path = app_root / "fixtures" / "training_sessions.csv"
+    sessions = (
+        pd.read_csv(sessions_path, keep_default_na=False)
+        if sessions_path.exists()
+        else pd.DataFrame(columns=sorted(REQUIRED_TRAINING_SESSION_COLUMNS))
+    )
     return DataBundle(
         queue=prepare_queue(queue),
         events=prepare_events(events),
+        sessions=prepare_sessions(sessions),
         source="DEMO / FIXTURE",
         loaded_at=datetime.now(timezone.utc),
         note=note or "Используются синтетические данные. Производственные данные не загружены.",
@@ -410,6 +445,84 @@ def build_event_media_request(
     }
 
 
+def build_publication_approval_request(
+    secret: str,
+    proposal_id: str,
+    session_id: str,
+    source_hash: str,
+    mode: str,
+    target_content_id: str,
+    title: str,
+    angle: str,
+    telegram_text: str,
+    *,
+    timestamp: int | None = None,
+    nonce: str | None = None,
+    action_id: str | None = None,
+) -> dict[str, str | int]:
+    """Build one signed approval that schedules exactly the selected text."""
+
+    normalized_mode = str(mode).strip().upper()
+    values = {
+        "proposal_id": str(proposal_id).strip(),
+        "session_id": str(session_id).strip(),
+        "source_hash": str(source_hash).strip().lower(),
+        "target_content_id": str(target_content_id).strip(),
+        "title": str(title).strip(),
+        "angle": str(angle).strip(),
+        "telegram_text": str(telegram_text).strip(),
+    }
+    if normalized_mode not in PUBLICATION_PROPOSAL_MODES:
+        raise ValueError("proposal mode is not allowlisted")
+    for name in ("proposal_id", "session_id", "source_hash", "title", "angle", "telegram_text"):
+        if not values[name]:
+            raise ValueError(f"{name} is required")
+    if normalized_mode == "UPDATE_EXISTING" and not values["target_content_id"]:
+        raise ValueError("target_content_id is required for an update")
+    if len(values["source_hash"]) != 64 or any(
+        char not in "0123456789abcdef" for char in values["source_hash"]
+    ):
+        raise ValueError("source_hash must be a SHA-256 hex digest")
+    if len(values["telegram_text"]) > 4096:
+        raise ValueError("telegram_text exceeds the Telegram limit")
+
+    request_timestamp, request_nonce, request_action_id = _request_identity(
+        timestamp=timestamp, nonce=nonce, action_id=action_id
+    )
+    signature = _sign_message(
+        secret,
+        [
+            str(request_timestamp),
+            request_nonce,
+            "publication_approval",
+            request_action_id,
+            values["proposal_id"],
+            values["session_id"],
+            values["source_hash"],
+            normalized_mode,
+            values["target_content_id"],
+            _sha256_text(values["title"]),
+            _sha256_text(values["angle"]),
+            _sha256_text(values["telegram_text"]),
+        ],
+    )
+    return {
+        "timestamp": request_timestamp,
+        "nonce": request_nonce,
+        "signature": signature,
+        "operation": "publication_approval",
+        "action_id": request_action_id,
+        "proposal_id": values["proposal_id"],
+        "session_id": values["session_id"],
+        "source_hash": values["source_hash"],
+        "mode": normalized_mode,
+        "target_content_id": values["target_content_id"],
+        "title": values["title"],
+        "angle": values["angle"],
+        "telegram_text": values["telegram_text"],
+    }
+
+
 def _validate_apps_script_url(endpoint_url: str) -> None:
     parsed = urlparse(endpoint_url)
     if (
@@ -475,18 +588,27 @@ def _load_apps_script(endpoint_url: str, secret: str, timeout_seconds: int) -> D
 
     queue_columns = payload.get("queue_fields") or None
     event_columns = payload.get("event_fields") or None
+    session_records = payload.get("training_sessions") or []
+    if not isinstance(session_records, list):
+        raise DataSourceError("Apps Script API вернул некорректные данные тренировок")
+    session_columns = payload.get("training_session_fields") or None
     queue = pd.DataFrame.from_records(queue_records, columns=queue_columns)
     events = pd.DataFrame.from_records(event_records, columns=event_columns)
+    sessions = pd.DataFrame.from_records(session_records, columns=session_columns)
     capabilities = tuple(
         str(value) for value in (payload.get("capabilities") or []) if str(value).strip()
     )
     has_write = any(
         capability in capabilities
-        for capability in ("content.action", "event.review", "event.decision", "event.media")
+        for capability in (
+            "content.action", "event.review", "event.decision", "event.media",
+            "publication.approve_schedule",
+        )
     )
     return DataBundle(
         queue=prepare_queue(queue),
         events=prepare_events(events),
+        sessions=prepare_sessions(sessions),
         source="APPS SCRIPT / CONTROLLED" if has_write else "APPS SCRIPT / READ ONLY",
         loaded_at=_parse_generated_at(payload.get("generated_at")),
         note=(
@@ -557,6 +679,34 @@ def upload_event_media(
     return _post_signed(endpoint_url, request, timeout_seconds, "загрузку файла")
 
 
+def execute_publication_approval(
+    endpoint_url: str,
+    secret: str,
+    proposal_id: str,
+    session_id: str,
+    source_hash: str,
+    mode: str,
+    target_content_id: str,
+    title: str,
+    angle: str,
+    telegram_text: str,
+    *,
+    timeout_seconds: int = 20,
+) -> dict[str, Any]:
+    request = build_publication_approval_request(
+        secret,
+        proposal_id,
+        session_id,
+        source_hash,
+        mode,
+        target_content_id,
+        title,
+        angle,
+        telegram_text,
+    )
+    return _post_signed(endpoint_url, request, timeout_seconds, "согласование публикации")
+
+
 def load_bundle(
     app_root: Path,
     app_config: dict[str, Any] | None = None,
@@ -593,6 +743,7 @@ def diagnostics(bundle: DataBundle) -> dict[str, Any]:
     queue_missing = sorted(REQUIRED_QUEUE_COLUMNS - set(bundle.queue.columns))
     event_missing = sorted(REQUIRED_EVENT_COLUMNS - set(bundle.events.columns))
     event_owner_missing = sorted(EVENT_OWNER_COLUMNS - set(bundle.events.columns))
+    session_missing = sorted(REQUIRED_TRAINING_SESSION_COLUMNS - set(bundle.sessions.columns))
 
     queue_duplicates = 0
     if "Content_ID" in bundle.queue.columns:
@@ -608,8 +759,10 @@ def diagnostics(bundle: DataBundle) -> dict[str, Any]:
         "queue_missing": queue_missing,
         "event_missing": event_missing,
         "event_owner_missing": event_owner_missing,
+        "session_missing": session_missing,
         "queue_duplicates": queue_duplicates,
         "event_duplicates": event_duplicates,
         "queue_rows": len(bundle.queue),
         "event_rows": len(bundle.events),
+        "session_rows": len(bundle.sessions),
     }

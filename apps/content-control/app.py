@@ -22,6 +22,7 @@ from rform_content.repository import (
     execute_content_action,
     load_bundle,
 )
+from rform_content.daily_review import render_daily_publication_review
 from rform_content.suggestions import render_suggestions
 
 
@@ -228,7 +229,7 @@ def _secret_section(name: str) -> dict[str, Any]:
         return {}
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def _cached_bundle(app_config: dict[str, Any], api_secrets: dict[str, Any]):
     return load_bundle(APP_ROOT, app_config, api_secrets)
 
@@ -416,12 +417,12 @@ def _source_label(source: str) -> str:
 
 
 def render_header(source: str, capabilities: tuple[str, ...]) -> None:
-    badge = "ЕЖЕДНЕВНЫЙ РЕЖИМ · v0.4.3"
+    badge = "АВТОМАТИЧЕСКИЙ РЕЖИМ · v0.5.0"
     st.markdown('<div class="rf-kicker">R/Form · Контент-операции</div>', unsafe_allow_html=True)
     st.markdown('<div class="rf-title">Управление контентом</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="rf-subtitle">Раздел «Сегодня» показывает только одно следующее решение. '
-        'Очередь, история и техническая информация вынесены отдельно.</div>',
+        '<div class="rf-subtitle">Приложение само находит новые данные, готовит варианты публикации '
+        'и оставляет вам только выбор готового текста.</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -706,9 +707,10 @@ def render_diagnostics(bundle) -> None:
     loaded_at = bundle.loaded_at.astimezone(ZoneInfo("Europe/Riga"))
     st.caption(f"Время загрузки: {loaded_at.strftime('%d.%m.%Y %H:%M:%S')} (Рига)")
 
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     c1.metric("Материалов в очереди", report["queue_rows"])
     c2.metric("Событий в журнале", report["event_rows"])
+    c3.metric("Тренировок", report["session_rows"])
 
     if report["queue_missing"]:
         st.warning("Очередь: отсутствуют поля: " + ", ".join(report["queue_missing"]))
@@ -722,6 +724,10 @@ def render_diagnostics(bundle) -> None:
         st.info("Для полного режима v0.4 не хватает полей: " + ", ".join(report["event_owner_missing"]))
     elif all(cap in capabilities for cap in ("event.review", "event.decision", "event.media")):
         st.success("Предложения R/Form: редактирование, решения и медиа доступны.")
+    if report.get("session_missing"):
+        st.info("Для автоматических публикаций не хватает полей тренировок: " + ", ".join(report["session_missing"]))
+    elif "training.read" in capabilities:
+        st.success("Новые тренировки доступны для автоматической подготовки публикаций.")
 
     if report["queue_duplicates"] or report["event_duplicates"]:
         st.warning(
@@ -760,11 +766,13 @@ with st.sidebar:
         label_visibility="collapsed",
     )
     st.markdown("---")
-    st.caption("R/Form · Управление контентом v0.4.3")
+    st.caption("R/Form · Управление контентом v0.5.0")
     st.caption("Источник истины остаётся в Google Таблицах.")
 
 if page == "Сегодня":
-    proposal_shown = render_suggestions(bundle, app_config, api_secrets)
+    proposal_shown = render_daily_publication_review(bundle, app_config, api_secrets)
+    if not proposal_shown:
+        proposal_shown = render_suggestions(bundle, app_config, api_secrets)
     if not proposal_shown:
         st.markdown("---")
         render_control(_queue_with_material_names(bundle.queue, bundle.events), bundle.events)

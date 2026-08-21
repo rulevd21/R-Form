@@ -13,8 +13,10 @@ from rform_content.repository import (
     build_event_decision_request,
     build_event_media_request,
     build_event_review_request,
+    build_publication_approval_request,
     diagnostics,
     execute_content_action,
+    execute_publication_approval,
     load_bundle,
     prepare_queue,
 )
@@ -32,6 +34,8 @@ class RepositoryTests(unittest.TestCase):
         self.assertFalse(report["event_missing"])
         self.assertGreater(report["queue_rows"], 0)
         self.assertGreater(report["event_rows"], 0)
+        self.assertGreater(report["session_rows"], 0)
+        self.assertFalse(report["session_missing"])
 
     def test_incomplete_apps_script_config_falls_back_explicitly(self) -> None:
         bundle = load_bundle(APP_ROOT, {"data_mode": "apps_script"}, {})
@@ -132,6 +136,26 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(request["size"], 3)
         self.assertEqual(request["signature"], "nsdHZ1FRQGgU1m19nvwDGWqbXSQX55oW03zKBnG4Sio")
 
+    def test_publication_approval_envelope_is_signed_and_exact(self) -> None:
+        request = build_publication_approval_request(
+            "test-secret",
+            "PROP-S-20260821-C-CREATE-REPORT",
+            "S-20260821-C",
+            "ab" * 32,
+            "CREATE_NEW",
+            "",
+            "Тренировка C: факт и решение",
+            "Сильный сигнал без автоматического ускорения.",
+            "Готовый текст публикации",
+            timestamp=1_700_000_000,
+            nonce="ab" * 16,
+            action_id="cd" * 16,
+        )
+        self.assertEqual(request["operation"], "publication_approval")
+        self.assertEqual(request["mode"], "CREATE_NEW")
+        self.assertEqual(request["session_id"], "S-20260821-C")
+        self.assertNotIn("test-secret", str(request))
+
     def test_content_action_rejects_unknown_action(self) -> None:
         with self.assertRaises(ValueError):
             build_content_action_request("secret", "CNT-001", "PUBLISH")
@@ -204,6 +228,37 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(request["operation"], "content_action")
         self.assertEqual(request["content_id"], "CNT-001")
         self.assertEqual(request["action"], "HOLD")
+        self.assertNotIn("live-secret", str(request))
+
+    def test_execute_publication_approval_sends_exact_selected_option(self) -> None:
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "ok": True,
+            "status": "APPLIED",
+            "content_id": "CNT-20260821-S-20260821-C",
+            "publication_status": "SCHEDULED",
+        }
+        with patch("rform_content.repository.requests.post", return_value=response) as post:
+            result = execute_publication_approval(
+                "https://script.google.com/macros/s/demo-deployment/exec",
+                "live-secret",
+                "PROP-S-20260821-C-CREATE-REPORT",
+                "S-20260821-C",
+                "ab" * 32,
+                "CREATE_NEW",
+                "",
+                "Тренировка C: факт и решение",
+                "Сильный сигнал без автоматического ускорения.",
+                "Точный выбранный текст",
+                timeout_seconds=12,
+            )
+
+        self.assertEqual(result["publication_status"], "SCHEDULED")
+        request = post.call_args.kwargs["json"]
+        self.assertEqual(request["operation"], "publication_approval")
+        self.assertEqual(request["session_id"], "S-20260821-C")
+        self.assertEqual(request["telegram_text"], "Точный выбранный текст")
         self.assertNotIn("live-secret", str(request))
 
 

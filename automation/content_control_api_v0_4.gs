@@ -1,15 +1,17 @@
-// R/Form Content Control API v0.4
+// R/Form Content Control API v0.5
 // Standalone Apps Script web app for Channel Control.
 // Reads CONTENT_QUEUE + DATA_EVENTS, applies allowlisted content actions,
 // saves owner-facing event edits, stores private photo/video assets in Drive,
 // and can promote an approved event to a PLANNED CONTENT_QUEUE row.
-// It never calls Telegram and never sets SCHEDULED/PUBLISHING/PUBLISHED.
+// It never calls Telegram. One explicit owner approval may set SCHEDULED;
+// the separate Telegram Autopost project remains the only publishing transport.
 
 const RFORM_CONTENT_API_V04 = Object.freeze({
-  version: '0.4.0',
+  version: '0.5.0',
   spreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
   queueSheet: 'CONTENT_QUEUE',
   eventsSheet: 'DATA_EVENTS',
+  trainingSessionsSheet: 'TRAINING_SESSIONS',
   actionLogSheet: 'CONTENT_ACTION_LOG',
   eventLogSheet: 'EVENT_ACTION_LOG',
   assetsRootFolderId: '1m9BcQeUQxk8aYCTmrkINcS-8Tegm1S-v',
@@ -21,17 +23,20 @@ const RFORM_CONTENT_API_V04 = Object.freeze({
   maxAngleChars: 700,
   maxNoteChars: 2000,
   maxMediaBytes: 30 * 1024 * 1024,
+  maxTelegramChars: 4096,
   allowedMediaTypes: Object.freeze([
     'image/jpeg', 'image/png', 'image/webp',
     'video/mp4', 'video/quicktime'
   ]),
   queueFields: Object.freeze([
-    'Content_ID', 'Date', 'Rubric', 'Public_Data_Allowed', 'Text_Status',
+    'Content_ID', 'Session_ID', 'Date', 'Rubric', 'Main_Training_Fact',
+    'Main_Deviation', 'Public_Data_Allowed', 'Text_Status',
     'Visual_Status', 'Approval_Status', 'Publication_Status', 'Pipeline_Status',
     'Publish_At', 'Distribution_Mode', 'Telegram_Text', 'Blocking_Issue',
     'Preview_Review_Status', 'Content_Type', 'Target_Segment', 'Decision',
     'Editorial_Direction', 'Work_Packet_URL', 'Folder_URL', 'Text_URL',
-    'Visual_URL', 'Duplicate_Flag', 'Publish_Error'
+    'Visual_URL', 'Duplicate_Flag', 'Publish_Error', 'Current_Stage',
+    'Audience_Problem', 'Telegram_Message_ID', 'Telegram_Post_URL', 'Posted_At'
   ]),
   eventFields: Object.freeze([
     'Event_ID', 'Date', 'Entity', 'Event_Type', 'Source', 'Fact',
@@ -45,6 +50,24 @@ const RFORM_CONTENT_API_V04 = Object.freeze({
   eventOwnerFields: Object.freeze([
     'Owner_Fact', 'Owner_Angle', 'Owner_Note', 'Owner_Media_URLs',
     'Owner_Media_Folder_URL', 'Owner_Review_Status', 'Owner_Updated_At'
+  ]),
+  trainingSessionFields: Object.freeze([
+    'Session_ID', 'Date', 'Session_Type', 'Actual_Duration', 'Readiness',
+    'Pain_After', 'Session_Goal', 'Main_Result', 'Plan_Status',
+    'Technique_Status', 'Session_Conclusion', 'Session_Decision', 'Session_Status'
+  ]),
+  proposalFields: Object.freeze([
+    'Content_ID', 'Session_ID', 'Date', 'Rubric', 'Main_Training_Fact',
+    'Main_Deviation', 'Decision', 'Public_Data_Allowed', 'Source_Packet_Status',
+    'Text_Status', 'Visual_Status', 'Approval_Status', 'Publication_Status',
+    'Created_At', 'Updated_At', 'Duplicate_Flag', 'Task_ID', 'Pipeline_Status',
+    'Current_Stage', 'Current_Chat', 'Next_Chat', 'Blocking_Issue',
+    'Content_Function', 'Content_Type', 'Funnel_Stage', 'Reader_Value',
+    'Proof_Source', 'CTA_Type', 'Distribution_Mode', 'Editorial_Direction',
+    'Publish_At', 'AutoPost_Allowed', 'Telegram_Chat_ID', 'Telegram_Post_Mode',
+    'Telegram_Text', 'Telegram_Message_ID', 'Telegram_Post_URL', 'Posted_At',
+    'Publish_Error', 'Preview_Review_Hash', 'Preview_Reviewed_At',
+    'Preview_Reviewed_By', 'Preview_Review_Status'
   ]),
   actionFields: Object.freeze([
     'Content_ID', 'Public_Data_Allowed', 'Text_Status', 'Visual_Status',
@@ -106,8 +129,10 @@ function rformContentApiV04Preflight() {
   const spreadsheet = SpreadsheetApp.openById(RFORM_CONTENT_API_V04.spreadsheetId);
   const queue = rformContentApiV04RequireSheet_(spreadsheet, RFORM_CONTENT_API_V04.queueSheet);
   const events = rformContentApiV04RequireSheet_(spreadsheet, RFORM_CONTENT_API_V04.eventsSheet);
+  const sessions = rformContentApiV04RequireSheet_(spreadsheet, RFORM_CONTENT_API_V04.trainingSessionsSheet);
   const queueHeaders = rformContentApiV04Headers_(queue);
   const eventHeaders = rformContentApiV04Headers_(events);
+  const sessionHeaders = rformContentApiV04Headers_(sessions);
   const missingQueue = RFORM_CONTENT_API_V04.queueFields.filter(function (name) {
     return queueHeaders.indexOf(name) === -1;
   });
@@ -115,6 +140,12 @@ function rformContentApiV04Preflight() {
     return eventHeaders.indexOf(name) === -1;
   });
   const missingActionFields = RFORM_CONTENT_API_V04.actionFields.filter(function (name) {
+    return queueHeaders.indexOf(name) === -1;
+  });
+  const missingTrainingFields = RFORM_CONTENT_API_V04.trainingSessionFields.filter(function (name) {
+    return sessionHeaders.indexOf(name) === -1;
+  });
+  const missingProposalFields = RFORM_CONTENT_API_V04.proposalFields.filter(function (name) {
     return queueHeaders.indexOf(name) === -1;
   });
   let assetsRootAccessible = false;
@@ -126,24 +157,30 @@ function rformContentApiV04Preflight() {
   }
   const report = {
     ok: missingQueue.length === 0 && missingEvents.length === 0 &&
-      missingActionFields.length === 0 && assetsRootAccessible,
+      missingActionFields.length === 0 && missingTrainingFields.length === 0 &&
+      missingProposalFields.length === 0 && assetsRootAccessible,
     mode: 'CONTROL_API_PREFLIGHT',
     version: RFORM_CONTENT_API_V04.version,
     capabilities: [
-      'content.read', 'content.action', 'event.review', 'event.decision', 'event.media'
+      'content.read', 'content.action', 'event.review', 'event.decision', 'event.media',
+      'training.read', 'publication.propose', 'publication.approve_schedule'
     ],
     spreadsheet: spreadsheet.getName(),
     queueRows: Math.max(queue.getLastRow() - 1, 0),
     eventRows: Math.max(events.getLastRow() - 1, 0),
+    trainingSessionRows: Math.max(sessions.getLastRow() - 1, 0),
     missingQueueFields: missingQueue,
     missingEventFields: missingEvents,
     missingActionFields: missingActionFields,
+    missingTrainingFields: missingTrainingFields,
+    missingProposalFields: missingProposalFields,
     assetsRootAccessible: assetsRootAccessible,
     secretConfigured: !!PropertiesService.getScriptProperties().getProperty(
       RFORM_CONTENT_API_V04.secretProperty
     ),
     telegramCallsPresent: false,
-    scheduledStatusCanBeWritten: false
+    scheduledStatusCanBeWritten: true,
+    scheduledRequiresExplicitOwnerApproval: true
   };
   console.log(JSON.stringify(report, null, 2));
   return report;
@@ -174,6 +211,9 @@ function doPost(e) {
     if (operation === 'event_media') {
       return rformContentApiV04Json_(rformContentApiV04ApplyEventMedia_(request));
     }
+    if (operation === 'publication_approval') {
+      return rformContentApiV04Json_(rformContentApiV04ApplyPublicationApproval_(request));
+    }
     return rformContentApiV04Json_(rformContentApiV04Payload_());
   } catch (error) {
     console.error(error && error.stack ? error.stack : String(error));
@@ -197,19 +237,27 @@ function rformContentApiV04Payload_() {
     RFORM_CONTENT_API_V04.eventFields,
     'Event_ID'
   );
+  const trainingSessions = rformContentApiV04ReadRows_(
+    rformContentApiV04RequireSheet_(spreadsheet, RFORM_CONTENT_API_V04.trainingSessionsSheet),
+    RFORM_CONTENT_API_V04.trainingSessionFields,
+    'Session_ID'
+  );
   return {
     ok: true,
     version: RFORM_CONTENT_API_V04.version,
     mode: 'CONTROLLED_WRITE',
     capabilities: [
-      'content.read', 'content.action', 'event.review', 'event.decision', 'event.media'
+      'content.read', 'content.action', 'event.review', 'event.decision', 'event.media',
+      'training.read', 'publication.propose', 'publication.approve_schedule'
     ],
     generated_at: new Date().toISOString(),
     queue_fields: RFORM_CONTENT_API_V04.queueFields,
     event_fields: RFORM_CONTENT_API_V04.eventFields,
+    training_session_fields: RFORM_CONTENT_API_V04.trainingSessionFields,
     queue: queue,
     events: events,
-    row_counts: {queue: queue.length, events: events.length}
+    training_sessions: trainingSessions,
+    row_counts: {queue: queue.length, events: events.length, training_sessions: trainingSessions.length}
   };
 }
 
@@ -242,7 +290,8 @@ function rformContentApiV04Authorize_(request) {
   }
   if (!/^[a-f0-9]{32}$/.test(nonce)) throw new Error('Некорректный nonce.');
   if ([
-    'read', 'content_action', 'event_review', 'event_decision', 'event_media'
+    'read', 'content_action', 'event_review', 'event_decision', 'event_media',
+    'publication_approval'
   ].indexOf(operation) === -1) {
     throw new Error('Операция не поддерживается.');
   }
@@ -317,7 +366,246 @@ function rformContentApiV04SignedMessage_(request) {
       String(request.sha256 || '').trim().toLowerCase()
     ].join('\n');
   }
+  if (operation === 'publication_approval') {
+    return [
+      timestamp,
+      nonce,
+      operation,
+      String(request.action_id || ''),
+      String(request.proposal_id || ''),
+      String(request.session_id || ''),
+      String(request.source_hash || '').trim().toLowerCase(),
+      String(request.mode || '').trim().toUpperCase(),
+      String(request.target_content_id || ''),
+      rformContentApiV04Sha256Hex_(String(request.title || '').trim()),
+      rformContentApiV04Sha256Hex_(String(request.angle || '').trim()),
+      rformContentApiV04Sha256Hex_(String(request.telegram_text || '').trim())
+    ].join('\n');
+  }
   throw new Error('Операция не поддерживается.');
+}
+
+function rformContentApiV04ApplyPublicationApproval_(request) {
+  const actionId = String(request.action_id || '').trim();
+  const proposalId = String(request.proposal_id || '').trim();
+  const sessionId = String(request.session_id || '').trim();
+  const sourceHash = String(request.source_hash || '').trim().toLowerCase();
+  const mode = String(request.mode || '').trim().toUpperCase();
+  const targetContentId = String(request.target_content_id || '').trim();
+  const title = String(request.title || '').trim();
+  const angle = String(request.angle || '').trim();
+  const telegramText = String(request.telegram_text || '').trim();
+  const nonce = String(request.nonce || '');
+
+  rformContentApiV04RequireActionId_(actionId);
+  rformContentApiV04RequireRecordId_(proposalId, 'Код предложения');
+  rformContentApiV04RequireRecordId_(sessionId, 'Код тренировки');
+  if (['UPDATE_EXISTING', 'CREATE_NEW'].indexOf(mode) === -1) {
+    throw new Error('Режим предложения не поддерживается.');
+  }
+  if (mode === 'UPDATE_EXISTING') {
+    rformContentApiV04RequireRecordId_(targetContentId, 'Код материала');
+  }
+  if (!/^[a-f0-9]{64}$/.test(sourceHash)) throw new Error('Некорректный хэш исходных данных.');
+  if (!title || title.length > 240) throw new Error('Название публикации некорректно.');
+  if (!angle || angle.length > RFORM_CONTENT_API_V04.maxAngleChars) {
+    throw new Error('Главная мысль публикации некорректна.');
+  }
+  if (!telegramText || telegramText.length > RFORM_CONTENT_API_V04.maxTelegramChars) {
+    throw new Error('Текст публикации пуст или превышает лимит Telegram.');
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) throw new Error('Очередь занята. Повторите попытку.');
+  try {
+    const spreadsheet = SpreadsheetApp.openById(RFORM_CONTENT_API_V04.spreadsheetId);
+    const sessions = rformContentApiV04RequireSheet_(
+      spreadsheet, RFORM_CONTENT_API_V04.trainingSessionsSheet
+    );
+    const sessionHeaders = rformContentApiV04Headers_(sessions);
+    const missingTraining = RFORM_CONTENT_API_V04.trainingSessionFields.filter(function (name) {
+      return sessionHeaders.indexOf(name) === -1;
+    });
+    if (missingTraining.length) {
+      throw new Error('TRAINING_SESSIONS missing fields: ' + missingTraining.join(', '));
+    }
+    const sessionRow = rformContentApiV04FindUniqueRow_(sessions, 'Session_ID', sessionId);
+    const sessionMap = rformContentApiV04HeaderMap_(sessionHeaders);
+    const sessionValues = sessions.getRange(
+      sessionRow, 1, 1, sessions.getLastColumn()
+    ).getDisplayValues()[0];
+    const sessionValue = function (name) {
+      return String(sessionValues[sessionMap[name] - 1] || '').trim();
+    };
+    if (sessionValue('Session_Status').toUpperCase() !== 'CLOSED') {
+      throw new Error('Тренировка ещё не закрыта. Публикация не подготовлена.');
+    }
+    const actualSourceHash = rformContentApiV04SessionSourceHash_(sessionValue);
+    if (actualSourceHash !== sourceHash) {
+      throw new Error('Данные тренировки изменились. Обновите страницу и проверьте новый вариант.');
+    }
+
+    const queue = rformContentApiV04RequireSheet_(spreadsheet, RFORM_CONTENT_API_V04.queueSheet);
+    const queueHeaders = rformContentApiV04Headers_(queue);
+    const queueMap = rformContentApiV04HeaderMap_(queueHeaders);
+    const missingProposal = RFORM_CONTENT_API_V04.proposalFields.filter(function (name) {
+      return queueHeaders.indexOf(name) === -1;
+    });
+    if (missingProposal.length) {
+      throw new Error('CONTENT_QUEUE missing proposal fields: ' + missingProposal.join(', '));
+    }
+    const logSheet = rformContentApiV04EnsureContentLog_(spreadsheet);
+    const prior = rformContentApiV04ExistingLogResult_(logSheet, actionId, 'Action_ID');
+    if (prior) return prior;
+
+    let contentId = targetContentId;
+    let queueRow = 0;
+    if (mode === 'UPDATE_EXISTING') {
+      queueRow = rformContentApiV04FindUniqueRow_(queue, 'Content_ID', contentId);
+    } else {
+      contentId = rformContentApiV04PublicationId_(sessionId, sessionValue('Date'));
+      queueRow = rformContentApiV04FindOptionalRow_(queue, 'Content_ID', contentId);
+    }
+
+    let currentValues = [];
+    const currentValue = function (name) {
+      return queueRow ? String(currentValues[queueMap[name] - 1] || '').trim() : '';
+    };
+    if (queueRow) {
+      currentValues = queue.getRange(queueRow, 1, 1, queue.getLastColumn()).getDisplayValues()[0];
+      rformContentApiV04RequireOpenMaterial_(currentValue);
+      if (['SCHEDULED', 'PUBLISHING', 'PUBLISHED'].indexOf(
+        currentValue('Publication_Status').toUpperCase()
+      ) !== -1 || currentValue('Telegram_Message_ID')) {
+        throw new Error('Материал уже передан в публикацию. Повторная отправка запрещена.');
+      }
+    }
+
+    const now = new Date();
+    const updates = {
+      Session_ID: sessionId,
+      Date: sessionValue('Date'),
+      Main_Training_Fact: sessionValue('Main_Result'),
+      Main_Deviation: sessionValue('Plan_Status'),
+      Decision: angle,
+      Public_Data_Allowed: 'YES',
+      Source_Packet_Status: 'READY',
+      Text_Status: 'APPROVED',
+      Approval_Status: 'APPROVED',
+      Publication_Status: 'SCHEDULED',
+      Updated_At: now,
+      Duplicate_Flag: 'NO',
+      Pipeline_Status: 'SCHEDULED',
+      Current_Stage: 'SCHEDULED',
+      Current_Chat: 'CHANNEL_CONTROL',
+      Next_Chat: 'TELEGRAM_AUTOPOST',
+      Blocking_Issue: '',
+      Reader_Value: angle,
+      Proof_Source: 'RFORM_MASTER_DATA_v1 / ' + sessionId,
+      Distribution_Mode: 'TEXT_ONLY',
+      Editorial_Direction: angle,
+      Publish_At: now,
+      AutoPost_Allowed: 'YES',
+      Telegram_Chat_ID: '@r_form',
+      Telegram_Post_Mode: 'TEXT_ONLY',
+      Telegram_Text: telegramText,
+      Telegram_Message_ID: '',
+      Telegram_Post_URL: '',
+      Posted_At: '',
+      Publish_Error: '',
+      Preview_Review_Hash: rformContentApiV04Sha256Hex_(telegramText),
+      Preview_Reviewed_At: now,
+      Preview_Reviewed_By: 'STREAMLIT_OWNER',
+      Preview_Review_Status: 'REVIEWED'
+    };
+    if (!queueRow) {
+      updates.Content_ID = contentId;
+      updates.Rubric = 'TRAINING_LOG';
+      updates.Visual_Status = 'NOT_READY';
+      updates.Created_At = now;
+      updates.Task_ID = 'RFORM-AUTO-' + sessionId;
+      updates.Content_Function = 'PROOF';
+      updates.Content_Type = 'PROOF';
+      updates.Funnel_Stage = 'TRUST';
+      updates.CTA_Type = 'RETURN_TO_CHANNEL';
+    }
+
+    const previous = {};
+    Object.keys(updates).forEach(function (name) {
+      previous[name] = currentValue(name);
+    });
+    logSheet.appendRow([
+      actionId, now, contentId, 'APPROVE_AND_SCHEDULE',
+      rformContentApiV04SafeText_(proposalId + ' · ' + title),
+      Object.keys(updates).join(','), JSON.stringify(previous), JSON.stringify(updates),
+      'STREAMLIT_OWNER', nonce, 'PENDING'
+    ]);
+    const logRow = logSheet.getLastRow();
+    const logMap = rformContentApiV04HeaderMap_(rformContentApiV04Headers_(logSheet));
+    let createdRow = 0;
+    try {
+      if (!queueRow) {
+        const values = new Array(queueHeaders.length).fill('');
+        Object.keys(updates).forEach(function (name) {
+          values[queueMap[name] - 1] = updates[name];
+        });
+        queue.appendRow(values);
+        queueRow = queue.getLastRow();
+        createdRow = queueRow;
+      } else {
+        Object.keys(updates).forEach(function (name) {
+          const value = updates[name] instanceof Date
+            ? updates[name]
+            : rformContentApiV04SafeText_(updates[name]);
+          queue.getRange(queueRow, queueMap[name]).setValue(value);
+        });
+      }
+      SpreadsheetApp.flush();
+      logSheet.getRange(logRow, logMap.Result).setValue('APPLIED');
+    } catch (error) {
+      if (createdRow) {
+        queue.deleteRow(createdRow);
+      } else {
+        Object.keys(previous).forEach(function (name) {
+          queue.getRange(queueRow, queueMap[name]).setValue(previous[name]);
+        });
+      }
+      SpreadsheetApp.flush();
+      logSheet.getRange(logRow, logMap.Result).setValue('FAILED_ROLLED_BACK');
+      throw error;
+    }
+    return {
+      ok: true,
+      status: 'APPLIED',
+      action_id: actionId,
+      proposal_id: proposalId,
+      content_id: contentId,
+      publication_status: 'SCHEDULED',
+      auto_post_allowed: 'YES',
+      publish_at: now.toISOString(),
+      message: 'Publication approved and handed to Telegram Autopost.'
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function rformContentApiV04SessionSourceHash_(value) {
+  return rformContentApiV04Sha256Hex_(
+    RFORM_CONTENT_API_V04.trainingSessionFields.map(function (name) {
+      return String(value(name) || '').trim();
+    }).join('\n')
+  );
+}
+
+function rformContentApiV04PublicationId_(sessionId, sessionDate) {
+  const match = String(sessionDate || '').match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  const dateKey = match
+    ? match[3] + ('0' + match[2]).slice(-2) + ('0' + match[1]).slice(-2)
+    : Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Etc/GMT', 'yyyyMMdd');
+  return ('CNT-' + dateKey + '-' + String(sessionId || 'TRAINING'))
+    .replace(/[^A-Za-z0-9._-]/g, '-')
+    .slice(0, 160);
 }
 
 function rformContentApiV04ApplyContentAction_(request) {
