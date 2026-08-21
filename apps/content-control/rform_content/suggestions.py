@@ -62,7 +62,8 @@ def _display_date(value: str) -> str:
     text = str(value).strip()
     if not text:
         return "—"
-    parsed = pd.to_datetime(text, errors="coerce", dayfirst=False)
+    is_iso_order = len(text) >= 10 and text[4:5] == "-" and text[7:8] == "-"
+    parsed = pd.to_datetime(text, errors="coerce", dayfirst=not is_iso_order)
     if pd.isna(parsed):
         return text
     return parsed.strftime("%d.%m.%Y")

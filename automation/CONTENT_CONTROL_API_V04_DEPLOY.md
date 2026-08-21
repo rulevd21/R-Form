@@ -4,7 +4,7 @@
 
 ## Что уже подготовлено
 
-- Streamlit v0.4.2 в ветке `agent/content-control-streamlit-readonly`;
+- Streamlit v0.4.3 в ветке `agent/content-control-streamlit-readonly`;
 - `DATA_EVENTS` расширен owner-полями;
 - приватная папка `RFORM_SYSTEM / CONTENT_ASSETS` создана;
 - backend: `automation/content_control_api_v0_4.gs`;
@@ -43,7 +43,7 @@ capabilities:
 
 Production gate считается пройденным, если:
 
-- шапка показывает `ЕЖЕДНЕВНЫЙ РЕЖИМ · v0.4.2`;
+- шапка показывает `ЕЖЕДНЕВНЫЙ РЕЖИМ · v0.4.3`;
 - диагностика показывает `event.review`, `event.decision`, `event.media`;
 - раздел `Сегодня` показывает одно предложение без ошибки;
 - кнопки `Добавить в публикации`, `Сохранить для недельного обзора` и `Не использовать` активны.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -51,6 +52,7 @@ ACTION_LABELS = {
 }
 
 FIELD_LABELS = {
+    "Display_Name": "Название материала",
     "Content_ID": "Код материала",
     "Lifecycle_State": "Статус",
     "Display_Date": "Дата публикации",
@@ -269,6 +271,90 @@ def _display_date(value: Any, fallback: str = "—") -> str:
     return parsed.strftime("%d.%m.%Y")
 
 
+def _date_from_key(value: Any) -> str:
+    match = re.search(r"(?:^|[-_])(20\d{2})(\d{2})(\d{2})(?:$|[-_])", str(value or ""))
+    if not match:
+        return ""
+    year, month, day = match.groups()
+    parsed = pd.to_datetime(f"{year}-{month}-{day}", errors="coerce")
+    return "" if pd.isna(parsed) else parsed.strftime("%d.%m.%Y")
+
+
+def _training_letter(row: pd.Series) -> str:
+    for field in ("Source_Entity", "Session_ID", "Content_ID"):
+        value = str(row.get(field) or "").strip().upper()
+        match = re.search(r"(?:^|[-_])S[-_]20\d{6}[-_]([ABC])(?:$|[-_])", value)
+        if match:
+            return match.group(1)
+    return ""
+
+
+def _material_source_date(row: pd.Series) -> str:
+    for field in ("Source_Entity", "Session_ID", "Content_ID"):
+        value = _date_from_key(row.get(field))
+        if value:
+            return value
+    return _display_date(row.get("Date"))
+
+
+def _material_type(row: pd.Series) -> str:
+    rubric = str(row.get("Rubric") or "").strip().upper()
+    training_letter = _training_letter(row)
+    if rubric == "TRAINING_LOG" or training_letter:
+        return f"Тренировка {training_letter}" if training_letter else "Тренировка"
+    labels = {
+        "NUTRITION_CASE": "Разбор питания",
+        "NUTRITION CASE": "Разбор питания",
+        "WEEKLY CONTROL": "Недельный обзор",
+        "METHODOLOGY": "Методология",
+        "SERIES": "Серия",
+        "AI CHECK": "Проверка ИИ",
+        "DECISION / AI_CHECK": "Решение",
+        "TECH_TEST": "Техническая проверка",
+    }
+    return labels.get(rubric, _display_value("Rubric", rubric) or "Материал")
+
+
+def _material_kind(row: pd.Series) -> str:
+    rubric = str(row.get("Rubric") or "").strip().upper()
+    content_type = str(row.get("Content_Type") or "").strip().upper()
+    if rubric == "TRAINING_LOG" and content_type == "PROOF":
+        return "Итоги и решение"
+    if rubric in {"NUTRITION_CASE", "NUTRITION CASE"} and content_type in {"PROOF", "CASE"}:
+        return "План, факт и решение"
+    return _display_value("Content_Type", content_type) or "Материал"
+
+
+def _material_name(row: pd.Series) -> str:
+    return " · ".join(
+        part for part in (_material_source_date(row), _material_type(row), _material_kind(row))
+        if part and part != "—"
+    )
+
+
+def _queue_with_material_names(queue: pd.DataFrame, events: pd.DataFrame) -> pd.DataFrame:
+    result = queue.copy()
+    if not events.empty and {"Candidate_Content_ID", "Entity"}.issubset(events.columns):
+        context_fields = [
+            field for field in ("Candidate_Content_ID", "Entity", "Date", "Event_Type")
+            if field in events.columns
+        ]
+        context = events[context_fields].copy()
+        context["Candidate_Content_ID"] = context["Candidate_Content_ID"].fillna("").astype(str).str.strip()
+        context = context[context["Candidate_Content_ID"].ne("")].drop_duplicates(
+            "Candidate_Content_ID", keep="last"
+        )
+        context = context.rename(columns={
+            "Candidate_Content_ID": "Content_ID",
+            "Entity": "Source_Entity",
+            "Date": "Source_Event_Date",
+            "Event_Type": "Source_Event_Type",
+        })
+        result = result.merge(context, on="Content_ID", how="left")
+    result["Display_Name"] = result.apply(_material_name, axis=1)
+    return result
+
+
 def _columns(frame: pd.DataFrame, names: list[str]) -> list[str]:
     return [name for name in names if name in frame.columns]
 
@@ -330,7 +416,7 @@ def _source_label(source: str) -> str:
 
 
 def render_header(source: str, capabilities: tuple[str, ...]) -> None:
-    badge = "ЕЖЕДНЕВНЫЙ РЕЖИМ · v0.4.2"
+    badge = "ЕЖЕДНЕВНЫЙ РЕЖИМ · v0.4.3"
     st.markdown('<div class="rf-kicker">R/Form · Контент-операции</div>', unsafe_allow_html=True)
     st.markdown('<div class="rf-title">Управление контентом</div>', unsafe_allow_html=True)
     st.markdown(
@@ -369,10 +455,9 @@ def render_control(queue: pd.DataFrame, events: pd.DataFrame) -> None:
         with left:
             st.markdown(
                 '<div class="rf-card rf-card-decision">'
-                f'<div class="rf-label">Контент</div><div class="rf-value">{escape(_value(row, "Content_ID"))}</div>'
+                f'<div class="rf-label">Материал</div><div class="rf-value">{escape(_value(row, "Display_Name"))}</div>'
                 f'<div style="margin-top:.55rem">{_state_badge(_value(row, "Lifecycle_State"))}</div>'
-                f'<div class="rf-detail">{escape(_display_value("Rubric", row.get("Rubric")))} · '
-                f'{escape(_display_value("Content_Type", row.get("Content_Type")))}</div>'
+                f'<div class="rf-detail">Код: {escape(_value(row, "Content_ID"))}</div>'
                 '</div>',
                 unsafe_allow_html=True,
             )
@@ -395,7 +480,7 @@ def render_control(queue: pd.DataFrame, events: pd.DataFrame) -> None:
         else:
             view = view.assign(Display_Date=_planned_dates(view))
             st.dataframe(
-                _display_table(view, ["Content_ID", "Lifecycle_State", "Display_Date", "Rubric"]),
+                _display_table(view, ["Display_Name", "Lifecycle_State", "Display_Date"]),
                 hide_index=True,
                 width="stretch",
             )
@@ -410,7 +495,7 @@ def render_control(queue: pd.DataFrame, events: pd.DataFrame) -> None:
             st.dataframe(
                 _display_table(
                     action_required.head(8),
-                    ["Content_ID", "Lifecycle_State", "Blocking_Issue", "Publish_Error"],
+                    ["Display_Name", "Lifecycle_State", "Blocking_Issue", "Publish_Error"],
                 ),
                 hide_index=True,
                 width="stretch",
@@ -480,7 +565,7 @@ def _render_content_actions(
 
 
 def render_queue(bundle, app_config: dict[str, Any], api_secrets: dict[str, Any]) -> None:
-    queue = bundle.queue
+    queue = _queue_with_material_names(bundle.queue, bundle.events)
     st.subheader("Очередь контента")
     success_message = st.session_state.pop("content_action_success", "")
     if success_message:
@@ -511,13 +596,15 @@ def render_queue(bundle, app_config: dict[str, Any], api_secrets: dict[str, Any]
         format_func=lambda rubric: _display_value("Rubric", rubric),
         placeholder="Выберите рубрику",
     )
-    query = f3.text_input("Поиск", placeholder="Код материала или текст")
+    query = f3.text_input("Поиск", placeholder="Название, код или текст")
 
     filtered = queue_scope[queue_scope["Lifecycle_State"].isin(selected_states)].copy()
     if selected_rubrics and "Rubric" in filtered:
         filtered = filtered[filtered["Rubric"].astype(str).isin(selected_rubrics)]
     if query:
-        searchable = filtered[_columns(filtered, ["Content_ID", "Rubric", "Telegram_Text", "Decision"])].fillna("").astype(str)
+        searchable = filtered[
+            _columns(filtered, ["Display_Name", "Content_ID", "Rubric", "Telegram_Text", "Decision"])
+        ].fillna("").astype(str)
         mask = searchable.apply(lambda column: column.str.contains(query, case=False, regex=False)).any(axis=1)
         filtered = filtered[mask]
 
@@ -528,7 +615,7 @@ def render_queue(bundle, app_config: dict[str, Any], api_secrets: dict[str, Any]
     )
     table = filtered.assign(Display_Date=_planned_dates(filtered))
     st.dataframe(
-        _display_table(table, ["Content_ID", "Lifecycle_State", "Display_Date", "Rubric", "Content_Type"]),
+        _display_table(table, ["Display_Name", "Lifecycle_State", "Display_Date"]),
         hide_index=True,
         width="stretch",
     )
@@ -536,9 +623,15 @@ def render_queue(bundle, app_config: dict[str, Any], api_secrets: dict[str, Any]
     options = [value for value in filtered.get("Content_ID", pd.Series(dtype="object")).astype(str).str.strip().tolist() if value]
     if not options:
         return
-    selected_id = st.selectbox("Открыть карточку материала", options)
+    option_labels = dict(zip(filtered["Content_ID"].astype(str), filtered["Display_Name"].astype(str)))
+    selected_id = st.selectbox(
+        "Открыть карточку материала",
+        options,
+        format_func=lambda value: option_labels.get(value, value),
+    )
     row = filtered[filtered["Content_ID"].astype(str) == selected_id].iloc[0]
-    st.markdown(f"### {_value(row, 'Content_ID')}")
+    st.markdown(f"### {_value(row, 'Display_Name')}")
+    st.caption(f"Технический код: {_value(row, 'Content_ID')}")
     st.markdown(_state_badge(_value(row, "Lifecycle_State")), unsafe_allow_html=True)
 
     tab_content, tab_readiness, tab_links = st.tabs(["Материал", "Готовность", "Ссылки"])
@@ -667,14 +760,14 @@ with st.sidebar:
         label_visibility="collapsed",
     )
     st.markdown("---")
-    st.caption("R/Form · Управление контентом v0.4.2")
+    st.caption("R/Form · Управление контентом v0.4.3")
     st.caption("Источник истины остаётся в Google Таблицах.")
 
 if page == "Сегодня":
     proposal_shown = render_suggestions(bundle, app_config, api_secrets)
     if not proposal_shown:
         st.markdown("---")
-        render_control(bundle.queue, bundle.events)
+        render_control(_queue_with_material_names(bundle.queue, bundle.events), bundle.events)
 elif page == "Материалы":
     render_queue(bundle, app_config, api_secrets)
 elif page == "История":

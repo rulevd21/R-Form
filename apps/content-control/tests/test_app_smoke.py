@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 import pandas as pd
 from streamlit.testing.v1 import AppTest
 
+from rform_content.suggestions import _display_date as _display_event_date
 from rform_content.suggestions import _event_type_label
 
 
@@ -47,6 +48,48 @@ class AppSmokeTests(unittest.TestCase):
         self.assertEqual(_event_type_label("CONTROL_POINT"), "Контрольная точка")
         self.assertEqual(_event_type_label("DECISION_CHANGED"), "Решение изменено")
         self.assertEqual(_event_type_label("DECISION_RECORDED"), "Решение зафиксировано")
+        self.assertEqual(_display_event_date("12.08.2026"), "12.08.2026")
+        self.assertEqual(_display_event_date("2026-08-12"), "12.08.2026")
+
+    def test_event_material_has_a_human_readable_name(self) -> None:
+        queue = pd.read_csv(APP_ROOT / "fixtures" / "content_queue.csv", keep_default_na=False)
+        events = pd.read_csv(APP_ROOT / "fixtures" / "data_events.csv", keep_default_na=False)
+        content_id = "CNT-20260814-EVENT-D2E4464DA3"
+        queue.loc[0, [
+            "Content_ID", "Date", "Rubric", "Content_Type", "Publication_Status",
+            "Pipeline_Status", "Publish_At",
+        ]] = [content_id, "20.08.2026", "TRAINING_LOG", "PROOF", "PLANNED", "PLANNED", ""]
+        events.loc[0, ["Candidate_Content_ID", "Entity", "Date"]] = [
+            content_id, "S-20260814-C", "14.08.2026",
+        ]
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "ok": True,
+            "version": "0.4.0",
+            "capabilities": ["content.read", "content.action", "event.decision"],
+            "generated_at": "2026-08-20T10:00:00Z",
+            "queue_fields": list(queue.columns),
+            "event_fields": list(events.columns),
+            "queue": queue.to_dict(orient="records"),
+            "events": events.to_dict(orient="records"),
+        }
+        app = AppTest.from_file(str(APP_ROOT / "app.py"), default_timeout=30)
+        app.secrets = {
+            "app": {
+                "data_mode": "apps_script",
+                "apps_script_url": "https://script.google.com/macros/s/demo-v04-name/exec",
+            },
+            "content_api": {"secret": "test-secret"},
+        }
+        with patch("rform_content.repository.requests.post", return_value=response):
+            app.run()
+            app.radio[0].set_value("Материалы").run()
+            expected = "14.08.2026 · Тренировка C · Итоги и решение"
+            self.assertIn(expected, set(app.dataframe[0].value["Название материала"]))
+            card_selector = next(item for item in app.selectbox if item.label == "Открыть карточку материала")
+            card_selector.set_value(content_id).run()
+            self.assertTrue(any(f"Технический код: {content_id}" == item.value for item in app.caption))
 
     def test_v04_gateway_enables_the_three_daily_decisions(self) -> None:
         queue = pd.read_csv(APP_ROOT / "fixtures" / "content_queue.csv", keep_default_na=False)
@@ -121,7 +164,7 @@ class AppSmokeTests(unittest.TestCase):
         self.assertEqual(rubric_filter.placeholder, "Выберите рубрику")
         self.assertEqual(
             list(app.dataframe[0].value.columns),
-            ["Код материала", "Статус", "Дата публикации", "Рубрика", "Тип материала"],
+            ["Название материала", "Статус", "Дата публикации"],
         )
         self.assertNotIn("Опубликовано", set(app.dataframe[0].value["Статус"]))
         self.assertTrue(
