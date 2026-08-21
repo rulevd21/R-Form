@@ -1,0 +1,107 @@
+from __future__ import annotations
+
+import unittest
+
+from rform_content.lifecycle import derive_lifecycle_state, is_action_required, readiness_issues
+
+
+class LifecycleTests(unittest.TestCase):
+    def test_state_precedence_for_operational_view(self) -> None:
+        cases = [
+            ({"Content_ID": "1", "Publication_Status": "ERROR"}, "ERROR"),
+            ({"Content_ID": "1", "Publication_Status": "SUPERSEDED"}, "SUPERSEDED"),
+            ({"Content_ID": "1", "Publication_Status": "CANCELLED"}, "CANCELLED"),
+            ({"Content_ID": "1", "Publication_Status": "HOLD"}, "HOLD"),
+            ({"Content_ID": "1", "Publication_Status": "PUBLISHED"}, "PUBLISHED"),
+            ({"Content_ID": "1", "Publication_Status": "SCHEDULED"}, "SCHEDULED"),
+            ({"Content_ID": "1", "Pipeline_Status": "READY_FOR_PUBLICATION"}, "READY_TO_PUBLISH"),
+            ({"Content_ID": "1", "Pipeline_Status": "REWORK"}, "REWORK"),
+            ({"Content_ID": "1", "Approval_Status": "APPROVED"}, "APPROVED"),
+            ({"Content_ID": "1", "Text_Status": "READY"}, "REVIEW"),
+            ({"Content_ID": "1", "Pipeline_Status": "PLANNED"}, "PLANNED"),
+            ({"Content_ID": "1"}, "DRAFT"),
+            ({}, "IDEA"),
+        ]
+        for row, expected in cases:
+            with self.subTest(expected=expected):
+                self.assertEqual(derive_lifecycle_state(row), expected)
+
+    def test_text_only_does_not_require_visual(self) -> None:
+        row = {
+            "Public_Data_Allowed": "YES",
+            "Text_Status": "APPROVED",
+            "Approval_Status": "APPROVED",
+            "Visual_Status": "DRAFT",
+            "Distribution_Mode": "TEXT_ONLY",
+            "Telegram_Text": "Ready",
+        }
+        self.assertEqual(readiness_issues(row), [])
+
+    def test_media_requires_visual_approval(self) -> None:
+        row = {
+            "Public_Data_Allowed": "YES",
+            "Text_Status": "APPROVED",
+            "Approval_Status": "APPROVED",
+            "Visual_Status": "DRAFT",
+            "Distribution_Mode": "MEDIA_CAPTION",
+            "Telegram_Text": "Ready",
+        }
+        self.assertIn("Визуал не утверждён", readiness_issues(row))
+
+    def test_scheduled_but_not_ready_requires_action(self) -> None:
+        row = {
+            "Content_ID": "1",
+            "Publication_Status": "SCHEDULED",
+            "Public_Data_Allowed": "NO",
+            "Text_Status": "APPROVED",
+            "Approval_Status": "APPROVED",
+            "Distribution_Mode": "TEXT_ONLY",
+            "Telegram_Text": "Ready",
+        }
+        self.assertTrue(is_action_required(row))
+
+    def test_preview_recheck_requires_action(self) -> None:
+        self.assertTrue(
+            is_action_required({"Content_ID": "1", "Preview_Review_Status": "RECHECK_REQUIRED"})
+        )
+
+    def test_published_state_overrides_stale_blockers(self) -> None:
+        row = {
+            "Content_ID": "1",
+            "Publication_Status": "PUBLISHED",
+            "Blocking_Issue": "Старая блокировка",
+            "Publish_Error": "Старая ошибка",
+        }
+        self.assertEqual(derive_lifecycle_state(row), "PUBLISHED")
+        self.assertEqual(readiness_issues(row), [])
+        self.assertFalse(is_action_required(row))
+
+    def test_cancelled_state_is_not_action_required(self) -> None:
+        row = {
+            "Content_ID": "1",
+            "Publication_Status": "CANCELLED",
+            "Blocking_Issue": "Больше не актуально",
+        }
+        self.assertEqual(derive_lifecycle_state(row), "CANCELLED")
+        self.assertFalse(is_action_required(row))
+
+    def test_rework_state_requires_action(self) -> None:
+        row = {
+            "Content_ID": "1",
+            "Pipeline_Status": "REWORK",
+            "Blocking_Issue": "Нужна доработка",
+        }
+        self.assertEqual(derive_lifecycle_state(row), "REWORK")
+        self.assertTrue(is_action_required(row))
+
+    def test_hold_state_overrides_stale_blocker(self) -> None:
+        row = {
+            "Content_ID": "1",
+            "Publication_Status": "HOLD",
+            "Blocking_Issue": "Старая блокировка",
+        }
+        self.assertEqual(derive_lifecycle_state(row), "HOLD")
+
+
+if __name__ == "__main__":
+    unittest.main()
