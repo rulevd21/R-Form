@@ -22,7 +22,9 @@ function tcMiniAppResponse_(e){
     else if(action==='onboarding_save'){const profile=tcSaveOnboarding_(tg,tg.id,payload);result={ok:true,action:action,profile:profile,history:[]};}
     else{
       if(!existing)throw new Error('ONBOARDING_REQUIRED');participant=tcGetParticipantProfile_(existing.participant_id);
-      if(action==='check_submit'){const eventId=String(payload.event_id||'');if(!eventId)throw new Error('EVENT_ID_REQUIRED');result={ok:true,action:action,check:tcSubmitCheck_(participant,eventId,payload.check||{})};}
+      if(action==='check_submit'){const eventId=String(payload.event_id||'');if(!eventId)throw new Error('EVENT_ID_REQUIRED');result={ok:true,action:action,check:tcSubmitCheckV2_(participant,eventId,payload.check||{})};}
+      else if(action==='analysis_retry')result={ok:true,action:action,check:tcRetryAnalysis_(participant,String(payload.check_id||''))};
+      else if(action==='product_event')result=Object.assign({action:action},tcProductEvent_(participant,String(payload.event_name||''),payload.metadata||{}));
       else if(action==='checkpoint_confirm')result=Object.assign({action:action},tcUpdateCheckpoint_(participant,String(payload.check_id||''),String(payload.checkpoint||''),false));
       else if(action==='checkpoint_change')result=Object.assign({action:action},tcUpdateCheckpoint_(participant,String(payload.check_id||''),String(payload.checkpoint||''),true));
       else if(action==='next_date_save')result=Object.assign({action:action},tcSaveNextDate_(participant,String(payload.check_id||''),String(payload.next_date||'')));
