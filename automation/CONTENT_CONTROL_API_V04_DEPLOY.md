@@ -1,20 +1,21 @@
-# R/Form Content Control API v0.5 — production update
+# R/Form Content Control API v0.5.2 — production update
 
-Цель: включить автоматический маршрут **новая тренировка → готовые варианты → одно согласование → Telegram Autopost**.
+Цель: включить автоматический маршрут **новая тренировка → готовые комплекты «текст + визуал» → одно согласование → Telegram Autopost**.
 
 ## Что уже подготовлено
 
-- Streamlit v0.5.1 в ветке `agent/content-control-streamlit-readonly`;
+- Streamlit v0.5.2 в ветке `agent/content-control-streamlit-readonly`;
 - `DATA_EVENTS` расширен owner-полями;
 - приватная папка `RFORM_SYSTEM / CONTENT_ASSETS` создана;
 - backend: `automation/content_control_api_v0_4.gs`;
-- CI: Apps Script syntax + 42 unit/contract tests — PASS.
+- автоматический PNG 1080×1350, изменение текста и выбор из трёх визуальных вариантов;
+- CI: Apps Script syntax + unit/contract tests.
 
 ## Единственный ручной deployment gate
 
 1. Откройте существующий standalone Apps Script-проект Content Control API.
 2. Откройте `automation/content_control_api_v0_4.gs` из GitHub.
-3. В Apps Script замените текущий код Content Control API целиком на опубликованный код v0.5.
+3. В Apps Script замените текущий код Content Control API целиком на опубликованный код v0.5.2.
    - Не держите две версии одновременно: обе содержат `doPost/doGet`.
    - Не запускайте `rformContentApiV04CreateSecret()` — старый секрет сохраняется.
 4. Сохраните проект.
@@ -24,7 +25,7 @@
 
 ```text
 ok: true
-version: 0.5.0
+version: 0.5.2
 assetsRootAccessible: true
 secretConfigured: true
 telegramCallsPresent: false
@@ -38,6 +39,7 @@ capabilities:
   event.media
   training.read
   publication.propose
+  publication.visual
   publication.approve_schedule
 ```
 
@@ -47,9 +49,10 @@ capabilities:
 
 Production gate считается пройденным, если:
 
-- шапка показывает `АВТОМАТИЧЕСКИЙ РЕЖИМ · v0.5.1`;
-- диагностика показывает `training.read`, `publication.propose`, `publication.approve_schedule`;
+- шапка показывает `АВТОМАТИЧЕСКИЙ РЕЖИМ · v0.5.2`;
+- диагностика показывает `training.read`, `publication.propose`, `publication.visual`, `publication.approve_schedule`;
 - раздел `Сегодня` показывает тренировку C от 21.08.2026 и два готовых варианта;
+- под текстом отображается визуал, а кнопки `Изменить текст` и `Сформировать другое изображение` активны;
 - кнопка `Согласовать и отправить` активна.
 
 ## Проверка перед первой отправкой
@@ -60,4 +63,4 @@ Production gate считается пройденным, если:
 - `triggerExists: true`;
 - `missingAutopostHeaders: []`.
 
-После этого откройте раздел `Сегодня`, сравните два готовых текста и нажмите **«Согласовать и отправить»** только для выбранного варианта. Строка получит `SCHEDULED`, а отдельный Telegram Autopost отправит её в течение пяти минут и запишет ссылку на публикацию.
+После этого откройте раздел `Сегодня`, выберите готовый комплект, при необходимости исправьте текст или смените визуал и нажмите **«Согласовать и отправить»**. PNG сохранится в приватной папке `CONTENT_ASSETS`, строка получит `SCHEDULED`, а отдельный Telegram Autopost отправит изображение и текст в течение пяти минут и запишет ссылку на публикацию.

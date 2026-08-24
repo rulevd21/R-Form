@@ -125,7 +125,7 @@ class AppSmokeTests(unittest.TestCase):
         self.assertNotIn("Не использовать", labels)
         self.assertEqual(len(app.metric), 0)
 
-    def test_v05_gateway_enables_one_click_publication_approval(self) -> None:
+    def test_v052_gateway_enables_editable_text_and_visual_approval(self) -> None:
         queue = pd.read_csv(APP_ROOT / "fixtures" / "content_queue.csv", keep_default_na=False)
         events = pd.read_csv(APP_ROOT / "fixtures" / "data_events.csv", keep_default_na=False)
         sessions = pd.read_csv(APP_ROOT / "fixtures" / "training_sessions.csv", keep_default_na=False)
@@ -133,10 +133,10 @@ class AppSmokeTests(unittest.TestCase):
         response.raise_for_status.return_value = None
         response.json.return_value = {
             "ok": True,
-            "version": "0.5.0",
+            "version": "0.5.2",
             "capabilities": [
                 "content.read", "training.read", "publication.propose",
-                "publication.approve_schedule",
+                "publication.visual", "publication.approve_schedule",
             ],
             "generated_at": "2026-08-21T10:00:00Z",
             "queue_fields": list(queue.columns),
@@ -159,6 +159,65 @@ class AppSmokeTests(unittest.TestCase):
         approve = next(item for item in app.button if item.label == "Согласовать и отправить")
         self.assertFalse(approve.disabled)
         self.assertEqual(app.subheader[0].value, "Готово к согласованию")
+        self.assertTrue(next(item for item in app.checkbox if item.label == "Добавить визуал к публикации").value)
+        labels = [button.label for button in app.button]
+        self.assertIn("Изменить текст", labels)
+        self.assertIn("Сформировать другое изображение", labels)
+
+        edit = next(item for item in app.button if item.label == "Изменить текст")
+        edit.click().run()
+        self.assertTrue(any(item.label == "Текст публикации" for item in app.text_area))
+
+    def test_v052_approval_sends_the_previewed_visual(self) -> None:
+        queue = pd.read_csv(APP_ROOT / "fixtures" / "content_queue.csv", keep_default_na=False)
+        events = pd.read_csv(APP_ROOT / "fixtures" / "data_events.csv", keep_default_na=False)
+        sessions = pd.read_csv(APP_ROOT / "fixtures" / "training_sessions.csv", keep_default_na=False)
+        read_response = Mock()
+        read_response.raise_for_status.return_value = None
+        read_response.json.return_value = {
+            "ok": True,
+            "version": "0.5.2",
+            "capabilities": [
+                "content.read", "training.read", "publication.propose",
+                "publication.visual", "publication.approve_schedule",
+            ],
+            "generated_at": "2026-08-21T10:00:00Z",
+            "queue_fields": list(queue.columns),
+            "event_fields": list(events.columns),
+            "training_session_fields": list(sessions.columns),
+            "queue": queue.to_dict(orient="records"),
+            "events": events.to_dict(orient="records"),
+            "training_sessions": sessions.to_dict(orient="records"),
+        }
+        approval_response = Mock()
+        approval_response.raise_for_status.return_value = None
+        approval_response.json.return_value = {
+            "ok": True,
+            "status": "APPLIED",
+            "publication_status": "SCHEDULED",
+            "visual_attached": True,
+        }
+        app = AppTest.from_file(str(APP_ROOT / "app.py"), default_timeout=30)
+        app.secrets = {
+            "app": {
+                "data_mode": "apps_script",
+                "apps_script_url": "https://script.google.com/macros/s/demo-v052-visual/exec",
+            },
+            "content_api": {"secret": "test-secret"},
+        }
+        with patch(
+            "rform_content.repository.requests.post",
+            side_effect=[read_response, approval_response, read_response],
+        ) as post:
+            app.run()
+            approve = next(item for item in app.button if item.label == "Согласовать и отправить")
+            approve.click().run()
+
+        approval_payload = post.call_args_list[1].kwargs["json"]
+        self.assertEqual(approval_payload["operation"], "publication_approval")
+        self.assertEqual(approval_payload["visual_mime_type"], "image/png")
+        self.assertGreater(approval_payload["visual_size"], 0)
+        self.assertTrue(approval_payload["visual_data_base64"])
 
     def test_today_does_not_fall_back_to_technical_dashboard(self) -> None:
         queue = pd.read_csv(APP_ROOT / "fixtures" / "content_queue.csv", keep_default_na=False)

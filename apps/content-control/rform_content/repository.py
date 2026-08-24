@@ -75,6 +75,8 @@ CONTENT_ACTIONS = {
 EVENT_DECISIONS = {"TO_PUBLICATION", "TO_WEEKLY", "DISMISS"}
 PUBLICATION_PROPOSAL_MODES = {"UPDATE_EXISTING", "CREATE_NEW"}
 MAX_EVENT_MEDIA_BYTES = 30 * 1024 * 1024
+MAX_PUBLICATION_VISUAL_BYTES = 5 * 1024 * 1024
+PUBLICATION_VISUAL_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 
 class DataSourceError(RuntimeError):
@@ -455,12 +457,15 @@ def build_publication_approval_request(
     title: str,
     angle: str,
     telegram_text: str,
+    visual_filename: str = "",
+    visual_mime_type: str = "",
+    visual_data: bytes | None = None,
     *,
     timestamp: int | None = None,
     nonce: str | None = None,
     action_id: str | None = None,
 ) -> dict[str, str | int]:
-    """Build one signed approval that schedules exactly the selected text."""
+    """Build one signed approval that schedules the selected text and optional visual."""
 
     normalized_mode = str(mode).strip().upper()
     values = {
@@ -472,6 +477,9 @@ def build_publication_approval_request(
         "angle": str(angle).strip(),
         "telegram_text": str(telegram_text).strip(),
     }
+    raw_visual = bytes(visual_data or b"")
+    normalized_visual_filename = Path(str(visual_filename)).name.strip()
+    normalized_visual_mime = str(visual_mime_type).strip().lower()
     if normalized_mode not in PUBLICATION_PROPOSAL_MODES:
         raise ValueError("proposal mode is not allowlisted")
     for name in ("proposal_id", "session_id", "source_hash", "title", "angle", "telegram_text"):
@@ -485,28 +493,44 @@ def build_publication_approval_request(
         raise ValueError("source_hash must be a SHA-256 hex digest")
     if len(values["telegram_text"]) > 4096:
         raise ValueError("telegram_text exceeds the Telegram limit")
+    if raw_visual:
+        if not normalized_visual_filename:
+            raise ValueError("visual_filename is required when a visual is attached")
+        if normalized_visual_mime not in PUBLICATION_VISUAL_TYPES:
+            raise ValueError("visual_mime_type is not supported")
+        if len(raw_visual) > MAX_PUBLICATION_VISUAL_BYTES:
+            raise ValueError("publication visual exceeds the 5 MB upload limit")
+    elif normalized_visual_filename or normalized_visual_mime:
+        raise ValueError("visual_data is required for visual metadata")
+
+    visual_sha256 = hashlib.sha256(raw_visual).hexdigest() if raw_visual else ""
 
     request_timestamp, request_nonce, request_action_id = _request_identity(
         timestamp=timestamp, nonce=nonce, action_id=action_id
     )
-    signature = _sign_message(
-        secret,
-        [
-            str(request_timestamp),
-            request_nonce,
-            "publication_approval",
-            request_action_id,
-            values["proposal_id"],
-            values["session_id"],
-            values["source_hash"],
-            normalized_mode,
-            values["target_content_id"],
-            _sha256_text(values["title"]),
-            _sha256_text(values["angle"]),
-            _sha256_text(values["telegram_text"]),
-        ],
-    )
-    return {
+    signature_lines = [
+        str(request_timestamp),
+        request_nonce,
+        "publication_approval",
+        request_action_id,
+        values["proposal_id"],
+        values["session_id"],
+        values["source_hash"],
+        normalized_mode,
+        values["target_content_id"],
+        _sha256_text(values["title"]),
+        _sha256_text(values["angle"]),
+        _sha256_text(values["telegram_text"]),
+    ]
+    if raw_visual:
+        signature_lines.extend([
+            normalized_visual_filename,
+            normalized_visual_mime,
+            str(len(raw_visual)),
+            visual_sha256,
+        ])
+    signature = _sign_message(secret, signature_lines)
+    request: dict[str, str | int] = {
         "timestamp": request_timestamp,
         "nonce": request_nonce,
         "signature": signature,
@@ -521,6 +545,15 @@ def build_publication_approval_request(
         "angle": values["angle"],
         "telegram_text": values["telegram_text"],
     }
+    if raw_visual:
+        request.update({
+            "visual_filename": normalized_visual_filename,
+            "visual_mime_type": normalized_visual_mime,
+            "visual_size": len(raw_visual),
+            "visual_sha256": visual_sha256,
+            "visual_data_base64": base64.b64encode(raw_visual).decode("ascii"),
+        })
+    return request
 
 
 def _validate_apps_script_url(endpoint_url: str) -> None:
@@ -690,6 +723,9 @@ def execute_publication_approval(
     title: str,
     angle: str,
     telegram_text: str,
+    visual_filename: str = "",
+    visual_mime_type: str = "",
+    visual_data: bytes | None = None,
     *,
     timeout_seconds: int = 20,
 ) -> dict[str, Any]:
@@ -703,6 +739,9 @@ def execute_publication_approval(
         title,
         angle,
         telegram_text,
+        visual_filename,
+        visual_mime_type,
+        visual_data,
     )
     return _post_signed(endpoint_url, request, timeout_seconds, "согласование публикации")
 

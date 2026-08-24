@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -154,7 +155,41 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(request["operation"], "publication_approval")
         self.assertEqual(request["mode"], "CREATE_NEW")
         self.assertEqual(request["session_id"], "S-20260821-C")
+        self.assertNotIn("visual_sha256", request)
         self.assertNotIn("test-secret", str(request))
+
+    def test_publication_approval_can_attach_one_signed_visual(self) -> None:
+        request = build_publication_approval_request(
+            "test-secret",
+            "PROP-S-20260821-C-CREATE-REPORT",
+            "S-20260821-C",
+            "ab" * 32,
+            "CREATE_NEW",
+            "",
+            "Тренировка C: факт и решение",
+            "Сильный сигнал без автоматического ускорения.",
+            "Готовый текст публикации",
+            "rform-training-c.png",
+            "image/png",
+            b"visual-bytes",
+            timestamp=1_700_000_000,
+            nonce="ab" * 16,
+            action_id="cd" * 16,
+        )
+        self.assertEqual(request["visual_mime_type"], "image/png")
+        self.assertEqual(request["visual_size"], len(b"visual-bytes"))
+        self.assertEqual(
+            request["visual_sha256"], hashlib.sha256(b"visual-bytes").hexdigest()
+        )
+        self.assertTrue(request["visual_data_base64"])
+        self.assertEqual(request["signature"], "yc4N57ZHWSP9aM2ITjIMfqcWEW_UyL0Q8129F0r7JOc")
+
+    def test_publication_visual_metadata_requires_bytes(self) -> None:
+        with self.assertRaises(ValueError):
+            build_publication_approval_request(
+                "test-secret", "PROP-1", "S-1", "ab" * 32, "CREATE_NEW", "",
+                "Название", "Главная мысль", "Текст", "visual.png", "image/png", None,
+            )
 
     def test_content_action_rejects_unknown_action(self) -> None:
         with self.assertRaises(ValueError):

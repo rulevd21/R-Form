@@ -38,19 +38,22 @@ class GatewayContractTests(unittest.TestCase):
         self.assertNotIn("'PUBLISHING'", promote)
         self.assertNotIn("'PUBLISHED'", promote)
 
-    def test_v05_explicit_publication_approval_hands_off_to_autopost(self) -> None:
+    def test_v052_explicit_publication_approval_hands_off_visual_to_autopost(self) -> None:
         block = self.code.split("function rformContentApiV04ApplyPublicationApproval_", 1)[1].split(
             "function rformContentApiV04SessionSourceHash_", 1
         )[0]
         self.assertIn("Publication_Status: 'SCHEDULED'", block)
         self.assertIn("AutoPost_Allowed: 'YES'", block)
-        self.assertIn("Telegram_Post_Mode: 'TEXT_ONLY'", block)
+        self.assertIn("Telegram_Post_Mode: hasVisual ? 'PHOTO_CAPTION' : 'TEXT_ONLY'", block)
+        self.assertIn("Telegram_Visual_URL", block)
+        self.assertIn("Visual_Status = 'APPROVED'", block)
         self.assertIn("sourceHash", block)
         self.assertNotIn("UrlFetchApp", block)
 
-    def test_v05_preflight_requires_explicit_owner_approval_for_scheduling(self) -> None:
-        self.assertIn("version: '0.5.0'", self.code)
+    def test_v052_preflight_requires_explicit_owner_approval_for_scheduling(self) -> None:
+        self.assertIn("version: '0.5.2'", self.code)
         self.assertIn("publication.approve_schedule", self.code)
+        self.assertIn("publication.visual", self.code)
         self.assertIn("scheduledRequiresExplicitOwnerApproval: true", self.code)
 
     def test_v04_gateway_requires_signed_audited_event_operations(self) -> None:

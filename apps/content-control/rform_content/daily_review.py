@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from .daily_publications import PublicationProposal, build_publication_proposals
+from .publication_visual import VARIANT_COUNT, PublicationVisual, render_publication_visual
 from .repository import DataSourceError, execute_publication_approval
 
 
@@ -46,6 +47,8 @@ def _status_label(value: str) -> str:
 
 def _apply(
     proposal: PublicationProposal,
+    telegram_text: str,
+    visual: PublicationVisual | None,
     app_config: dict[str, Any],
     api_secrets: dict[str, Any],
 ) -> None:
@@ -61,14 +64,18 @@ def _apply(
             proposal.target_content_id,
             proposal.title,
             proposal.angle,
-            proposal.telegram_text,
+            telegram_text,
+            visual.filename if visual else "",
+            visual.mime_type if visual else "",
+            visual.data if visual else None,
             timeout_seconds=timeout,
         )
     except (DataSourceError, ValueError) as exc:
         st.error(str(exc))
         return
     st.session_state["daily_publication_success"] = (
-        f"Публикация «{proposal.title}» согласована и передана в автопостинг. "
+        f"Публикация «{proposal.title}» согласована"
+        f"{' вместе с визуалом' if visual else ''} и передана в автопостинг. "
         "Ожидаемая отправка — в течение пяти минут."
     )
     st.cache_data.clear()
@@ -120,29 +127,105 @@ def render_daily_publication_review(
     else:
         st.caption(selected.rationale)
 
-    st.markdown("### Предпросмотр")
-    safe_text = escape(selected.telegram_text).replace("\n", "<br>")
-    st.markdown(
-        f'<div class="rf-card"><div class="rf-detail" style="font-size:.96rem;line-height:1.6">{safe_text}</div></div>',
-        unsafe_allow_html=True,
+    state_suffix = f"{selected.proposal_id}::{selected.source_hash[:12]}"
+    text_key = f"daily_publication_text::{state_suffix}"
+    edit_key = f"daily_publication_edit::{state_suffix}"
+    input_key = f"daily_publication_input::{state_suffix}"
+    variant_key = f"daily_publication_visual_variant::{state_suffix}"
+    include_key = f"daily_publication_include_visual::{state_suffix}"
+    st.session_state.setdefault(text_key, selected.telegram_text)
+    st.session_state.setdefault(edit_key, False)
+    st.session_state.setdefault(variant_key, 0)
+
+    telegram_text = str(st.session_state[text_key]).strip()
+    visual = render_publication_visual(session, selected, st.session_state[variant_key])
+
+    st.markdown("### Предпросмотр комплекта")
+    if st.session_state[edit_key]:
+        st.text_area(
+            "Текст публикации",
+            value=telegram_text,
+            height=430,
+            max_chars=4096,
+            key=input_key,
+        )
+        save_col, cancel_col = st.columns(2)
+        with save_col:
+            if st.button("Сохранить изменения", width="stretch", key=f"save_text::{state_suffix}"):
+                updated = str(st.session_state.get(input_key, "")).strip()
+                if not updated:
+                    st.error("Текст публикации не может быть пустым.")
+                else:
+                    st.session_state[text_key] = updated
+                    st.session_state[edit_key] = False
+                    st.rerun()
+        with cancel_col:
+            if st.button("Отменить", width="stretch", key=f"cancel_text::{state_suffix}"):
+                st.session_state.pop(input_key, None)
+                st.session_state[edit_key] = False
+                st.rerun()
+    else:
+        safe_text = escape(telegram_text).replace("\n", "<br>")
+        st.markdown(
+            f'<div class="rf-card"><div class="rf-detail" style="font-size:.96rem;line-height:1.6">{safe_text}</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    visual_supported = "publication.visual" in set(bundle.capabilities)
+    include_visual = st.checkbox(
+        "Добавить визуал к публикации",
+        value=visual_supported,
+        disabled=not visual_supported,
+        key=include_key,
     )
+    st.image(
+        visual.data,
+        caption=f"Вариант {visual.variant + 1} из {VARIANT_COUNT} · {visual.label}",
+        width="stretch",
+    )
+
+    edit_col, visual_col = st.columns(2)
+    with edit_col:
+        if st.button("Изменить текст", width="stretch", key=f"edit_text::{state_suffix}"):
+            st.session_state[edit_key] = True
+            st.rerun()
+    with visual_col:
+        if st.button(
+            "Сформировать другое изображение",
+            width="stretch",
+            key=f"next_visual::{state_suffix}",
+        ):
+            st.session_state[variant_key] = (int(st.session_state[variant_key]) + 1) % VARIANT_COUNT
+            st.rerun()
+
+    if not visual_supported:
+        st.caption(
+            "Визуал уже можно проверить, но его передача станет доступна после обновления Apps Script до v0.5.2."
+        )
 
     enabled = "publication.approve_schedule" in set(bundle.capabilities)
     if not enabled:
         st.warning(
-            "Автоматическое согласование станет доступно после обновления Apps Script до v0.5. "
+            "Автоматическое согласование станет доступно после обновления Apps Script до v0.5.2. "
             "Пока варианты можно проверить без изменения данных."
         )
+    final_enabled = enabled and bool(telegram_text) and (not include_visual or visual_supported)
     if st.button(
         "Согласовать и отправить",
         type="primary",
         width="stretch",
-        disabled=not enabled,
+        disabled=not final_enabled or bool(st.session_state[edit_key]),
         key=f"approve_publication::{selected.proposal_id}",
     ):
-        _apply(selected, app_config, api_secrets)
+        _apply(
+            selected,
+            telegram_text,
+            visual if include_visual else None,
+            app_config,
+            api_secrets,
+        )
     st.caption(
-        "После нажатия выбранный текст будет утверждён и передан существующему автопостингу. "
+        "После нажатия выбранный комплект будет утверждён и передан существующему автопостингу. "
         "Второй вариант и другие материалы не изменятся."
     )
     return True

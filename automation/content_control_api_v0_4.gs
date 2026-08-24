@@ -1,4 +1,4 @@
-// R/Form Content Control API v0.5
+// R/Form Content Control API v0.5.2
 // Standalone Apps Script web app for Channel Control.
 // Reads CONTENT_QUEUE + DATA_EVENTS, applies allowlisted content actions,
 // saves owner-facing event edits, stores private photo/video assets in Drive,
@@ -7,7 +7,7 @@
 // the separate Telegram Autopost project remains the only publishing transport.
 
 const RFORM_CONTENT_API_V04 = Object.freeze({
-  version: '0.5.0',
+  version: '0.5.2',
   spreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
   queueSheet: 'CONTENT_QUEUE',
   eventsSheet: 'DATA_EVENTS',
@@ -23,6 +23,7 @@ const RFORM_CONTENT_API_V04 = Object.freeze({
   maxAngleChars: 700,
   maxNoteChars: 2000,
   maxMediaBytes: 30 * 1024 * 1024,
+  maxPublicationVisualBytes: 5 * 1024 * 1024,
   maxTelegramChars: 4096,
   allowedMediaTypes: Object.freeze([
     'image/jpeg', 'image/png', 'image/webp',
@@ -36,7 +37,8 @@ const RFORM_CONTENT_API_V04 = Object.freeze({
     'Preview_Review_Status', 'Content_Type', 'Target_Segment', 'Decision',
     'Editorial_Direction', 'Work_Packet_URL', 'Folder_URL', 'Text_URL',
     'Visual_URL', 'Duplicate_Flag', 'Publish_Error', 'Current_Stage',
-    'Audience_Problem', 'Telegram_Message_ID', 'Telegram_Post_URL', 'Posted_At'
+    'Audience_Problem', 'Telegram_Visual_URL', 'Telegram_Message_ID',
+    'Telegram_Post_URL', 'Posted_At'
   ]),
   eventFields: Object.freeze([
     'Event_ID', 'Date', 'Entity', 'Event_Type', 'Source', 'Fact',
@@ -64,6 +66,7 @@ const RFORM_CONTENT_API_V04 = Object.freeze({
     'Current_Stage', 'Current_Chat', 'Next_Chat', 'Blocking_Issue',
     'Content_Function', 'Content_Type', 'Funnel_Stage', 'Reader_Value',
     'Proof_Source', 'CTA_Type', 'Distribution_Mode', 'Editorial_Direction',
+    'Folder_URL', 'Visual_URL', 'Telegram_Visual_URL',
     'Publish_At', 'AutoPost_Allowed', 'Telegram_Chat_ID', 'Telegram_Post_Mode',
     'Telegram_Text', 'Telegram_Message_ID', 'Telegram_Post_URL', 'Posted_At',
     'Publish_Error', 'Preview_Review_Hash', 'Preview_Reviewed_At',
@@ -163,7 +166,8 @@ function rformContentApiV04Preflight() {
     version: RFORM_CONTENT_API_V04.version,
     capabilities: [
       'content.read', 'content.action', 'event.review', 'event.decision', 'event.media',
-      'training.read', 'publication.propose', 'publication.approve_schedule'
+      'training.read', 'publication.propose', 'publication.visual',
+      'publication.approve_schedule'
     ],
     spreadsheet: spreadsheet.getName(),
     queueRows: Math.max(queue.getLastRow() - 1, 0),
@@ -248,7 +252,8 @@ function rformContentApiV04Payload_() {
     mode: 'CONTROLLED_WRITE',
     capabilities: [
       'content.read', 'content.action', 'event.review', 'event.decision', 'event.media',
-      'training.read', 'publication.propose', 'publication.approve_schedule'
+      'training.read', 'publication.propose', 'publication.visual',
+      'publication.approve_schedule'
     ],
     generated_at: new Date().toISOString(),
     queue_fields: RFORM_CONTENT_API_V04.queueFields,
@@ -367,7 +372,7 @@ function rformContentApiV04SignedMessage_(request) {
     ].join('\n');
   }
   if (operation === 'publication_approval') {
-    return [
+    const lines = [
       timestamp,
       nonce,
       operation,
@@ -380,7 +385,16 @@ function rformContentApiV04SignedMessage_(request) {
       rformContentApiV04Sha256Hex_(String(request.title || '').trim()),
       rformContentApiV04Sha256Hex_(String(request.angle || '').trim()),
       rformContentApiV04Sha256Hex_(String(request.telegram_text || '').trim())
-    ].join('\n');
+    ];
+    if (String(request.visual_sha256 || '').trim()) {
+      lines.push(
+        String(request.visual_filename || ''),
+        String(request.visual_mime_type || '').trim().toLowerCase(),
+        String(request.visual_size || ''),
+        String(request.visual_sha256 || '').trim().toLowerCase()
+      );
+    }
+    return lines.join('\n');
   }
   throw new Error('Операция не поддерживается.');
 }
@@ -395,6 +409,12 @@ function rformContentApiV04ApplyPublicationApproval_(request) {
   const title = String(request.title || '').trim();
   const angle = String(request.angle || '').trim();
   const telegramText = String(request.telegram_text || '').trim();
+  const visualFilename = String(request.visual_filename || '').trim();
+  const visualMimeType = String(request.visual_mime_type || '').trim().toLowerCase();
+  const expectedVisualSize = Number(request.visual_size || 0);
+  const expectedVisualSha = String(request.visual_sha256 || '').trim().toLowerCase();
+  const visualBase64 = String(request.visual_data_base64 || '');
+  const hasVisual = !!expectedVisualSha;
   const nonce = String(request.nonce || '');
 
   rformContentApiV04RequireActionId_(actionId);
@@ -413,6 +433,36 @@ function rformContentApiV04ApplyPublicationApproval_(request) {
   }
   if (!telegramText || telegramText.length > RFORM_CONTENT_API_V04.maxTelegramChars) {
     throw new Error('Текст публикации пуст или превышает лимит Telegram.');
+  }
+
+  let visualBytes = null;
+  if (hasVisual) {
+    if (!visualFilename || visualFilename.length > 180) {
+      throw new Error('Некорректное имя визуала.');
+    }
+    if (['image/jpeg', 'image/png', 'image/webp'].indexOf(visualMimeType) === -1) {
+      throw new Error('Разрешены PNG, JPG и WEBP.');
+    }
+    if (!Number.isFinite(expectedVisualSize) || expectedVisualSize < 1 ||
+        expectedVisualSize > RFORM_CONTENT_API_V04.maxPublicationVisualBytes) {
+      throw new Error('Размер визуала превышает лимит 5 МБ.');
+    }
+    if (!/^[a-f0-9]{64}$/.test(expectedVisualSha)) {
+      throw new Error('Некорректная контрольная сумма визуала.');
+    }
+    try {
+      visualBytes = Utilities.base64Decode(visualBase64);
+    } catch (error) {
+      throw new Error('Визуал не удалось декодировать.');
+    }
+    if (visualBytes.length !== expectedVisualSize) {
+      throw new Error('Размер визуала не совпадает с подписью запроса.');
+    }
+    if (rformContentApiV04Sha256BytesHex_(visualBytes) !== expectedVisualSha) {
+      throw new Error('Контрольная сумма визуала не совпадает.');
+    }
+  } else if (visualFilename || visualMimeType || expectedVisualSize || visualBase64) {
+    throw new Error('Визуал передан не полностью.');
   }
 
   const lock = LockService.getScriptLock();
@@ -482,6 +532,28 @@ function rformContentApiV04ApplyPublicationApproval_(request) {
     }
 
     const now = new Date();
+    let visualFile = null;
+    let createdVisualFile = false;
+    let visualFileUrl = '';
+    let visualFolderUrl = '';
+    if (hasVisual) {
+      const root = DriveApp.getFolderById(RFORM_CONTENT_API_V04.assetsRootFolderId);
+      const folder = rformContentApiV04PublicationFolder_(root, contentId, expectedVisualSha);
+      const safeName = rformContentApiV04SafeFilename_(visualFilename);
+      const storedName = expectedVisualSha.slice(0, 12) + '__' + safeName;
+      const existingFiles = folder.getFilesByName(storedName);
+      if (existingFiles.hasNext()) {
+        visualFile = existingFiles.next();
+      } else {
+        visualFile = folder.createFile(
+          Utilities.newBlob(visualBytes, visualMimeType, storedName)
+        );
+        visualFile.setDescription('R/Form publication visual · ' + contentId);
+        createdVisualFile = true;
+      }
+      visualFileUrl = visualFile.getUrl();
+      visualFolderUrl = 'https://drive.google.com/drive/folders/' + folder.getId();
+    }
     const updates = {
       Session_ID: sessionId,
       Date: sessionValue('Date'),
@@ -502,26 +574,34 @@ function rformContentApiV04ApplyPublicationApproval_(request) {
       Blocking_Issue: '',
       Reader_Value: angle,
       Proof_Source: 'RFORM_MASTER_DATA_v1 / ' + sessionId,
-      Distribution_Mode: 'TEXT_ONLY',
+      Distribution_Mode: hasVisual ? 'ORGANIC' : 'TEXT_ONLY',
       Editorial_Direction: angle,
       Publish_At: now,
       AutoPost_Allowed: 'YES',
       Telegram_Chat_ID: '@r_form',
-      Telegram_Post_Mode: 'TEXT_ONLY',
+      Telegram_Post_Mode: hasVisual ? 'PHOTO_CAPTION' : 'TEXT_ONLY',
       Telegram_Text: telegramText,
       Telegram_Message_ID: '',
       Telegram_Post_URL: '',
       Posted_At: '',
       Publish_Error: '',
-      Preview_Review_Hash: rformContentApiV04Sha256Hex_(telegramText),
+      Preview_Review_Hash: rformContentApiV04Sha256Hex_(
+        telegramText + (hasVisual ? '\n' + expectedVisualSha : '')
+      ),
       Preview_Reviewed_At: now,
       Preview_Reviewed_By: 'STREAMLIT_OWNER',
       Preview_Review_Status: 'REVIEWED'
     };
+    if (hasVisual) {
+      updates.Visual_Status = 'APPROVED';
+      updates.Folder_URL = visualFolderUrl;
+      updates.Visual_URL = visualFileUrl;
+      updates.Telegram_Visual_URL = visualFolderUrl;
+    }
     if (!queueRow) {
       updates.Content_ID = contentId;
       updates.Rubric = 'TRAINING_LOG';
-      updates.Visual_Status = 'NOT_READY';
+      if (!hasVisual) updates.Visual_Status = 'NOT_READY';
       updates.Created_At = now;
       updates.Task_ID = 'RFORM-AUTO-' + sessionId;
       updates.Content_Function = 'PROOF';
@@ -563,6 +643,13 @@ function rformContentApiV04ApplyPublicationApproval_(request) {
       SpreadsheetApp.flush();
       logSheet.getRange(logRow, logMap.Result).setValue('APPLIED');
     } catch (error) {
+      if (createdVisualFile && visualFile) {
+        try {
+          visualFile.setTrashed(true);
+        } catch (cleanupError) {
+          console.error('Visual cleanup failed: ' + cleanupError.message);
+        }
+      }
       if (createdRow) {
         queue.deleteRow(createdRow);
       } else {
@@ -582,6 +669,8 @@ function rformContentApiV04ApplyPublicationApproval_(request) {
       content_id: contentId,
       publication_status: 'SCHEDULED',
       auto_post_allowed: 'YES',
+      visual_attached: hasVisual,
+      telegram_post_mode: hasVisual ? 'PHOTO_CAPTION' : 'TEXT_ONLY',
       publish_at: now.toISOString(),
       message: 'Publication approved and handed to Telegram Autopost.'
     };
@@ -1002,6 +1091,15 @@ function rformContentApiV04ValidateOwnerText_(fact, angle, note) {
 
 function rformContentApiV04EventFolder_(root, eventId) {
   const name = String(eventId).replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 160);
+  const folders = root.getFoldersByName(name);
+  if (folders.hasNext()) return folders.next();
+  return root.createFolder(name);
+}
+
+function rformContentApiV04PublicationFolder_(root, contentId, visualSha) {
+  const name = ('PUBLICATION__' + String(contentId) + '__' + String(visualSha).slice(0, 12))
+    .replace(/[^A-Za-z0-9._-]/g, '_')
+    .slice(0, 140);
   const folders = root.getFoldersByName(name);
   if (folders.hasNext()) return folders.next();
   return root.createFolder(name);
