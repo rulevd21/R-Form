@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import base64
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -16,10 +17,12 @@ from rform_content.repository import (
     build_event_review_request,
     build_publication_approval_request,
     build_queue_publication_approval_request,
+    build_queue_publication_assets_request,
     diagnostics,
     execute_content_action,
     execute_publication_approval,
     execute_queue_publication_approval,
+    fetch_queue_publication_assets,
     load_bundle,
     prepare_queue,
 )
@@ -215,6 +218,21 @@ class RepositoryTests(unittest.TestCase):
                 "secret", "CNT-001", "Текст", "", "ALBUM_CAPTION"
             )
 
+    def test_queue_assets_envelope_is_signed_and_exact(self) -> None:
+        request = build_queue_publication_assets_request(
+            "test-secret",
+            "AUTO-WEEKLY-20260823",
+            timestamp=1_700_000_000,
+            nonce="ab" * 16,
+        )
+        self.assertEqual(request["operation"], "queue_publication_assets")
+        self.assertEqual(request["content_id"], "AUTO-WEEKLY-20260823")
+        self.assertEqual(
+            set(request),
+            {"timestamp", "nonce", "signature", "operation", "content_id"},
+        )
+        self.assertNotIn("test-secret", str(request))
+
     def test_content_action_rejects_unknown_action(self) -> None:
         with self.assertRaises(ValueError):
             build_content_action_request("secret", "CNT-001", "PUBLISH")
@@ -319,6 +337,41 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(request["session_id"], "S-20260821-C")
         self.assertEqual(request["telegram_text"], "Точный выбранный текст")
         self.assertNotIn("live-secret", str(request))
+
+    def test_queue_assets_are_decoded_and_sorted_for_preview(self) -> None:
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "ok": True,
+            "assets": [
+                {
+                    "filename": "weekly_v03_card-03.png",
+                    "mime_type": "image/png",
+                    "size": 5,
+                    "version": 3,
+                    "order": 3,
+                    "data_base64": base64.b64encode(b"three").decode("ascii"),
+                },
+                {
+                    "filename": "weekly_v03_card-01.png",
+                    "mime_type": "image/png",
+                    "size": 3,
+                    "version": 3,
+                    "order": 1,
+                    "data_base64": base64.b64encode(b"one").decode("ascii"),
+                },
+            ],
+        }
+        with patch("rform_content.repository.requests.post", return_value=response) as post:
+            assets = fetch_queue_publication_assets(
+                "https://script.google.com/macros/s/demo-deployment/exec",
+                "live-secret",
+                "AUTO-WEEKLY-20260823",
+            )
+
+        self.assertEqual([asset.order for asset in assets], [1, 3])
+        self.assertEqual([asset.data for asset in assets], [b"one", b"three"])
+        self.assertEqual(post.call_args.kwargs["json"]["operation"], "queue_publication_assets")
 
 
 if __name__ == "__main__":

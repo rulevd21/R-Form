@@ -9,7 +9,7 @@ import pandas as pd
 from PIL import Image
 
 from rform_content.daily_publications import build_publication_proposals
-from rform_content.publication_visual import HEIGHT, VARIANT_COUNT, WIDTH, render_publication_visual
+from rform_content.publication_visual import HEIGHT, VARIANT_COUNT, WIDTH, _font, render_publication_visual
 from rform_content.repository import prepare_queue, prepare_sessions
 
 
@@ -49,6 +49,11 @@ class PublicationVisualTests(unittest.TestCase):
         first = render_publication_visual(self.session, self.proposal, 0)
         cycled = render_publication_visual(self.session, self.proposal, VARIANT_COUNT)
         self.assertEqual(first.data, cycled.data)
+
+    def test_cyrillic_font_is_bundled_with_the_application(self) -> None:
+        font = _font(24, bold=True)
+        self.assertIn("assets/fonts/DejaVuSans-Bold.ttf", str(font.path).replace("\\", "/"))
+        self.assertIsNotNone(font.getbbox("ТРЕНИРОВКА НЕДЕЛЯ"))
 
 
 if __name__ == "__main__":

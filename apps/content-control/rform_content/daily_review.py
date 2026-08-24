@@ -18,6 +18,7 @@ from .repository import (
     DataSourceError,
     execute_publication_approval,
     execute_queue_publication_approval,
+    fetch_queue_publication_assets,
 )
 
 
@@ -37,6 +38,23 @@ def _api_args(app_config: dict[str, Any], api_secrets: dict[str, Any]) -> tuple[
     except (TypeError, ValueError):
         timeout = 20
     return endpoint_url, secret, min(max(timeout, 5), 60)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_queue_assets(
+    endpoint_url: str,
+    secret: str,
+    content_id: str,
+    cache_key: str,
+    timeout: int,
+):
+    del cache_key
+    return fetch_queue_publication_assets(
+        endpoint_url,
+        secret,
+        content_id,
+        timeout_seconds=timeout,
+    )
 
 
 def _label(proposal: PublicationProposal) -> str:
@@ -162,7 +180,42 @@ def render_ready_queue_review(
         '</div>',
         unsafe_allow_html=True,
     )
-    st.markdown("### Предпросмотр публикации")
+    visual_url = _text(row, "Telegram_Visual_URL", "")
+    post_mode = _text(row, "Telegram_Post_Mode", "TEXT_ONLY").upper()
+    has_visual = bool(visual_url and post_mode != "TEXT_ONLY")
+    assets_supported = "publication.queue_assets" in set(bundle.capabilities)
+    assets = ()
+    if has_visual and assets_supported:
+        endpoint_url, secret, timeout = _api_args(app_config, api_secrets)
+        try:
+            assets = _cached_queue_assets(
+                endpoint_url,
+                secret,
+                content_id,
+                state_suffix,
+                min(max(timeout, 15), 60),
+            )
+        except (DataSourceError, ValueError) as exc:
+            st.warning(str(exc))
+
+    st.markdown("### Как будет выглядеть пост в Telegram")
+    if assets:
+        st.caption(
+            f"Альбом: {len(assets)} карточки · версия v{max(asset.version for asset in assets):02d}"
+        )
+        image_columns = st.columns(len(assets), gap="small")
+        for column, asset in zip(image_columns, assets):
+            with column:
+                st.image(asset.data, width=300)
+    elif has_visual:
+        if assets_supported:
+            st.warning("Актуальные карточки не найдены. Проверьте папку визуалов.")
+        else:
+            st.info(
+                "Карточки прикреплены, но для показа внутри приложения требуется Apps Script v0.5.4."
+            )
+        st.link_button("Открыть карточки", visual_url, width="stretch")
+
     if st.session_state[edit_key]:
         st.text_area(
             "Текст публикации",
@@ -193,18 +246,18 @@ def render_ready_queue_review(
             unsafe_allow_html=True,
         )
 
-    visual_url = _text(row, "Telegram_Visual_URL", "")
-    post_mode = _text(row, "Telegram_Post_Mode", "TEXT_ONLY").upper()
-    if visual_url and post_mode != "TEXT_ONLY":
-        st.info("К публикации уже прикреплён готовый визуал. Он будет отправлен вместе с текстом.")
-        st.link_button("Открыть готовые изображения", visual_url, width="stretch")
-    else:
+    if not has_visual:
         st.caption("Материал подготовлен как текстовая публикация без изображения.")
 
     if not st.session_state[edit_key]:
-        if st.button("Изменить текст", width="stretch", key=f"edit_ready::{state_suffix}"):
-            st.session_state[edit_key] = True
-            st.rerun()
+        edit_columns = st.columns(2)
+        with edit_columns[0]:
+            if st.button("Изменить текст", width="stretch", key=f"edit_ready::{state_suffix}"):
+                st.session_state[edit_key] = True
+                st.rerun()
+        with edit_columns[1]:
+            if has_visual:
+                st.link_button("Заменить карточки", visual_url, width="stretch")
 
     enabled = "publication.queue_approve_schedule" in set(bundle.capabilities)
     if not enabled:

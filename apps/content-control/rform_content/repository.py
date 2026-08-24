@@ -76,11 +76,24 @@ EVENT_DECISIONS = {"TO_PUBLICATION", "TO_WEEKLY", "DISMISS"}
 PUBLICATION_PROPOSAL_MODES = {"UPDATE_EXISTING", "CREATE_NEW"}
 MAX_EVENT_MEDIA_BYTES = 30 * 1024 * 1024
 MAX_PUBLICATION_VISUAL_BYTES = 5 * 1024 * 1024
+MAX_QUEUE_PREVIEW_ASSETS = 3
+MAX_QUEUE_PREVIEW_BYTES = 15 * 1024 * 1024
 PUBLICATION_VISUAL_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 
 class DataSourceError(RuntimeError):
     """Raised when a configured live source cannot be read safely."""
+
+
+@dataclass(frozen=True)
+class QueuePublicationAsset:
+    """One image from the current prepared Telegram album."""
+
+    data: bytes
+    filename: str
+    mime_type: str
+    order: int
+    version: int
 
 
 @dataclass(frozen=True)
@@ -613,6 +626,42 @@ def build_queue_publication_approval_request(
     }
 
 
+def build_queue_publication_assets_request(
+    secret: str,
+    content_id: str,
+    *,
+    timestamp: int | None = None,
+    nonce: str | None = None,
+) -> dict[str, str | int]:
+    """Build a signed read request for the current visual set of one queue item."""
+
+    normalized_content_id = str(content_id).strip()
+    if not normalized_content_id:
+        raise ValueError("content_id is required")
+    request_timestamp = int(time.time()) if timestamp is None else int(timestamp)
+    request_nonce = secrets.token_hex(16) if nonce is None else str(nonce)
+    if len(request_nonce) != 32 or any(
+        char not in "0123456789abcdef" for char in request_nonce
+    ):
+        raise ValueError("nonce must contain exactly 32 lowercase hexadecimal characters")
+    signature = _sign_message(
+        secret,
+        [
+            str(request_timestamp),
+            request_nonce,
+            "queue_publication_assets",
+            normalized_content_id,
+        ],
+    )
+    return {
+        "timestamp": request_timestamp,
+        "nonce": request_nonce,
+        "signature": signature,
+        "operation": "queue_publication_assets",
+        "content_id": normalized_content_id,
+    }
+
+
 def _validate_apps_script_url(endpoint_url: str) -> None:
     parsed = urlparse(endpoint_url)
     if (
@@ -821,6 +870,68 @@ def execute_queue_publication_approval(
         telegram_post_mode,
     )
     return _post_signed(endpoint_url, request, timeout_seconds, "согласование готового материала")
+
+
+def fetch_queue_publication_assets(
+    endpoint_url: str,
+    secret: str,
+    content_id: str,
+    *,
+    timeout_seconds: int = 30,
+) -> tuple[QueuePublicationAsset, ...]:
+    """Load the latest bounded visual set referenced by a ready queue material."""
+
+    request = build_queue_publication_assets_request(secret, content_id)
+    payload = _post_signed(
+        endpoint_url,
+        request,
+        timeout_seconds,
+        "загрузку предпросмотра",
+    )
+    raw_assets = payload.get("assets")
+    if not isinstance(raw_assets, list):
+        raise DataSourceError("API вернул некорректный список изображений")
+    if len(raw_assets) > MAX_QUEUE_PREVIEW_ASSETS:
+        raise DataSourceError("API вернул слишком много изображений для предпросмотра")
+
+    assets: list[QueuePublicationAsset] = []
+    total_size = 0
+    for index, raw_asset in enumerate(raw_assets, start=1):
+        if not isinstance(raw_asset, dict):
+            raise DataSourceError("API вернул некорректное изображение")
+        filename = Path(str(raw_asset.get("filename") or "")).name.strip()
+        mime_type = str(raw_asset.get("mime_type") or "").strip().lower()
+        encoded = str(raw_asset.get("data_base64") or "")
+        if not filename or mime_type not in PUBLICATION_VISUAL_TYPES or not encoded:
+            raise DataSourceError("API вернул неполные данные изображения")
+        try:
+            data = base64.b64decode(encoded, validate=True)
+        except (ValueError, TypeError) as exc:
+            raise DataSourceError("Изображение предпросмотра повреждено") from exc
+        try:
+            expected_size = int(raw_asset.get("size") or 0)
+        except (TypeError, ValueError) as exc:
+            raise DataSourceError("Размер изображения предпросмотра некорректен") from exc
+        if not data or len(data) != expected_size:
+            raise DataSourceError("Размер изображения предпросмотра не совпадает")
+        if len(data) > MAX_PUBLICATION_VISUAL_BYTES:
+            raise DataSourceError("Изображение предпросмотра превышает лимит 5 МБ")
+        total_size += len(data)
+        if total_size > MAX_QUEUE_PREVIEW_BYTES:
+            raise DataSourceError("Комплект изображений превышает лимит 15 МБ")
+        try:
+            asset_order = int(raw_asset.get("order") or index)
+            asset_version = int(raw_asset.get("version") or 0)
+        except (TypeError, ValueError) as exc:
+            raise DataSourceError("Порядок изображений предпросмотра некорректен") from exc
+        assets.append(QueuePublicationAsset(
+            data=data,
+            filename=filename,
+            mime_type=mime_type,
+            order=asset_order,
+            version=asset_version,
+        ))
+    return tuple(sorted(assets, key=lambda asset: (asset.order, asset.filename.lower())))
 
 
 def load_bundle(

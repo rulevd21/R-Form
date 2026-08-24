@@ -65,6 +65,7 @@ def _font(size: int, *, bold: bool = False, mono: bool = False) -> ImageFont.Fre
         else ["DejaVuSans.ttf", "NimbusSans-Regular.otf"]
     )
     roots = (
+        Path(__file__).resolve().parents[1] / "assets" / "fonts",
         Path("/usr/share/fonts/truetype/dejavu"),
         Path("/usr/share/fonts/opentype/urw-base35"),
     )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -176,6 +177,84 @@ class AppSmokeTests(unittest.TestCase):
         approve = next(item for item in app.button if item.label == "Согласовать и отправить")
         self.assertFalse(approve.disabled)
         self.assertIn("Изменить текст", [button.label for button in app.button])
+
+    def test_v054_weekly_preview_shows_three_current_cards_and_text(self) -> None:
+        queue = pd.read_csv(APP_ROOT / "fixtures" / "content_queue.csv", keep_default_na=False)
+        events = pd.read_csv(APP_ROOT / "fixtures" / "data_events.csv", keep_default_na=False)
+        sessions = pd.read_csv(APP_ROOT / "fixtures" / "training_sessions.csv", keep_default_na=False)
+        queue.loc[0, [
+            "Content_ID", "Date", "Rubric", "Public_Data_Allowed", "Text_Status",
+            "Visual_Status", "Approval_Status", "Publication_Status", "Pipeline_Status",
+            "Current_Stage", "Updated_At", "Proof_Source", "Telegram_Post_Mode",
+            "Telegram_Text", "Telegram_Visual_URL", "Blocking_Issue",
+        ]] = [
+            "AUTO-WEEKLY-20260823", "23.08.2026", "WEEKLY_CONTROL", "YES", "REVIEW",
+            "APPROVED", "NOT_READY", "PLANNED", "READY · CHANNEL CONTROL · VISUAL v03 APPROVED",
+            "CHANNEL_CONTROL_REVIEW", "24.08.2026 11:31",
+            "COVERS:S-20260817-A,S-20260819-B,S-20260821-C", "ALBUM_CAPTION",
+            "Готовый недельный отчёт", "https://drive.google.com/drive/folders/example", "",
+        ]
+        read_response = Mock()
+        read_response.raise_for_status.return_value = None
+        read_response.json.return_value = {
+            "ok": True,
+            "version": "0.5.4",
+            "capabilities": [
+                "content.read", "training.read", "publication.propose",
+                "publication.visual", "publication.approve_schedule",
+                "publication.queue_approve_schedule", "publication.queue_assets",
+            ],
+            "generated_at": "2026-08-24T10:00:00Z",
+            "queue_fields": list(queue.columns),
+            "event_fields": list(events.columns),
+            "training_session_fields": list(sessions.columns),
+            "queue": queue.to_dict(orient="records"),
+            "events": events.to_dict(orient="records"),
+            "training_sessions": sessions.to_dict(orient="records"),
+        }
+        png = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        )
+        asset_response = Mock()
+        asset_response.raise_for_status.return_value = None
+        asset_response.json.return_value = {
+            "ok": True,
+            "content_id": "AUTO-WEEKLY-20260823",
+            "version": 3,
+            "assets": [
+                {
+                    "filename": f"weekly_v03_card-0{index}.png",
+                    "mime_type": "image/png",
+                    "size": len(png),
+                    "version": 3,
+                    "order": index,
+                    "data_base64": base64.b64encode(png).decode("ascii"),
+                }
+                for index in range(1, 4)
+            ],
+        }
+
+        def response_for_request(*args, **kwargs):
+            operation = kwargs["json"].get("operation", "read")
+            return asset_response if operation == "queue_publication_assets" else read_response
+
+        app = AppTest.from_file(str(APP_ROOT / "app.py"), default_timeout=30)
+        app.secrets = {
+            "app": {
+                "data_mode": "apps_script",
+                "apps_script_url": "https://script.google.com/macros/s/demo-v054-inline/exec",
+            },
+            "content_api": {"secret": "test-secret"},
+        }
+        with patch("rform_content.repository.requests.post", side_effect=response_for_request) as post:
+            app.run()
+
+        self.assertTrue(any(
+            "Альбом: 3 карточки · версия v03" in item.value for item in app.caption
+        ))
+        self.assertEqual(post.call_count, 2)
+        self.assertIn("Изменить текст", [button.label for button in app.button])
+        self.assertFalse(any(item.label == "Выберите публикацию" for item in app.radio))
 
     def test_v052_gateway_enables_editable_text_and_visual_approval(self) -> None:
         queue = pd.read_csv(APP_ROOT / "fixtures" / "content_queue.csv", keep_default_na=False)

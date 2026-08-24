@@ -26,7 +26,13 @@ SESSION_HASH_FIELDS = (
 )
 
 TERMINAL_CONTENT_STATES = {"PUBLISHED", "CANCELLED", "SUPERSEDED"}
-OWNER_PREVIEW_STAGES = {"OWNER_FINAL_PREVIEW", "OWNER_REVIEW"}
+OWNER_PREVIEW_STAGES = {
+    "OWNER_FINAL_PREVIEW",
+    "OWNER_REVIEW",
+    # The editorial workflow moves a material here after replacement cards are
+    # approved.  It is still waiting only for the owner's publication decision.
+    "CHANNEL_CONTROL_REVIEW",
+}
 
 
 @dataclass(frozen=True)
@@ -96,12 +102,29 @@ def owner_ready_materials(queue: pd.DataFrame) -> pd.DataFrame:
     content_type = _column(working, "Content_Type").str.upper()
     telegram_text = _column(working, "Telegram_Text")
     public_allowed = _column(working, "Public_Data_Allowed").str.upper()
+    rubric = _column(working, "Rubric").str.upper()
+    visual_status = _column(working, "Visual_Status").str.upper()
+    visual_url = _column(working, "Telegram_Visual_URL")
+    blocking_issue = _column(working, "Blocking_Issue")
+    informational_visual_note = blocking_issue.str.contains(
+        r"^Visual\s+v\d+\s+approved\b", case=False, regex=True
+    )
+    weekly_bundle_ready = (
+        rubric.eq("WEEKLY_CONTROL")
+        & visual_status.isin({"READY", "REVIEW", "APPROVED"})
+        & visual_url.ne("")
+    )
     eligible = (
-        (stage.isin(OWNER_PREVIEW_STAGES) | pipeline.str.contains("FINAL PREVIEW READY", regex=False))
+        (
+            stage.isin(OWNER_PREVIEW_STAGES)
+            | pipeline.str.contains("FINAL PREVIEW READY", regex=False)
+            | weekly_bundle_ready
+        )
         & ~publication.isin(TERMINAL_CONTENT_STATES | {"SCHEDULED"})
         & content_type.ne("TECH_TEST")
         & telegram_text.ne("")
         & public_allowed.isin({"YES", "ДА", "TRUE", "1"})
+        & (blocking_issue.eq("") | informational_visual_note)
     )
     selected = working[eligible].copy()
     if selected.empty:

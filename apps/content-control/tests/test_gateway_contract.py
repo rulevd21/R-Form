@@ -50,11 +50,14 @@ class GatewayContractTests(unittest.TestCase):
         self.assertIn("sourceHash", block)
         self.assertNotIn("UrlFetchApp", block)
 
-    def test_v053_preflight_requires_explicit_owner_approval_for_scheduling(self) -> None:
-        self.assertIn("version: '0.5.3'", self.code)
+    def test_v054_preflight_requires_explicit_owner_approval_for_scheduling(self) -> None:
+        self.assertIn("version: '0.5.4'", self.code)
         self.assertIn("publication.approve_schedule", self.code)
         self.assertIn("publication.visual", self.code)
         self.assertIn("publication.queue_approve_schedule", self.code)
+        self.assertIn("publication.queue_assets", self.code)
+        for field in ("'Proof_Source'", "'Updated_At'", "'Telegram_Post_Mode'"):
+            self.assertIn(field, self.code.split("queueFields:", 1)[1].split("]),", 1)[0])
         self.assertIn("scheduledRequiresExplicitOwnerApproval: true", self.code)
 
     def test_v053_owner_ready_queue_approval_is_signed_logged_and_scheduled(self) -> None:
@@ -66,6 +69,18 @@ class GatewayContractTests(unittest.TestCase):
         self.assertIn("APPROVE_AND_SCHEDULE", block)
         self.assertIn("Telegram_Visual_URL", block)
         self.assertIn("FAILED_ROLLED_BACK", block)
+        self.assertIn("rformContentApiV04IsInformationalVisualNote_", block)
+        self.assertNotIn("UrlFetchApp", block)
+
+    def test_v054_queue_preview_returns_only_latest_bounded_visual_set(self) -> None:
+        block = self.code.split("function rformContentApiV04QueuePublicationAssets_", 1)[1].split(
+            "function rformContentApiV04ApplyQueuePublicationApproval_", 1
+        )[0]
+        self.assertIn("maxQueuePreviewAssets", block)
+        self.assertIn("item.version === newestVersion", block)
+        self.assertIn("left.order - right.order", block)
+        self.assertIn("data_base64", block)
+        self.assertIn("maxQueuePreviewBytes", block)
         self.assertNotIn("UrlFetchApp", block)
 
     def test_v04_gateway_requires_signed_audited_event_operations(self) -> None:

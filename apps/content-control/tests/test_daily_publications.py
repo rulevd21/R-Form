@@ -107,6 +107,25 @@ class DailyPublicationTests(unittest.TestCase):
 
         self.assertEqual(ready.iloc[0]["Content_ID"], "AUTO-WEEKLY-20260823")
 
+    def test_updated_weekly_cards_remain_ready_during_channel_control_stage(self) -> None:
+        queue = self.queue.copy()
+        queue.loc[0, "Content_ID"] = "AUTO-WEEKLY-20260823"
+        queue.loc[0, "Rubric"] = "WEEKLY_CONTROL"
+        queue.loc[0, "Current_Stage"] = "CHANNEL_CONTROL_REVIEW"
+        queue.loc[0, "Pipeline_Status"] = "READY · CHANNEL CONTROL · VISUAL v03 APPROVED"
+        queue.loc[0, "Publication_Status"] = "PLANNED"
+        queue.loc[0, "Public_Data_Allowed"] = "YES"
+        queue.loc[0, "Visual_Status"] = "APPROVED"
+        queue.loc[0, "Telegram_Text"] = "Готовый недельный отчёт"
+        queue.loc[0, "Telegram_Visual_URL"] = "https://drive.google.com/drive/folders/example"
+        queue.loc[0, "Blocking_Issue"] = (
+            "Visual v03 approved by owner; 3 PNG uploaded and available to CHANNEL_CONTROL."
+        )
+
+        ready = owner_ready_materials(prepare_queue(queue))
+
+        self.assertEqual(ready.iloc[0]["Content_ID"], "AUTO-WEEKLY-20260823")
+
 
 if __name__ == "__main__":
     unittest.main()
