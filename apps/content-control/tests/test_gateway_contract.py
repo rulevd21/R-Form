@@ -50,11 +50,23 @@ class GatewayContractTests(unittest.TestCase):
         self.assertIn("sourceHash", block)
         self.assertNotIn("UrlFetchApp", block)
 
-    def test_v052_preflight_requires_explicit_owner_approval_for_scheduling(self) -> None:
-        self.assertIn("version: '0.5.2'", self.code)
+    def test_v053_preflight_requires_explicit_owner_approval_for_scheduling(self) -> None:
+        self.assertIn("version: '0.5.3'", self.code)
         self.assertIn("publication.approve_schedule", self.code)
         self.assertIn("publication.visual", self.code)
+        self.assertIn("publication.queue_approve_schedule", self.code)
         self.assertIn("scheduledRequiresExplicitOwnerApproval: true", self.code)
+
+    def test_v053_owner_ready_queue_approval_is_signed_logged_and_scheduled(self) -> None:
+        block = self.code.split("function rformContentApiV04ApplyQueuePublicationApproval_", 1)[1].split(
+            "function rformContentApiV04PublicationId_", 1
+        )[0]
+        self.assertIn("Publication_Status: 'SCHEDULED'", block)
+        self.assertIn("AutoPost_Allowed: 'YES'", block)
+        self.assertIn("APPROVE_AND_SCHEDULE", block)
+        self.assertIn("Telegram_Visual_URL", block)
+        self.assertIn("FAILED_ROLLED_BACK", block)
+        self.assertNotIn("UrlFetchApp", block)
 
     def test_v04_gateway_requires_signed_audited_event_operations(self) -> None:
         for marker in (

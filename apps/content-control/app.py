@@ -428,7 +428,7 @@ def _source_label(source: str) -> str:
 
 
 def render_header(source: str, capabilities: tuple[str, ...]) -> None:
-    badge = "АВТОМАТИЧЕСКИЙ РЕЖИМ · v0.5.2"
+    badge = "АВТОМАТИЧЕСКИЙ РЕЖИМ · v0.5.3"
     st.markdown('<div class="rf-kicker">R/Form · Контент-операции</div>', unsafe_allow_html=True)
     st.markdown('<div class="rf-title">Управление контентом</div>', unsafe_allow_html=True)
     st.markdown(
@@ -850,7 +850,7 @@ with st.sidebar:
         label_visibility="collapsed",
     )
     st.markdown("---")
-    st.caption("R/Form · Управление контентом v0.5.2")
+    st.caption("R/Form · Управление контентом v0.5.3")
     st.caption("Источник истины остаётся в Google Таблицах.")
 
 if page == "Сегодня":

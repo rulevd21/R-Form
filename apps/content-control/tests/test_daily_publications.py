@@ -7,6 +7,8 @@ import pandas as pd
 
 from rform_content.daily_publications import (
     build_publication_proposals,
+    covered_session_ids,
+    owner_ready_materials,
     session_source_hash,
 )
 from rform_content.repository import prepare_queue, prepare_sessions
@@ -70,6 +72,40 @@ class DailyPublicationTests(unittest.TestCase):
 
         self.assertIsNone(session)
         self.assertEqual(proposals, [])
+
+    def test_weekly_coverage_closes_included_training_proposal(self) -> None:
+        queue = self.queue.copy()
+        weekly = queue.iloc[0].copy()
+        weekly["Content_ID"] = "AUTO-WEEKLY-20260823"
+        weekly["Proof_Source"] = (
+            "TRAINING_SESSIONS 17,19,21.08 · "
+            "COVERS:S-20260817-A,S-20260819-B,S-20260821-C"
+        )
+        weekly["Current_Stage"] = "OWNER_FINAL_PREVIEW"
+        weekly["Pipeline_Status"] = "FINAL PREVIEW READY"
+        weekly["Publication_Status"] = "PLANNED"
+        weekly["Public_Data_Allowed"] = "YES"
+        weekly["Telegram_Text"] = "Готовый недельный отчёт"
+        queue = prepare_queue(pd.concat([queue, weekly.to_frame().T], ignore_index=True))
+
+        self.assertIn("S-20260821-C", covered_session_ids(queue))
+        session, proposals = build_publication_proposals(queue, self.sessions)
+        self.assertIsNone(session)
+        self.assertEqual(proposals, [])
+
+    def test_owner_final_preview_has_priority_regardless_of_date(self) -> None:
+        queue = self.queue.copy()
+        queue.loc[0, "Content_ID"] = "AUTO-WEEKLY-20260823"
+        queue.loc[0, "Date"] = "23.08.2026"
+        queue.loc[0, "Current_Stage"] = "OWNER_FINAL_PREVIEW"
+        queue.loc[0, "Pipeline_Status"] = "FINAL PREVIEW READY"
+        queue.loc[0, "Publication_Status"] = "PLANNED"
+        queue.loc[0, "Public_Data_Allowed"] = "YES"
+        queue.loc[0, "Telegram_Text"] = "Готовый недельный отчёт"
+
+        ready = owner_ready_materials(prepare_queue(queue))
+
+        self.assertEqual(ready.iloc[0]["Content_ID"], "AUTO-WEEKLY-20260823")
 
 
 if __name__ == "__main__":

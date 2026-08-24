@@ -556,6 +556,63 @@ def build_publication_approval_request(
     return request
 
 
+def build_queue_publication_approval_request(
+    secret: str,
+    content_id: str,
+    telegram_text: str,
+    telegram_visual_url: str,
+    telegram_post_mode: str,
+    *,
+    timestamp: int | None = None,
+    nonce: str | None = None,
+    action_id: str | None = None,
+) -> dict[str, str | int]:
+    """Build one signed approval for an existing owner-ready queue material."""
+
+    normalized_content_id = str(content_id).strip()
+    normalized_text = str(telegram_text).strip()
+    normalized_visual_url = str(telegram_visual_url).strip()
+    normalized_mode = str(telegram_post_mode).strip().upper() or "TEXT_ONLY"
+    if not normalized_content_id:
+        raise ValueError("content_id is required")
+    if not normalized_text:
+        raise ValueError("telegram_text is required")
+    if len(normalized_text) > 4096:
+        raise ValueError("telegram_text exceeds the Telegram limit")
+    if normalized_mode not in {"TEXT_ONLY", "PHOTO_CAPTION", "ALBUM_CAPTION"}:
+        raise ValueError("telegram_post_mode is not supported")
+    if normalized_mode != "TEXT_ONLY" and not normalized_visual_url:
+        raise ValueError("telegram_visual_url is required for a visual publication")
+
+    request_timestamp, request_nonce, request_action_id = _request_identity(
+        timestamp=timestamp, nonce=nonce, action_id=action_id
+    )
+    signature = _sign_message(
+        secret,
+        [
+            str(request_timestamp),
+            request_nonce,
+            "queue_publication_approval",
+            request_action_id,
+            normalized_content_id,
+            _sha256_text(normalized_text),
+            _sha256_text(normalized_visual_url),
+            normalized_mode,
+        ],
+    )
+    return {
+        "timestamp": request_timestamp,
+        "nonce": request_nonce,
+        "signature": signature,
+        "operation": "queue_publication_approval",
+        "action_id": request_action_id,
+        "content_id": normalized_content_id,
+        "telegram_text": normalized_text,
+        "telegram_visual_url": normalized_visual_url,
+        "telegram_post_mode": normalized_mode,
+    }
+
+
 def _validate_apps_script_url(endpoint_url: str) -> None:
     parsed = urlparse(endpoint_url)
     if (
@@ -744,6 +801,26 @@ def execute_publication_approval(
         visual_data,
     )
     return _post_signed(endpoint_url, request, timeout_seconds, "согласование публикации")
+
+
+def execute_queue_publication_approval(
+    endpoint_url: str,
+    secret: str,
+    content_id: str,
+    telegram_text: str,
+    telegram_visual_url: str,
+    telegram_post_mode: str,
+    *,
+    timeout_seconds: int = 20,
+) -> dict[str, Any]:
+    request = build_queue_publication_approval_request(
+        secret,
+        content_id,
+        telegram_text,
+        telegram_visual_url,
+        telegram_post_mode,
+    )
+    return _post_signed(endpoint_url, request, timeout_seconds, "согласование готового материала")
 
 
 def load_bundle(

@@ -15,9 +15,11 @@ from rform_content.repository import (
     build_event_media_request,
     build_event_review_request,
     build_publication_approval_request,
+    build_queue_publication_approval_request,
     diagnostics,
     execute_content_action,
     execute_publication_approval,
+    execute_queue_publication_approval,
     load_bundle,
     prepare_queue,
 )
@@ -189,6 +191,28 @@ class RepositoryTests(unittest.TestCase):
             build_publication_approval_request(
                 "test-secret", "PROP-1", "S-1", "ab" * 32, "CREATE_NEW", "",
                 "Название", "Главная мысль", "Текст", "visual.png", "image/png", None,
+            )
+
+    def test_existing_queue_approval_is_signed_and_exact(self) -> None:
+        request = build_queue_publication_approval_request(
+            "test-secret",
+            "AUTO-WEEKLY-20260823",
+            "Готовый недельный отчёт",
+            "https://drive.google.com/drive/folders/example",
+            "ALBUM_CAPTION",
+            timestamp=1_700_000_000,
+            nonce="ab" * 16,
+            action_id="cd" * 16,
+        )
+        self.assertEqual(request["operation"], "queue_publication_approval")
+        self.assertEqual(request["content_id"], "AUTO-WEEKLY-20260823")
+        self.assertEqual(request["telegram_post_mode"], "ALBUM_CAPTION")
+        self.assertNotIn("test-secret", str(request))
+
+    def test_visual_queue_approval_requires_a_visual_url(self) -> None:
+        with self.assertRaises(ValueError):
+            build_queue_publication_approval_request(
+                "secret", "CNT-001", "Текст", "", "ALBUM_CAPTION"
             )
 
     def test_content_action_rejects_unknown_action(self) -> None:

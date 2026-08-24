@@ -26,6 +26,7 @@ SESSION_HASH_FIELDS = (
 )
 
 TERMINAL_CONTENT_STATES = {"PUBLISHED", "CANCELLED", "SUPERSEDED"}
+OWNER_PREVIEW_STAGES = {"OWNER_FINAL_PREVIEW", "OWNER_REVIEW"}
 
 
 @dataclass(frozen=True)
@@ -50,9 +51,65 @@ def _text(row: pd.Series, field: str, fallback: str = "") -> str:
     return result or fallback
 
 
+def _column(frame: pd.DataFrame, field: str) -> pd.Series:
+    if field not in frame:
+        return pd.Series("", index=frame.index, dtype="object")
+    return frame[field].fillna("").astype(str).str.strip()
+
+
 def session_source_hash(row: pd.Series) -> str:
     canonical = "\n".join(_text(row, field) for field in SESSION_HASH_FIELDS)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def covered_session_ids(queue: pd.DataFrame) -> set[str]:
+    """Return sessions explicitly consolidated into a broader publication."""
+
+    if queue.empty:
+        return set()
+    covered: set[str] = set()
+    for _, row in queue.iterrows():
+        source = " ".join(
+            _text(row, field)
+            for field in ("Proof_Source", "Editorial_Direction", "Blocking_Issue")
+        )
+        marker = re.search(r"\bCOVERS:([^\s]+)", source, flags=re.IGNORECASE)
+        if not marker:
+            continue
+        covered.update(
+            token.strip().upper()
+            for token in marker.group(1).split(",")
+            if token.strip().upper().startswith("S-")
+        )
+    return covered
+
+
+def owner_ready_materials(queue: pd.DataFrame) -> pd.DataFrame:
+    """Select finished queue items that are waiting only for the owner's decision."""
+
+    if queue.empty:
+        return queue.copy()
+    working = queue.copy()
+    stage = _column(working, "Current_Stage").str.upper()
+    pipeline = _column(working, "Pipeline_Status").str.upper()
+    publication = _column(working, "Publication_Status").str.upper()
+    content_type = _column(working, "Content_Type").str.upper()
+    telegram_text = _column(working, "Telegram_Text")
+    public_allowed = _column(working, "Public_Data_Allowed").str.upper()
+    eligible = (
+        (stage.isin(OWNER_PREVIEW_STAGES) | pipeline.str.contains("FINAL PREVIEW READY", regex=False))
+        & ~publication.isin(TERMINAL_CONTENT_STATES | {"SCHEDULED"})
+        & content_type.ne("TECH_TEST")
+        & telegram_text.ne("")
+        & public_allowed.isin({"YES", "ДА", "TRUE", "1"})
+    )
+    selected = working[eligible].copy()
+    if selected.empty:
+        return selected
+    selected["Owner_Ready_Sort"] = pd.to_datetime(
+        _column(selected, "Updated_At"), errors="coerce", dayfirst=True, utc=True
+    )
+    return selected.sort_values("Owner_Ready_Sort", ascending=False, na_position="last")
 
 
 def _first_statement(value: str) -> str:
@@ -173,6 +230,8 @@ def latest_unprocessed_session(queue: pd.DataFrame, sessions: pd.DataFrame) -> p
         "Session_Date_Sort", ascending=False, na_position="last"
     ).iloc[0]
     session_id = _text(session, "Session_ID")
+    if session_id.upper() in covered_session_ids(queue):
+        return None
     linked = queue.iloc[0:0]
     if not queue.empty and "Session_ID" in queue:
         linked = queue[

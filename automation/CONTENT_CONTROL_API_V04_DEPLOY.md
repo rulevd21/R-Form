@@ -1,10 +1,10 @@
-# R/Form Content Control API v0.5.2 — production update
+# R/Form Content Control API v0.5.3 — production update
 
 Цель: включить автоматический маршрут **новая тренировка → готовые комплекты «текст + визуал» → одно согласование → Telegram Autopost**.
 
 ## Что уже подготовлено
 
-- Streamlit v0.5.2 в ветке `agent/content-control-streamlit-readonly`;
+- Streamlit v0.5.3 в ветке `agent/content-control-streamlit-readonly`;
 - `DATA_EVENTS` расширен owner-полями;
 - приватная папка `RFORM_SYSTEM / CONTENT_ASSETS` создана;
 - backend: `automation/content_control_api_v0_4.gs`;
@@ -15,7 +15,7 @@
 
 1. Откройте существующий standalone Apps Script-проект Content Control API.
 2. Откройте `automation/content_control_api_v0_4.gs` из GitHub.
-3. В Apps Script замените текущий код Content Control API целиком на опубликованный код v0.5.2.
+3. В Apps Script замените текущий код Content Control API целиком на опубликованный код v0.5.3.
    - Не держите две версии одновременно: обе содержат `doPost/doGet`.
    - Не запускайте `rformContentApiV04CreateSecret()` — старый секрет сохраняется.
 4. Сохраните проект.
@@ -25,7 +25,7 @@
 
 ```text
 ok: true
-version: 0.5.2
+version: 0.5.3
 assetsRootAccessible: true
 secretConfigured: true
 telegramCallsPresent: false
@@ -49,7 +49,7 @@ capabilities:
 
 Production gate считается пройденным, если:
 
-- шапка показывает `АВТОМАТИЧЕСКИЙ РЕЖИМ · v0.5.2`;
+- шапка показывает `АВТОМАТИЧЕСКИЙ РЕЖИМ · v0.5.3`;
 - диагностика показывает `training.read`, `publication.propose`, `publication.visual`, `publication.approve_schedule`;
 - раздел `Сегодня` показывает тренировку C от 21.08.2026 и два готовых варианта;
 - под текстом отображается визуал, а кнопки `Изменить текст` и `Сформировать другое изображение` активны;

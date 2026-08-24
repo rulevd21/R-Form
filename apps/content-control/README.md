@@ -1,8 +1,19 @@
-# R/Form · Управление контентом v0.5.2
+# R/Form · Управление контентом v0.5.3
 
 Приватная русскоязычная панель, которая сама находит новые тренировки, сопоставляет их с неопубликованным контентом и оставляет владельцу только выбор готовой публикации.
 
-## Главное изменение v0.5.2
+## Главное изменение v0.5.3
+
+Готовые редакционные материалы со стадией `OWNER_FINAL_PREVIEW` теперь имеют
+приоритет во вкладке **«Сегодня»**. Если Weekly уже включает отдельные тренировки,
+они отмечаются через `COVERS:` в `Proof_Source` и больше не возвращаются как
+отдельные предложения.
+
+Согласование готового материала выполняется одной кнопкой: текущий текст и уже
+подготовленный визуал утверждаются, материал переводится в `SCHEDULED` и
+передаётся существующему Telegram Autopost.
+
+## Возможности v0.5.2
 
 Целевой маршрут владельца остаётся коротким:
 
@@ -52,7 +63,7 @@
 
 Content Control API не содержит Telegram-токен и не вызывает Telegram. Только явное нажатие **«Согласовать и отправить»** сохраняет точный выбранный текст и визуал, устанавливает `SCHEDULED` и `AutoPost_Allowed=YES`; отправку выполняет отдельный ранее установленный Telegram Autopost.
 
-## Возможности API v0.5.2
+## Возможности API v0.5.3
 
 - `content.read`
 - `content.action`
@@ -75,7 +86,7 @@ Content Control API не содержит Telegram-токен и не вызыв
 1. Не создавайте новый секрет. v0.5 использует то же Script Property `RFORM_CONTENT_API_SECRET`.
 2. Замените действующий код целиком; не оставляйте два `doPost/doGet` одновременно.
 3. Выполните `rformContentApiV04Preflight()` и разрешите доступ к Google Drive, если Apps Script запросит его.
-4. Результат должен содержать `ok: true`, `version: 0.5.2`, пустые списки missing-полей и девять capabilities, включая `publication.visual`.
+4. Результат должен содержать `ok: true`, `version: 0.5.3`, пустые списки missing-полей и capability `publication.queue_approve_schedule`.
 5. Обновите существующий Web App deployment новой версией. URL `/exec` должен остаться тем же.
 6. Streamlit Secrets менять не требуется, если URL и секрет не изменились.
 
@@ -98,7 +109,7 @@ streamlit run app.py
 - Main file path: `apps/content-control/app.py`
 - Access: Private
 
-После обновления frontend в разделе «Система» должны отображаться `training.read`, `publication.propose`, `publication.visual` и `publication.approve_schedule`, а в шапке — `АВТОМАТИЧЕСКИЙ РЕЖИМ · v0.5.2`.
+После обновления frontend в разделе «Система» должны отображаться `training.read`, `publication.propose`, `publication.visual`, `publication.approve_schedule` и `publication.queue_approve_schedule`, а в шапке — `АВТОМАТИЧЕСКИЙ РЕЖИМ · v0.5.3`.
 
 ## Проверка
 

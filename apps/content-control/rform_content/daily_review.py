@@ -8,9 +8,17 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from .daily_publications import PublicationProposal, build_publication_proposals
+from .daily_publications import (
+    PublicationProposal,
+    build_publication_proposals,
+    owner_ready_materials,
+)
 from .publication_visual import VARIANT_COUNT, PublicationVisual, render_publication_visual
-from .repository import DataSourceError, execute_publication_approval
+from .repository import (
+    DataSourceError,
+    execute_publication_approval,
+    execute_queue_publication_approval,
+)
 
 
 def _text(row: pd.Series, field: str, fallback: str = "—") -> str:
@@ -82,6 +90,137 @@ def _apply(
     st.rerun()
 
 
+def _ready_material_title(row: pd.Series) -> str:
+    rubric = _text(row, "Rubric", "").upper()
+    label = {
+        "WEEKLY_CONTROL": "Недельный отчёт",
+        "TRAINING_LOG": "Отчёт о тренировке",
+        "METHODOLOGY": "Методология",
+        "DECISION": "Решение",
+    }.get(rubric, "Готовая публикация")
+    date_value = _text(row, "Date", "")
+    return " · ".join(part for part in (date_value, label) if part)
+
+
+def _apply_ready_material(
+    row: pd.Series,
+    telegram_text: str,
+    app_config: dict[str, Any],
+    api_secrets: dict[str, Any],
+) -> None:
+    endpoint_url, secret, timeout = _api_args(app_config, api_secrets)
+    try:
+        execute_queue_publication_approval(
+            endpoint_url,
+            secret,
+            _text(row, "Content_ID", ""),
+            telegram_text,
+            _text(row, "Telegram_Visual_URL", ""),
+            _text(row, "Telegram_Post_Mode", "TEXT_ONLY"),
+            timeout_seconds=timeout,
+        )
+    except (DataSourceError, ValueError) as exc:
+        st.error(str(exc))
+        return
+    st.session_state["daily_publication_success"] = (
+        f"Публикация «{_ready_material_title(row)}» согласована и передана в автопостинг. "
+        "Ожидаемая отправка — в течение пяти минут."
+    )
+    st.cache_data.clear()
+    st.rerun()
+
+
+def render_ready_queue_review(
+    bundle,
+    app_config: dict[str, Any],
+    api_secrets: dict[str, Any],
+) -> bool:
+    """Render a finished queue item before proposing another training post."""
+
+    materials = owner_ready_materials(bundle.queue)
+    if materials.empty:
+        return False
+    row = materials.iloc[0]
+    content_id = _text(row, "Content_ID", "")
+    state_suffix = f"{content_id}::{_text(row, 'Updated_At', '')}"
+    text_key = f"ready_queue_text::{state_suffix}"
+    edit_key = f"ready_queue_edit::{state_suffix}"
+    input_key = f"ready_queue_input::{state_suffix}"
+    st.session_state.setdefault(text_key, _text(row, "Telegram_Text", ""))
+    st.session_state.setdefault(edit_key, False)
+    telegram_text = str(st.session_state[text_key]).strip()
+
+    st.subheader("Готово к согласованию")
+    st.caption(
+        "Система нашла готовый редакционный материал. Он показан раньше отдельных предложений по тренировкам."
+    )
+    st.markdown(
+        '<div class="rf-card rf-card-decision">'
+        '<div class="rf-label">Текущая публикация</div>'
+        f'<div class="rf-value">{escape(_ready_material_title(row))}</div>'
+        '<div class="rf-detail">Текст и готовые материалы собраны · требуется только ваше решение</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown("### Предпросмотр публикации")
+    if st.session_state[edit_key]:
+        st.text_area(
+            "Текст публикации",
+            value=telegram_text,
+            height=430,
+            max_chars=4096,
+            key=input_key,
+        )
+        save_col, cancel_col = st.columns(2)
+        with save_col:
+            if st.button("Сохранить изменения", width="stretch", key=f"save_ready::{state_suffix}"):
+                updated = str(st.session_state.get(input_key, "")).strip()
+                if not updated:
+                    st.error("Текст публикации не может быть пустым.")
+                else:
+                    st.session_state[text_key] = updated
+                    st.session_state[edit_key] = False
+                    st.rerun()
+        with cancel_col:
+            if st.button("Отменить", width="stretch", key=f"cancel_ready::{state_suffix}"):
+                st.session_state.pop(input_key, None)
+                st.session_state[edit_key] = False
+                st.rerun()
+    else:
+        safe_text = escape(telegram_text).replace("\n", "<br>")
+        st.markdown(
+            f'<div class="rf-card"><div class="rf-detail" style="font-size:.96rem;line-height:1.6">{safe_text}</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    visual_url = _text(row, "Telegram_Visual_URL", "")
+    post_mode = _text(row, "Telegram_Post_Mode", "TEXT_ONLY").upper()
+    if visual_url and post_mode != "TEXT_ONLY":
+        st.info("К публикации уже прикреплён готовый визуал. Он будет отправлен вместе с текстом.")
+        st.link_button("Открыть готовые изображения", visual_url, width="stretch")
+    else:
+        st.caption("Материал подготовлен как текстовая публикация без изображения.")
+
+    if not st.session_state[edit_key]:
+        if st.button("Изменить текст", width="stretch", key=f"edit_ready::{state_suffix}"):
+            st.session_state[edit_key] = True
+            st.rerun()
+
+    enabled = "publication.queue_approve_schedule" in set(bundle.capabilities)
+    if not enabled:
+        st.warning("Для согласования этого готового материала требуется Apps Script v0.5.3.")
+    if st.button(
+        "Согласовать и отправить",
+        type="primary",
+        width="stretch",
+        disabled=not enabled or not telegram_text or bool(st.session_state[edit_key]),
+        key=f"approve_ready::{content_id}",
+    ):
+        _apply_ready_material(row, telegram_text, app_config, api_secrets)
+    st.caption("После согласования материал будет передан существующему автопостингу.")
+    return True
+
+
 def render_daily_publication_review(
     bundle,
     app_config: dict[str, Any],
@@ -93,6 +232,9 @@ def render_daily_publication_review(
     if success:
         st.success(success)
         st.caption("Дополнительных действий не требуется.")
+        return True
+
+    if render_ready_queue_review(bundle, app_config, api_secrets):
         return True
 
     session, proposals = build_publication_proposals(bundle.queue, bundle.sessions)

@@ -1,4 +1,4 @@
-// R/Form Content Control API v0.5.2
+// R/Form Content Control API v0.5.3
 // Standalone Apps Script web app for Channel Control.
 // Reads CONTENT_QUEUE + DATA_EVENTS, applies allowlisted content actions,
 // saves owner-facing event edits, stores private photo/video assets in Drive,
@@ -7,7 +7,7 @@
 // the separate Telegram Autopost project remains the only publishing transport.
 
 const RFORM_CONTENT_API_V04 = Object.freeze({
-  version: '0.5.2',
+  version: '0.5.3',
   spreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
   queueSheet: 'CONTENT_QUEUE',
   eventsSheet: 'DATA_EVENTS',
@@ -167,7 +167,7 @@ function rformContentApiV04Preflight() {
     capabilities: [
       'content.read', 'content.action', 'event.review', 'event.decision', 'event.media',
       'training.read', 'publication.propose', 'publication.visual',
-      'publication.approve_schedule'
+      'publication.approve_schedule', 'publication.queue_approve_schedule'
     ],
     spreadsheet: spreadsheet.getName(),
     queueRows: Math.max(queue.getLastRow() - 1, 0),
@@ -218,6 +218,9 @@ function doPost(e) {
     if (operation === 'publication_approval') {
       return rformContentApiV04Json_(rformContentApiV04ApplyPublicationApproval_(request));
     }
+    if (operation === 'queue_publication_approval') {
+      return rformContentApiV04Json_(rformContentApiV04ApplyQueuePublicationApproval_(request));
+    }
     return rformContentApiV04Json_(rformContentApiV04Payload_());
   } catch (error) {
     console.error(error && error.stack ? error.stack : String(error));
@@ -253,7 +256,7 @@ function rformContentApiV04Payload_() {
     capabilities: [
       'content.read', 'content.action', 'event.review', 'event.decision', 'event.media',
       'training.read', 'publication.propose', 'publication.visual',
-      'publication.approve_schedule'
+      'publication.approve_schedule', 'publication.queue_approve_schedule'
     ],
     generated_at: new Date().toISOString(),
     queue_fields: RFORM_CONTENT_API_V04.queueFields,
@@ -296,7 +299,7 @@ function rformContentApiV04Authorize_(request) {
   if (!/^[a-f0-9]{32}$/.test(nonce)) throw new Error('Некорректный nonce.');
   if ([
     'read', 'content_action', 'event_review', 'event_decision', 'event_media',
-    'publication_approval'
+    'publication_approval', 'queue_publication_approval'
   ].indexOf(operation) === -1) {
     throw new Error('Операция не поддерживается.');
   }
@@ -395,6 +398,18 @@ function rformContentApiV04SignedMessage_(request) {
       );
     }
     return lines.join('\n');
+  }
+  if (operation === 'queue_publication_approval') {
+    return [
+      timestamp,
+      nonce,
+      operation,
+      String(request.action_id || ''),
+      String(request.content_id || ''),
+      rformContentApiV04Sha256Hex_(String(request.telegram_text || '').trim()),
+      rformContentApiV04Sha256Hex_(String(request.telegram_visual_url || '').trim()),
+      String(request.telegram_post_mode || '').trim().toUpperCase()
+    ].join('\n');
   }
   throw new Error('Операция не поддерживается.');
 }
@@ -685,6 +700,134 @@ function rformContentApiV04SessionSourceHash_(value) {
       return String(value(name) || '').trim();
     }).join('\n')
   );
+}
+
+function rformContentApiV04ApplyQueuePublicationApproval_(request) {
+  const actionId = String(request.action_id || '').trim();
+  const contentId = String(request.content_id || '').trim();
+  const telegramText = String(request.telegram_text || '').trim();
+  const expectedVisualUrl = String(request.telegram_visual_url || '').trim();
+  const expectedPostMode = String(request.telegram_post_mode || '').trim().toUpperCase() || 'TEXT_ONLY';
+  const nonce = String(request.nonce || '');
+
+  rformContentApiV04RequireActionId_(actionId);
+  rformContentApiV04RequireRecordId_(contentId, 'Код материала');
+  if (!telegramText || telegramText.length > RFORM_CONTENT_API_V04.maxTelegramChars) {
+    throw new Error('Текст публикации пуст или превышает лимит Telegram.');
+  }
+  if (['TEXT_ONLY', 'PHOTO_CAPTION', 'ALBUM_CAPTION'].indexOf(expectedPostMode) === -1) {
+    throw new Error('Режим Telegram не поддерживается.');
+  }
+  if (expectedPostMode !== 'TEXT_ONLY' && !expectedVisualUrl) {
+    throw new Error('Для публикации с изображением отсутствует ссылка на визуал.');
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) throw new Error('Очередь занята. Повторите попытку.');
+  try {
+    const spreadsheet = SpreadsheetApp.openById(RFORM_CONTENT_API_V04.spreadsheetId);
+    const queue = rformContentApiV04RequireSheet_(spreadsheet, RFORM_CONTENT_API_V04.queueSheet);
+    const headers = rformContentApiV04Headers_(queue);
+    const map = rformContentApiV04HeaderMap_(headers);
+    const required = [
+      'Content_ID', 'Public_Data_Allowed', 'Text_Status', 'Visual_Status',
+      'Approval_Status', 'Publication_Status', 'Pipeline_Status', 'Current_Stage',
+      'Updated_At', 'Blocking_Issue', 'Distribution_Mode', 'Publish_At',
+      'AutoPost_Allowed', 'Telegram_Chat_ID', 'Telegram_Post_Mode', 'Telegram_Text',
+      'Telegram_Visual_URL', 'Duplicate_Flag', 'Publish_Error',
+      'Preview_Review_Hash', 'Preview_Reviewed_At', 'Preview_Reviewed_By',
+      'Preview_Review_Status'
+    ];
+    const missing = required.filter(function (name) { return !map[name]; });
+    if (missing.length) throw new Error('CONTENT_QUEUE missing queue approval fields: ' + missing.join(', '));
+
+    const logSheet = rformContentApiV04EnsureContentLog_(spreadsheet);
+    const prior = rformContentApiV04ExistingLogResult_(logSheet, actionId, 'Action_ID');
+    if (prior) return prior;
+
+    const row = rformContentApiV04FindUniqueRow_(queue, 'Content_ID', contentId);
+    const rowValues = queue.getRange(row, 1, 1, queue.getLastColumn()).getDisplayValues()[0];
+    const value = function (name) {
+      return String(rowValues[map[name] - 1] || '').trim();
+    };
+    rformContentApiV04RequireOpenMaterial_(value);
+    if (['YES', 'ДА', 'TRUE', '1'].indexOf(value('Public_Data_Allowed').toUpperCase()) === -1) {
+      throw new Error('Публичные данные для материала не разрешены.');
+    }
+    if (!value('Telegram_Chat_ID')) throw new Error('Telegram Chat ID не указан.');
+    if (value('Blocking_Issue')) throw new Error('Материал имеет блокирующую проблему.');
+    if (value('Publish_Error')) throw new Error('Сначала устраните ошибку публикации.');
+    if (['YES', 'ДА', 'TRUE', '1', 'DUPLICATE'].indexOf(value('Duplicate_Flag').toUpperCase()) !== -1) {
+      throw new Error('Материал отмечен как дубликат.');
+    }
+    if (value('Telegram_Visual_URL') !== expectedVisualUrl ||
+        (value('Telegram_Post_Mode').toUpperCase() || 'TEXT_ONLY') !== expectedPostMode) {
+      throw new Error('Состав визуала изменился. Обновите данные и проверьте предпросмотр повторно.');
+    }
+
+    const now = new Date();
+    const updates = {
+      Text_Status: 'APPROVED',
+      Visual_Status: expectedPostMode === 'TEXT_ONLY' ? 'NOT_REQUIRED' : 'APPROVED',
+      Approval_Status: 'APPROVED',
+      Publication_Status: 'SCHEDULED',
+      Pipeline_Status: 'SCHEDULED · OWNER APPROVED',
+      Current_Stage: 'AUTOPUBLISH_QUEUE',
+      Updated_At: now,
+      Publish_At: now,
+      AutoPost_Allowed: 'YES',
+      Telegram_Text: telegramText,
+      Preview_Review_Hash: rformContentApiV04Sha256Hex_(telegramText + '\n' + expectedVisualUrl),
+      Preview_Reviewed_At: now,
+      Preview_Reviewed_By: 'STREAMLIT_OWNER',
+      Preview_Review_Status: 'REVIEWED'
+    };
+    const previous = {};
+    const next = {};
+    Object.keys(updates).forEach(function (name) {
+      previous[name] = value(name);
+      next[name] = updates[name] instanceof Date ? updates[name].toISOString() : updates[name];
+    });
+
+    logSheet.appendRow([
+      actionId, now, contentId, 'APPROVE_AND_SCHEDULE',
+      rformContentApiV04SafeText_('Owner approved existing queue material'),
+      Object.keys(updates).join(','), JSON.stringify(previous), JSON.stringify(next),
+      'STREAMLIT_OWNER', nonce, 'PENDING'
+    ]);
+    const logRow = logSheet.getLastRow();
+    const logMap = rformContentApiV04HeaderMap_(rformContentApiV04Headers_(logSheet));
+    try {
+      Object.keys(updates).forEach(function (name) {
+        const nextValue = updates[name] instanceof Date
+          ? updates[name]
+          : rformContentApiV04SafeText_(updates[name]);
+        queue.getRange(row, map[name]).setValue(nextValue);
+      });
+      SpreadsheetApp.flush();
+      logSheet.getRange(logRow, logMap.Result).setValue('APPLIED');
+    } catch (error) {
+      Object.keys(previous).forEach(function (name) {
+        queue.getRange(row, map[name]).setValue(previous[name]);
+      });
+      SpreadsheetApp.flush();
+      logSheet.getRange(logRow, logMap.Result).setValue('FAILED_ROLLED_BACK');
+      throw error;
+    }
+    return {
+      ok: true,
+      status: 'APPLIED',
+      action_id: actionId,
+      content_id: contentId,
+      publication_status: 'SCHEDULED',
+      auto_post_allowed: 'YES',
+      telegram_post_mode: expectedPostMode,
+      publish_at: now.toISOString(),
+      message: 'Existing publication approved and handed to Telegram Autopost.'
+    };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function rformContentApiV04PublicationId_(sessionId, sessionDate) {
