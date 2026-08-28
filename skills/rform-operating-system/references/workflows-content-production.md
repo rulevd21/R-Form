@@ -198,21 +198,26 @@ Do not make the owner inspect internal work packets unless a blocker requires it
 
 Preview/output sanitation: do not leak renderer labels, MIME hints, code-fence language tags, or orphan tokens such as `svg`, `png`, `html`, or `json` into the user-facing publication preview unless they are intentionally part of the post.
 
-### TEXT_ONLY hard guard
+### TEXT_ONLY preview routing guard
 
 When `Telegram_Post_Mode=TEXT_ONLY` and `Visual_Status=NOT_REQUIRED`:
 
-1. Do not invoke image, visual, renderer, SVG, HTML, canvas, diagram, file-preview, or media-generation tools for the publication preview.
-2. Treat canonical `Telegram_Text` as plain text payload, not as markup or a render instruction.
-3. The full user-facing Telegram post is a finished reusable social post. If the platform supports writing blocks, emit the post body in exactly one `social_post` writing block. Do not use any other artifact/renderer surface.
-4. Put `Content_ID`, statuses, QA, visual metadata, why-now rationale, and owner action outside the writing block. Inside the writing block put only canonical `Telegram_Text` verbatim, unless an explicit edit was persisted and read back.
-5. Never wrap the post in a fenced code block and never specify a language/type label such as `svg`. Do not use blockquote syntax as a substitute renderer.
-6. If writing blocks are unavailable, emit the post as plain prose text with no code fence or renderer hint.
-7. Immediately before the final answer, inspect the serialized user-visible preview. Remove/fail on any standalone line whose trimmed lowercase value is exactly one of: `svg`, `png`, `html`, `json`, `xml`, `markdown`, `text`, `text_only`.
-8. Verify the first character of the post body is the first character of canonical `Telegram_Text`, and the first non-empty line equals its first line. If either invariant fails, PREVIEW QA = FAIL and the material must not be described as ready.
-9. Report `Визуал: NOT_REQUIRED` only outside the publication body.
+1. Do not invoke image, visual, renderer, SVG, HTML, canvas, diagram, artifact, file-preview, media-generation, or writing-block output surfaces for the full post body in ChatGPT.
+2. Treat canonical `Telegram_Text` as stored publication payload. Verify it against `CONTENT_QUEUE` / production packet but do not reproduce the whole payload inline.
+3. `Подготовь публикацию` returns only:
+   - exact `Content_ID`;
+   - exact canonical statuses;
+   - text/visual QA result;
+   - exact preview/review state;
+   - canonical Text_URL / Work_Packet_URL when available;
+   - one owner action.
+4. The canonical final preview must be reviewed in the existing Channel Control / Owner Bot interface, which owns Telegram structure, review hash and approval flow.
+5. If that preview surface is callable, hand off the exact Content_ID/version there. If it is not callable, return the canonical preview location and current review state.
+6. Do not fabricate a second ChatGPT preview. Do not print the full Telegram post body merely to simulate Channel Control.
+7. `Покажи предпросмотр` means locate/open/hand off the canonical preview surface, not re-render the post inside ChatGPT.
+8. Any ChatGPT response containing a standalone renderer token such as `svg` is evidence that the routing guard was bypassed and is a test failure.
 
-This guard is deterministic and overrides generic content-rendering or image-generation behavior.
+This guard overrides generic artifact/writing behavior because the publication artifact already exists canonically outside ChatGPT; the task is orchestration, not drafting.
 
 ## Visual production contract
 
@@ -293,9 +298,10 @@ Simulate the current Telegram transport rules. If the production pipeline has an
 1. Resolve the exact current candidate/version.
 2. Re-read canonical text/visual fields.
 3. Verify preview hash/review freshness if those fields exist.
-4. Show the actual Telegram order/structure, not a conceptual mockup.
-5. For albums, show card sequence plus final Telegram text.
-6. Do not approve/schedule/publish.
+4. Use the existing Channel Control / Owner Bot exact Telegram preview as the canonical preview surface.
+5. If that surface is callable, hand off/open the exact candidate there.
+6. If it is not callable, return the canonical preview location (Text_URL / Work_Packet_URL / current owner-preview state) and do not inline-render the full post in ChatGPT.
+7. Do not approve/schedule/publish.
 
 ## `PUBLICATION_EDIT` — Измени публикацию: ...
 
