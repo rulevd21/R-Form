@@ -3,7 +3,7 @@ name: rform-operating-system
 description: Operates the R/Form personal training, nutrition, competition-preparation, analytics, and content system from short natural-language commands. Use for commands such as "Закрой день", "План/факт по дню", "Сколько осталось КБЖУ?", "Обнови статус подготовки", "Сформируй Weekly Report", "Что публикуем сегодня?", "Обнови контент-очередь", "Подготовь публикацию", "Покажи предпросмотр", "Утверждаю публикацию", "Опубликуй", content analytics, queue checks, R/Form data QA, training-week planning, and R/Form application diagnostics. Resolve context from the current R/Form Source of Truth instead of relying on chat memory.
 compatibility: Requires a skills-compatible agent with authenticated Google Drive/Sheets access to R/Form Source of Truth. GitHub access is required only for code/repository workflows; web access only for external current facts. Notion is optional. No paid API is required.
 metadata:
-  version: "1.1.4"
+  version: "1.1.5"
   product: "R/Form"
   owner-mode: "minimal-involvement"
   source-of-truth: "RFORM_MASTER_DATA_v1"
@@ -148,11 +148,23 @@ Load [references/workflows-content-production.md](references/workflows-content-p
 
 A valid editorial outcome may be `NO_POST`. Never manufacture a post merely because a new training, nutrition, or data event exists.
 
-### TEXT_ONLY output surface contract
+### TEXT_ONLY preview routing contract
 
-When a publication is `Telegram_Post_Mode=TEXT_ONLY` and `Visual_Status=NOT_REQUIRED`, the user-facing full Telegram post is a finished reusable social post. Output the post body only through the platform's standard `social_post` writing block when that surface is available. Do not use a fenced code block, SVG/code renderer, image/artifact/canvas surface, diagram, HTML preview, or media-generation path. Put metadata/status/QA outside the writing block. The writing block body must contain only canonical `Telegram_Text` (or a persisted-and-read-back replacement) and must start with the first character of that text.
+When a publication is `Telegram_Post_Mode=TEXT_ONLY` and `Visual_Status=NOT_REQUIRED`, ChatGPT must not inline-render the full Telegram post as a reusable artifact. Runtime acceptance showed that the ChatGPT rich-output surface may inject renderer tokens such as `svg` even when the Skill forbids them.
 
-If a writing-block surface is unavailable, output plain prose text; never choose a code language or renderer label.
+For `Подготовь публикацию`:
+- verify canonical `Telegram_Text`, statuses and QA;
+- do not reproduce the full post body inline;
+- return Content_ID, exact canonical states, QA result and one owner action;
+- route the actual final preview to the existing Channel Control / Owner Bot preview surface when available;
+- otherwise return the canonical Text_URL / Work_Packet_URL and state that final preview review must happen there.
+
+For `Покажи предпросмотр`:
+- prefer the existing Channel Control / Owner Bot exact Telegram preview;
+- do not use writing blocks, code fences, SVG/artifact/image/canvas render surfaces, or inline full-post reproduction in ChatGPT;
+- if the preview surface is unavailable, return the exact canonical preview location and current review state rather than fabricating a ChatGPT preview.
+
+This is a routing constraint, not a text-sanitization rule. ChatGPT is the orchestrator; the existing publication interface is the canonical preview surface.
 
 ## Publication boundary
 
