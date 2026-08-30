@@ -20,3 +20,16 @@ jobs:
           python-version: "3.12"
       - name: Verify SKILL.md local references
         run: python skills/rform-operating-system/tests/test_reference_integrity.py
+      - name: Build installable skill package
+        run: |
+          mkdir -p dist
+          cd skills
+          zip -r ../dist/rform-operating-system.zip rform-operating-system \
+            -x "rform-operating-system/tests/*" \
+               "rform-operating-system/releases/*"
+      - name: Upload installable skill package
+        uses: actions/upload-artifact@v4
+        with:
+          name: rform-operating-system-installable
+          path: dist/rform-operating-system.zip
+          if-no-files-found: error
