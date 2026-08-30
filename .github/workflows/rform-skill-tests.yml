@@ -1,0 +1,22 @@
+name: R/Form Skill Integrity
+
+on:
+  push:
+    paths:
+      - "skills/rform-operating-system/**"
+      - ".github/workflows/rform-skill-tests.yml"
+  pull_request:
+    paths:
+      - "skills/rform-operating-system/**"
+      - ".github/workflows/rform-skill-tests.yml"
+
+jobs:
+  reference-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify SKILL.md local references
+        run: python skills/rform-operating-system/tests/test_reference_integrity.py
