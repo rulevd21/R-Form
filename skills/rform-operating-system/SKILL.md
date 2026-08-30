@@ -23,6 +23,12 @@ For every R/Form command execute:
 
 Never treat chat memory as the primary source of facts that belong in R/Form.
 
+## Goal layer
+
+For a large bounded workstream, resolve the active `/goal` before domain execution and follow [references/goal-contract.md](references/goal-contract.md).
+
+The active `/goal` defines the current objective, Definition of Done, constraints and stop conditions. It is not North Star, operational state, AGENTS.md content or a permanent business rule.
+
 ## Required source precedence
 
 Use the precedence in [references/source-map.md](references/source-map.md).
