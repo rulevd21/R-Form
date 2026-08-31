@@ -6,7 +6,7 @@ This matrix distinguishes static architecture validation from runtime E2E valida
 
 | Test | Command | Expected route | Expected canonical data/state | State change | Current result |
 |---|---|---|---|---|---|
-| 00 | Runtime discoverability | installed Skill → runtime catalog | `rform-operating-system` readable/callable | none | OWNER UPLOAD CONFIRMED / CURRENT CHAT REFRESH REQUIRED |
+| 00 | Runtime discoverability | installed Skill → runtime catalog | `rform-operating-system` readable/callable | none | BLOCKED — FRESH CHAT STILL NOT DISCOVERABLE (2026-08-31) |
 | 01 | Открой день | OS → DAY_OPEN → day/nutrition | DAILY + active plan + ingest path | create/reuse OPEN day | STATIC PASS / RUNTIME BLOCKED BY 00 |
 | 02 | Добавь еду | OS → MEAL_ADD → nutrition | NUTRITION_RAW → NUTRITION_DAILY | meal write + aggregate | STATIC PASS / RUNTIME BLOCKED BY 00 |
 | 03 | Сколько осталось КБЖУ? | OS → NUTRITION_REMAINING | ACTIVE_PLANS + NUTRITION_DAILY | none | STATIC PASS / RUNTIME BLOCKED BY 00 |
@@ -36,6 +36,25 @@ Interpretation: the package upload is confirmed by the owner, but this already-o
 Start a fresh ChatGPT conversation on the same surface/account where the Skill was uploaded and invoke an R/Form command. The first gate is to verify that the installed Skill is actually selected/used in that fresh runtime.
 
 Once test 00 passes, execute tests 01–10 through the installed Skill. At least one state-changing test must complete canonical WRITE → READBACK before any merge to `main`.
+
+## Fresh-chat Gate 00 recheck — 2026-08-31
+
+The owner started a fresh conversation and explicitly requested continuation of runtime acceptance from Gate 00.
+
+Observed runtime result:
+
+- the current installed-skill catalog still does not expose `rform-operating-system`;
+- a direct read of `skills://plugins/rform-operating-system/rform-operating-system/skill.md` failed internally;
+- a direct read of `skills://plugins/rform-operating-system/skill.md` was rejected as an invalid Skill URI;
+- GitHub confirms the canonical v1.1.5 source remains present on `agent/rform-skill-content-v1.1.3`;
+- branch head before this documentation update was `880e38df74e7f96dfde11720e8170c84fcf18084`, with CI success;
+- no acceptance command 01–10 was executed and no canonical R/Form business data was mutated.
+
+Interpretation: Gate 00 remains a ChatGPT runtime installation/discovery blocker even after a fresh-chat refresh. Do not bypass the gate by manually executing the GitHub Skill contract, and do not create a second router.
+
+### Gate 00 next action
+
+Resolve why the uploaded personal Skill is not exposed as a readable/callable installed Skill in the target ChatGPT runtime. After it becomes discoverable, rerun Gate 00 first; only then proceed to tests 01–10.
 
 ## Runtime PASS criteria
 
