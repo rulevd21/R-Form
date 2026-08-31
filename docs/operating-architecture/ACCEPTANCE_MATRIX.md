@@ -10,7 +10,7 @@ This matrix distinguishes static architecture validation from runtime E2E valida
 | 01 | Открой день | OS → DAY_OPEN → day/nutrition | DAILY + active plan + ingest path | create/reuse OPEN day | **RUNTIME PASS — reused `D-20260831` in `OPEN`; no duplicate (2026-08-31)** |
 | 02 | Добавь еду | OS → MEAL_ADD → nutrition | NUTRITION_RAW → NUTRITION_DAILY | meal write + aggregate | **RUNTIME PASS — actual meal `F-20260831-000457` written and aggregates read back (2026-08-31)** |
 | 03 | Сколько осталось КБЖУ? | OS → NUTRITION_REMAINING | ACTIVE_PLANS + NUTRITION_DAILY | none | **RUNTIME PASS — read current `TRAINING_A` plan and `D-20260831` aggregate; returned remaining macros (2026-08-31)** |
-| 04 | Закрой день | OS → DAY_CLOSE | DAY_CLOSURE + DAILY/NUTRITION/training checks | valid closure | STATIC PASS / RUNTIME PENDING |
+| 04 | Закрой день | OS → DAY_CLOSE | DAY_CLOSURE + DAILY/NUTRITION/training checks | valid closure | **RUNTIME BLOCKED — safe preflight: `D-20260831` is OPEN; `TRAINING_A` session and `DAY_CLOSURE` record are missing (2026-08-31)** |
 | 05 | Добавь тренировку | OS → TRAINING_ADD | TRAINING_PLAN/SESSIONS/SETS | factual session/set write | STATIC PASS / RUNTIME PENDING |
 | 06 | Обнови статус подготовки | OS → PREP_STATUS | training + metrics + plans + decisions | none by default | STATIC PASS / RUNTIME PENDING |
 | 07 | Сформируй Weekly Report | OS → WEEKLY_BUILD | closed period facts + exact Weekly artifact | DRAFT/update | STATIC PASS / RUNTIME PENDING |
@@ -56,6 +56,18 @@ Fresh runtime evidence:
 - `main` was not changed.
 
 Interpretation: the discoverability blocker is cleared, read-only routing works, and the required canonical WRITE → READBACK evidence is complete. Gates 04–10 must use valid current objects and their respective permission gates.
+
+## Gate 04 runtime preflight — 2026-08-31
+
+The installed Skill routed the close-day request to the canonical closure checks and did not mutate business state. The preconditions for `D-20260831` are not complete:
+
+- `DAILY.Day_Status=OPEN` and `NUTRITION_DAILY.Status=ACTIVE`;
+- nutrition has three recorded meals and complete numeric totals;
+- the required `TRAINING_A` session is missing from `TRAINING_SESSIONS`;
+- no `DAY_CLOSURE` gateway record exists;
+- no open QA or duplicate record was found for the day.
+
+Result: Gate 04 is correctly blocked, not passed. Re-run it after the real training is recorded, the day is ready for closure and the gateway completes WRITE → READBACK.
 
 ## Runtime PASS criteria
 
