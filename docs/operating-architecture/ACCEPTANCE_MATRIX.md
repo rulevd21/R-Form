@@ -8,7 +8,7 @@ This matrix distinguishes static architecture validation from runtime E2E valida
 |---|---|---|---|---|---|
 | 00 | Runtime discoverability | installed Skill → runtime catalog | `rform-operating-system` readable/callable | none | **RUNTIME PASS — fresh runtime exposed, loaded and invoked `rform-operating-system` (2026-08-31)** |
 | 01 | Открой день | OS → DAY_OPEN → day/nutrition | DAILY + active plan + ingest path | create/reuse OPEN day | **RUNTIME PASS — reused `D-20260831` in `OPEN`; no duplicate (2026-08-31)** |
-| 02 | Добавь еду | OS → MEAL_ADD → nutrition | NUTRITION_RAW → NUTRITION_DAILY | meal write + aggregate | STATIC PASS / RUNTIME PENDING — current breakfast already exists; duplicate was not created |
+| 02 | Добавь еду | OS → MEAL_ADD → nutrition | NUTRITION_RAW → NUTRITION_DAILY | meal write + aggregate | **RUNTIME PASS — actual meal `F-20260831-000457` written and aggregates read back (2026-08-31)** |
 | 03 | Сколько осталось КБЖУ? | OS → NUTRITION_REMAINING | ACTIVE_PLANS + NUTRITION_DAILY | none | **RUNTIME PASS — read current `TRAINING_A` plan and `D-20260831` aggregate; returned remaining macros (2026-08-31)** |
 | 04 | Закрой день | OS → DAY_CLOSE | DAY_CLOSURE + DAILY/NUTRITION/training checks | valid closure | STATIC PASS / RUNTIME PENDING |
 | 05 | Добавь тренировку | OS → TRAINING_ADD | TRAINING_PLAN/SESSIONS/SETS | factual session/set write | STATIC PASS / RUNTIME PENDING |
@@ -42,7 +42,7 @@ Historical observation before the successful rerun:
 - GitHub confirmed the canonical v1.1.5 source remained present on `agent/rform-skill-content-v1.1.3`;
 - no acceptance command 01–10 was executed and no canonical R/Form business data was mutated.
 
-## Gates 00, 01 and 03 runtime PASS — 2026-08-31
+## Gates 00, 01, 02 and 03 runtime PASS — 2026-08-31
 
 Fresh runtime evidence:
 
@@ -50,12 +50,12 @@ Fresh runtime evidence:
 - the runtime loaded its `SKILL.md` (version `1.1.5`);
 - the Skill was invoked for this acceptance workflow and followed its code-release and source-of-truth contracts;
 - Gate 01 command `Открой день` resolved the canonical `DAILY` record `D-20260831` with `Day_Status=OPEN` and no duplicate;
-- Gate 02 duplicate precondition was detected: breakfast `2026-08-31_M1` already exists as `F-20260831-000455` in `NUTRITION_RAW`; no duplicate was written;
+- Gate 02 received the owner's actual lunch and wrote `F-20260831-000457` for `2026-08-31_M3` to `NUTRITION_RAW`; `NUTRITION_DAILY` and `DAILY` were recalculated and read back. The existing-breakfast duplicate guard had previously prevented a duplicate record;
 - Gate 03 read `NUTRITION_DAILY` for `D-20260831` and the `TRAINING_A` plan. After M1, remaining target is 3025.636–3058.032 kcal, protein 145.13316–145.52992 g, fat 78.48692–78.60704 g and carbohydrates 424.58816–432.88992 g;
 - no canonical business data, production deployment, Telegram transport, secrets, or permissions changed;
 - `main` was not changed.
 
-Interpretation: the discoverability blocker is cleared and read-only acceptance routing works. Gate 02 needs the next genuine meal to prove canonical WRITE → READBACK without creating synthetic data; Gates 04–10 must use valid current objects and their respective permission gates.
+Interpretation: the discoverability blocker is cleared, read-only routing works, and the required canonical WRITE → READBACK evidence is complete. Gates 04–10 must use valid current objects and their respective permission gates.
 
 ## Runtime PASS criteria
 
