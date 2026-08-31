@@ -1,4 +1,4 @@
-# Commercial Wines Dashboard — Calculation Spec v17
+# Commercial Wines Dashboard — Calculation Spec v18
 
 ## Sources
 - Sales: Google Drive `Коммерческие вина 2026_31.08.xlsx`.
@@ -6,21 +6,36 @@
 - Portable HTML is a source-backed snapshot, not a browser-side live OAuth connection.
 - July 2026 is the default last closed month; August is partial; future-dated September rows are excluded.
 
+## Terminology
+- `Normative income` is a managerial target-income proxy, not accounting profit.
+- Normative income = `Base Summa * (1 - applicable KU) * 15%`.
+- Before June: baseline KU 52%, Krinitsa 40%.
+- From June: agreed deep KU by brand. Celebrities uses 56% as conservative financial basis because the available source contains only the 50–56% range.
+
+## Commercial scope
+- Metrics labeled `контур` react to selected holdings.
+- Metrics labeled `проект` are project-wide and do not inherit the holding filter.
+- Potential remains project-wide because no approved holding allocation exists.
+
+## Forecast
+- EOY forecast uses current average run-rate from June through selected cutoff:
+  `Forecast = actual Jun-cutoff + average monthly pace * remaining months through Dec`.
+- Forecast / Potential = `Forecast / Jun-Dec Potential`.
+- This is a run-rate forecast, not a statistical demand forecast.
+
 ## Sales / KU
 - Effective KU = `1 - Revenue / Base Summa`, recomputed from numerators and denominators.
-- KU rows require `Base Summa > 0` and `Revenue >= 0`; excluded corrections stay in revenue/volume facts and QA.
-- Target income = `Base Summa * (1 - applicable KU) * 15%`.
-- Before June: baseline KU 52%, Krinitsa 40%.
-- From June: agreed deep KU by brand. Celebrities uses 56% as conservative financial basis because the new Drive folder contains only the 50–56% range, not the prior SKU-level mapping.
-- Target income per bottle = target income / bottles.
+- KU rows require `Base Summa > 0` and `Revenue >= 0`; excluded corrections remain in revenue/volume facts and QA.
+- Normative income per bottle = normative income / bottles.
 
-## Marketing
-- Recovery index = post-launch 2026/2025 volume index minus Jan-May 2026/2025 volume index, pp.
-- Volume/revenue gap = revenue YoY % minus volume YoY %.
-- Shelf deviation = Shelf Price / MRP - 1.
-- Zones: green <=5% absolute deviation; yellow >5% and <=10%; red >10%.
-- Price project coverage = observed project price cells / (24 project-monitored SKU x monitored selected networks).
-- Required pace acceleration = required monthly pace to Jun-Dec potential / actual monthly pace since June.
+## Price monitoring
+- Shelf deviation = `Shelf Price / MRP - 1`.
+- Green: absolute deviation <=5%.
+- Yellow: 5–10%.
+- Red-low: below MRP by more than 10% — price erosion risk.
+- Red-high: above MRP by more than 10% — off-take risk.
+- Price KPIs describe observed prices only; coverage must be shown alongside compliance.
+- Current source: 81 observations = 41 green / 18 yellow / 3 red-low / 19 red-high.
 
 ## Financial decomposition
 At row level:
@@ -31,16 +46,25 @@ At row level:
 These components are not netted for payback.
 
 ## Thresholds
-Primary income-parity threshold:
-- Required bottles = `Target income 2025 / Target income per bottle 2026`.
+Primary normative-income parity threshold:
+- Required bottles = `Normative income 2025 / Normative income per bottle 2026`.
+
 Secondary investment-recovery threshold:
-- Extra bottles = `Used agreed deepening / Target income per bottle 2026`.
+- Extra bottles = `Used agreed deepening / Normative income per bottle 2026`.
+- If used agreed deepening = 0, payback is `not required`, never a negative threshold.
+
+## Decision layer
+- Positive volume growth + KU not deeper than 2025 -> Scale.
+- Positive growth + deeper KU -> Continue only with payback control.
+- Negative growth + deeper KU + shelf price > MRP by >10% -> Fix shelf price first.
+- Negative growth + deeper KU -> Reduce / redesign KU investment.
+- Negative growth + no deeper KU -> investigate distribution / demand rather than price.
+- Price snapshot is diagnostic; it does not prove causality.
 
 ## QA 31.08.2026
 - 3,315 raw sales rows = 1,105 complete entity-month groups x 3 metrics.
 - No duplicate metric rows at intended grain; all groups contain all three measures.
 - 3 negative numeric values; invalid rows are excluded only from KU ratios.
 - Future-dated Sep 2026: 2,436 bottles and ~1.76m RUB revenue, excluded.
-- Price monitor reconciles to 81 observed prices: 41 green / 18 yellow / 22 red.
-- Project price scope: 24 SKU x 11 networks = 264 cells; 81 observed = 30.7%.
-- 3 Vallepicciola SKU are outside the sales project scope and excluded from project price coverage.
+- 24 project-monitored SKU x 11 networks = 264 possible price cells; 81 observed = 30.7%.
+- 3 Vallepicciola SKU are outside the current sales scope and excluded from project price coverage.
