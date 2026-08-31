@@ -1,27 +1,41 @@
 # R/Form Operating Architecture Acceptance Matrix
 
-Status date: 2026-08-30.
+Status date: 2026-08-31.
 
 This matrix distinguishes static architecture validation from runtime E2E validation. Do not mark runtime PASS until the actual installed R/Form Operating System routes the command and canonical readback verifies the result.
 
 | Test | Command | Expected route | Expected canonical data/state | State change | Current result |
 |---|---|---|---|---|---|
-| 01 | Открой день | OS → DAY_OPEN → day/nutrition | DAILY + active plan + ingest path | create/reuse OPEN day | STATIC PASS / RUNTIME BLOCKED |
-| 02 | Добавь еду | OS → MEAL_ADD → nutrition | NUTRITION_RAW → NUTRITION_DAILY | meal write + aggregate | STATIC PASS / RUNTIME BLOCKED |
-| 03 | Сколько осталось КБЖУ? | OS → NUTRITION_REMAINING | ACTIVE_PLANS + NUTRITION_DAILY | none | STATIC PASS / RUNTIME BLOCKED |
-| 04 | Закрой день | OS → DAY_CLOSE | DAY_CLOSURE + DAILY/NUTRITION/training checks | valid closure | STATIC PASS / RUNTIME BLOCKED |
-| 05 | Добавь тренировку | OS → TRAINING_ADD | TRAINING_PLAN/SESSIONS/SETS | factual session/set write | STATIC PASS / RUNTIME BLOCKED |
-| 06 | Обнови статус подготовки | OS → PREP_STATUS | training + metrics + plans + decisions | none by default | STATIC PASS / RUNTIME BLOCKED |
-| 07 | Сформируй Weekly Report | OS → WEEKLY_BUILD | closed period facts + exact Weekly artifact | DRAFT/update | STATIC PASS / RUNTIME BLOCKED |
-| 08 | Подготовь публикацию | OS → PUBLICATION_PREPARE | CONTENT_QUEUE + DATA_EVENTS + decisions | package/draft only | STATIC PASS / RUNTIME BLOCKED |
-| 09 | Опубликуй | OS → resolve exact object → publication pipeline | exact approved current preview + CONTENT_QUEUE | external publish + writeback | STATIC PASS / RUNTIME BLOCKED |
-| 10 | Что требует моего решения? | OS → OWNER_DECISIONS | domain blockers/gates | none | STATIC PASS / RUNTIME BLOCKED |
+| 00 | Runtime discoverability | installed Skill → runtime catalog | `rform-operating-system` readable/callable | none | OWNER UPLOAD CONFIRMED / CURRENT CHAT REFRESH REQUIRED |
+| 01 | Открой день | OS → DAY_OPEN → day/nutrition | DAILY + active plan + ingest path | create/reuse OPEN day | STATIC PASS / RUNTIME BLOCKED BY 00 |
+| 02 | Добавь еду | OS → MEAL_ADD → nutrition | NUTRITION_RAW → NUTRITION_DAILY | meal write + aggregate | STATIC PASS / RUNTIME BLOCKED BY 00 |
+| 03 | Сколько осталось КБЖУ? | OS → NUTRITION_REMAINING | ACTIVE_PLANS + NUTRITION_DAILY | none | STATIC PASS / RUNTIME BLOCKED BY 00 |
+| 04 | Закрой день | OS → DAY_CLOSE | DAY_CLOSURE + DAILY/NUTRITION/training checks | valid closure | STATIC PASS / RUNTIME BLOCKED BY 00 |
+| 05 | Добавь тренировку | OS → TRAINING_ADD | TRAINING_PLAN/SESSIONS/SETS | factual session/set write | STATIC PASS / RUNTIME BLOCKED BY 00 |
+| 06 | Обнови статус подготовки | OS → PREP_STATUS | training + metrics + plans + decisions | none by default | STATIC PASS / RUNTIME BLOCKED BY 00 |
+| 07 | Сформируй Weekly Report | OS → WEEKLY_BUILD | closed period facts + exact Weekly artifact | DRAFT/update | STATIC PASS / RUNTIME BLOCKED BY 00 |
+| 08 | Подготовь публикацию | OS → PUBLICATION_PREPARE | CONTENT_QUEUE + DATA_EVENTS + decisions | package/draft only | STATIC PASS / RUNTIME BLOCKED BY 00 |
+| 09 | Опубликуй | OS → resolve exact object → publication pipeline | exact approved current preview + CONTENT_QUEUE | external publish + writeback | STATIC PASS / RUNTIME BLOCKED BY 00 |
+| 10 | Что требует моего решения? | OS → OWNER_DECISIONS | domain blockers/gates | none | STATIC PASS / RUNTIME BLOCKED BY 00 |
 
-## Why runtime is blocked
+## Runtime activation attempt — 2026-08-31
 
-The canonical Skill source exists at `skills/rform-operating-system/SKILL.md` in GitHub, but the current ChatGPT runtime's installed-skill catalog did not expose `rform-operating-system` during discovery.
+Owner confirmed that `rform-operating-system v1.1.5` was uploaded in ChatGPT.
 
-This is a deployment/installation gate, not a reason to create a second router.
+Verification in the conversation that was already open before/while the upload completed produced the following result:
+
+- installed-skill listing did not expose `rform-operating-system`;
+- direct reads of likely Skill URIs did not resolve;
+- plugin dependency lookup did not resolve it as a public plugin (expected for a personal Skill);
+- therefore no acceptance command was allowed to mutate canonical R/Form data from this conversation.
+
+Interpretation: the package upload is confirmed by the owner, but this already-open conversation has not refreshed to a runtime in which the personal Skill is discoverable. This is a runtime refresh gate, not a reason to create a second router or execute the source contract manually.
+
+### Required next runtime action
+
+Start a fresh ChatGPT conversation on the same surface/account where the Skill was uploaded and invoke an R/Form command. The first gate is to verify that the installed Skill is actually selected/used in that fresh runtime.
+
+Once test 00 passes, execute tests 01–10 through the installed Skill. At least one state-changing test must complete canonical WRITE → READBACK before any merge to `main`.
 
 ## Runtime PASS criteria
 
