@@ -13,7 +13,7 @@ This matrix distinguishes static architecture validation from runtime E2E valida
 | 04 | Закрой день | OS → DAY_CLOSE | DAY_CLOSURE + DAILY/NUTRITION/training checks | valid closure | **RUNTIME BLOCKED — safe preflight: `D-20260831` is OPEN; `TRAINING_A` session and `DAY_CLOSURE` record are missing (2026-08-31)** |
 | 05 | Добавь тренировку | OS → TRAINING_ADD | TRAINING_PLAN/SESSIONS/SETS | factual session/set write | **RUNTIME PASS — closed factual session S-20260831-A with 13 unique sets read back; rerun reused it without a duplicate (2026-09-01)** |
 | 06 | Обнови статус подготовки | OS → PREP_STATUS | training + metrics + plans + decisions | none by default | **RUNTIME PASS — current taper, training, recovery, bodyweight and nutrition decision read; deterministic B-session fallback reported without write (2026-09-01)** |
-| 07 | Сформируй Weekly Report | OS → WEEKLY_BUILD | closed period facts + exact Weekly artifact | DRAFT/update | STATIC PASS / RUNTIME PENDING |
+| 07 | Сформируй Weekly Report | OS → WEEKLY_BUILD | closed period facts + exact Weekly artifact | DRAFT/update | **RUNTIME PASS — verified and reused current W35 Weekly artifact; source coverage and non-blocking caveat read back, no duplicate version created (2026-09-01)** |
 | 08 | Подготовь публикацию | OS → PUBLICATION_PREPARE | CONTENT_QUEUE + DATA_EVENTS + decisions | package/draft only | STATIC PASS / RUNTIME PENDING |
 | 09 | Опубликуй | OS → resolve exact object → publication pipeline | exact approved current preview + CONTENT_QUEUE | external publish + writeback | STATIC PASS / RUNTIME PENDING |
 | 10 | Что требует моего решения? | OS → OWNER_DECISIONS | domain blockers/gates | none | STATIC PASS / RUNTIME PENDING |
@@ -93,6 +93,17 @@ The installed Skill routed `Обнови статус подготовки` to `
 - `main` was not changed.
 
 Interpretation: Gate 06 completed a current, evidence-based preparation-status read without inventing a plan revision or decision.
+## Gate 07 runtime PASS — 2026-09-01
+
+The installed Skill routed `Сформируй Weekly Report` to `WEEKLY_BUILD` and resolved the exact reporting period as 23–29.08.2026. It found a newer, approved/published artifact and correctly reused it rather than creating a stale duplicate draft.
+
+- exact artifact: `2026-W35_TG_WEEKLY-CONTROL_20260823-20260829_v03_OWNER-APPROVED`; canonical `Content_ID=AUTO-WEEKLY-20260830`, `Task_ID=RFORM-WEEKLY-20260830-001`;
+- `CONTENT_QUEUE` readback: training and nutrition `CLOSED`; text, visual and owner approval `APPROVED`; publication `PUBLISHED` as Telegram post 68;
+- all seven period days have `DAY_CLOSURE.Close_Readiness=READY`; closed training sessions are `S-20260824-A` (12 sets), `S-20260826-B` (14) and `S-20260828-C` (11), with zero duplicate and zero open-QA counts in their closure records;
+- the one relevant QA item (`QA-20260830-112402-D29-WEIGHT`) is an `IN_REVIEW` source mismatch for 29.08 average weight. The existing Weekly transparently uses 73.35 kg across six available morning measurements, not a claimed complete 7-day average; publication is explicitly non-blocked;
+- no Weekly DRAFT, content version, decision or publication was created or changed during this rerun; `main` was not changed.
+
+Interpretation: Gate 07 passed the reporting-period, source-coverage, existing-artifact, QA and duplicate-protection checks. The appropriate end-to-end result for an already published weekly object is verified reuse, not a second report.
 ## Runtime PASS criteria
 
 A test becomes PASS only when:
