@@ -11,7 +11,7 @@ This matrix distinguishes static architecture validation from runtime E2E valida
 | 02 | Добавь еду | OS → MEAL_ADD → nutrition | NUTRITION_RAW → NUTRITION_DAILY | meal write + aggregate | **RUNTIME PASS — actual meal `F-20260831-000457` written and aggregates read back (2026-08-31)** |
 | 03 | Сколько осталось КБЖУ? | OS → NUTRITION_REMAINING | ACTIVE_PLANS + NUTRITION_DAILY | none | **RUNTIME PASS — read current `TRAINING_A` plan and `D-20260831` aggregate; returned remaining macros (2026-08-31)** |
 | 04 | Закрой день | OS → DAY_CLOSE | DAY_CLOSURE + DAILY/NUTRITION/training checks | valid closure | **RUNTIME BLOCKED — safe preflight: `D-20260831` is OPEN; `TRAINING_A` session and `DAY_CLOSURE` record are missing (2026-08-31)** |
-| 05 | Добавь тренировку | OS → TRAINING_ADD | TRAINING_PLAN/SESSIONS/SETS | factual session/set write | STATIC PASS / RUNTIME PENDING |
+| 05 | Добавь тренировку | OS → TRAINING_ADD | TRAINING_PLAN/SESSIONS/SETS | factual session/set write | **RUNTIME PASS — closed factual session S-20260831-A with 13 unique sets read back; rerun reused it without a duplicate (2026-09-01)** |
 | 06 | Обнови статус подготовки | OS → PREP_STATUS | training + metrics + plans + decisions | none by default | STATIC PASS / RUNTIME PENDING |
 | 07 | Сформируй Weekly Report | OS → WEEKLY_BUILD | closed period facts + exact Weekly artifact | DRAFT/update | STATIC PASS / RUNTIME PENDING |
 | 08 | Подготовь публикацию | OS → PUBLICATION_PREPARE | CONTENT_QUEUE + DATA_EVENTS + decisions | package/draft only | STATIC PASS / RUNTIME PENDING |
@@ -69,6 +69,17 @@ The installed Skill routed the close-day request to the canonical closure checks
 
 Result: Gate 04 is correctly blocked, not passed. Re-run it after the real training is recorded, the day is ready for closure and the gateway completes WRITE → READBACK.
 
+## Gate 05 runtime PASS — 2026-09-01
+
+The installed Skill routed the factual Training A record through the training domain and resolved the canonical session before any write. Duplicate-safe reuse was required because the factual record had already been persisted.
+
+- `TRAINING_SESSIONS.S-20260831-A` is `CLOSED`, duration 60 min, technique 10/10 and pain after 0/10;
+- exactly 13 `TRAINING_SETS` rows reference that session, including 7 warm-up sets, 107.5×1 at RIR 0, 92.5×2×2, row 70×8×2 and rope extension 40×10;
+- session and set duplicate flags are empty;
+- `QA_LOG` retains an `OPEN` warning for the earlier warm-up attempt with missing RIR, while the record itself documents successful server validation and idempotent write. It is an audit trace, not a blocker for the already closed and fully read-back session;
+- no new session or set was created during the rerun; `main` was not changed.
+
+Interpretation: Gate 05 satisfies the runtime route, canonical record, and readback checks by safely reusing the persisted factual training session rather than creating a duplicate.
 ## Runtime PASS criteria
 
 A test becomes PASS only when:
