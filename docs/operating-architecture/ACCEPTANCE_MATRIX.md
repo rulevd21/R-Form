@@ -12,7 +12,7 @@ This matrix distinguishes static architecture validation from runtime E2E valida
 | 03 | Сколько осталось КБЖУ? | OS → NUTRITION_REMAINING | ACTIVE_PLANS + NUTRITION_DAILY | none | **RUNTIME PASS — read current `TRAINING_A` plan and `D-20260831` aggregate; returned remaining macros (2026-08-31)** |
 | 04 | Закрой день | OS → DAY_CLOSE | DAY_CLOSURE + DAILY/NUTRITION/training checks | valid closure | **RUNTIME BLOCKED — safe preflight: `D-20260831` is OPEN; `TRAINING_A` session and `DAY_CLOSURE` record are missing (2026-08-31)** |
 | 05 | Добавь тренировку | OS → TRAINING_ADD | TRAINING_PLAN/SESSIONS/SETS | factual session/set write | **RUNTIME PASS — closed factual session S-20260831-A with 13 unique sets read back; rerun reused it without a duplicate (2026-09-01)** |
-| 06 | Обнови статус подготовки | OS → PREP_STATUS | training + metrics + plans + decisions | none by default | STATIC PASS / RUNTIME PENDING |
+| 06 | Обнови статус подготовки | OS → PREP_STATUS | training + metrics + plans + decisions | none by default | **RUNTIME PASS — current taper, training, recovery, bodyweight and nutrition decision read; deterministic B-session fallback reported without write (2026-09-01)** |
 | 07 | Сформируй Weekly Report | OS → WEEKLY_BUILD | closed period facts + exact Weekly artifact | DRAFT/update | STATIC PASS / RUNTIME PENDING |
 | 08 | Подготовь публикацию | OS → PUBLICATION_PREPARE | CONTENT_QUEUE + DATA_EVENTS + decisions | package/draft only | STATIC PASS / RUNTIME PENDING |
 | 09 | Опубликуй | OS → resolve exact object → publication pipeline | exact approved current preview + CONTENT_QUEUE | external publish + writeback | STATIC PASS / RUNTIME PENDING |
@@ -80,6 +80,19 @@ The installed Skill routed the factual Training A record through the training do
 - no new session or set was created during the rerun; `main` was not changed.
 
 Interpretation: Gate 05 satisfies the runtime route, canonical record, and readback checks by safely reusing the persisted factual training session rather than creating a duplicate.
+## Gate 06 runtime PASS — 2026-09-01
+
+The installed Skill routed `Обнови статус подготовки` to `PREP_STATUS` and read the canonical training, bodyweight, nutrition-plan and decision sources. The command is analytical; it did not create or alter a training plan, decision, nutrition target or production state.
+
+- Preparation block: `PEAK_2026-08-16_2026-09-11`; the active decision `DEC-20260830-TRAINING-WEEK-31-06` sets the 31.08–04.09 taper.
+- Training — `WATCH`: `S-20260831-A` is closed with 107.5×1 at RIR 0, although the taper rule caps the single at RPE 8.5. The already recorded conditional plan therefore selects 82.5×3×3, rather than 85×3×3, for B on 02.09; no extra work or load increase.
+- Recovery/technique — `ON TRACK`: before A, sleep 8.5 h, readiness 10/10 and pain 0/10; the closed session records bench technique 10/10 and pain after 0/10.
+- Bodyweight — `WATCH`: the latest seven-day average is 73.12 kg on 31.08, below the next staged corridor of 73.8–74.1 kg for 06.09 in `DEC-20260816-NUTRITION-74_5`. The next checkpoint, rather than the final target, was used; no change is justified before that checkpoint.
+- Nutrition — `ON TRACK`: the active peak plan remains in force (REST 3350 kcal on 01.09; B 3450 kcal on 02.09). The open day is incomplete, so it was not treated as a closed-day compliance verdict.
+- Data QA: the existing open warning for the first warm-up set's missing RIR is disclosed; it does not invalidate the closed 13-set session.
+- `main` was not changed.
+
+Interpretation: Gate 06 completed a current, evidence-based preparation-status read without inventing a plan revision or decision.
 ## Runtime PASS criteria
 
 A test becomes PASS only when:
