@@ -14,7 +14,7 @@ This matrix distinguishes static architecture validation from runtime E2E valida
 | 05 | Добавь тренировку | OS → TRAINING_ADD | TRAINING_PLAN/SESSIONS/SETS | factual session/set write | **RUNTIME PASS — closed factual session S-20260831-A with 13 unique sets read back; rerun reused it without a duplicate (2026-09-01)** |
 | 06 | Обнови статус подготовки | OS → PREP_STATUS | training + metrics + plans + decisions | none by default | **RUNTIME PASS — current taper, training, recovery, bodyweight and nutrition decision read; deterministic B-session fallback reported without write (2026-09-01)** |
 | 07 | Сформируй Weekly Report | OS → WEEKLY_BUILD | closed period facts + exact Weekly artifact | DRAFT/update | **RUNTIME PASS — verified and reused current W35 Weekly artifact; source coverage and non-blocking caveat read back, no duplicate version created (2026-09-01)** |
-| 08 | Подготовь публикацию | OS → PUBLICATION_PREPARE | CONTENT_QUEUE + DATA_EVENTS + decisions | package/draft only | STATIC PASS / RUNTIME PENDING |
+| 08 | Подготовь публикацию | OS → PUBLICATION_PREPARE | CONTENT_QUEUE + DATA_EVENTS + decisions | package/draft only | **RUNTIME PASS — selected and verified existing Series 06 TEXT_ONLY package; owner-preview handoff preserved, no duplicate or publication (2026-09-01)** |
 | 09 | Опубликуй | OS → resolve exact object → publication pipeline | exact approved current preview + CONTENT_QUEUE | external publish + writeback | STATIC PASS / RUNTIME PENDING |
 | 10 | Что требует моего решения? | OS → OWNER_DECISIONS | domain blockers/gates | none | STATIC PASS / RUNTIME PENDING |
 
@@ -104,6 +104,18 @@ The installed Skill routed `Сформируй Weekly Report` to `WEEKLY_BUILD` 
 - no Weekly DRAFT, content version, decision or publication was created or changed during this rerun; `main` was not changed.
 
 Interpretation: Gate 07 passed the reporting-period, source-coverage, existing-artifact, QA and duplicate-protection checks. The appropriate end-to-end result for an already published weekly object is verified reuse, not a second report.
+## Gate 08 runtime PASS — 2026-09-01
+
+The installed Skill routed `Подготовь публикацию` to `PUBLICATION_PREPARE`, reconciled the current queue, calendar, events, published history and QA, and selected one canonical eligible object.
+
+- selected existing material: `CNT-20260821-SERIES-06-DIARIES` (`RFORM-SERIES-20260821-006`), an unmet series commitment for the `BUSY_MAN` product bridge;
+- canonical package readback: `Text_Status=READY`, `Visual_Status=NOT_REQUIRED`, `Approval_Status=NOT_READY`, `Publication_Status=PLANNED`, `Current_Stage=CHANNEL_CONTROL_REVIEW`, `Preview_Review_Status=NOT_REVIEWED`, `AutoPost_Allowed=NO` and no blocking issue;
+- Fact, editorial and duplication QA pass. No `CONTENT_REGISTRY` row exists for this Content_ID, so it has not been published; no content-specific QA issue was found;
+- the new 31.08 training event is explicitly `AGGREGATE_TO_WEEKLY`, so it was excluded from standalone publication. W35 Weekly is already published, and the 01.09 START HERE calendar item is `HOLD`;
+- because the candidate is `TEXT_ONLY` with visual `NOT_REQUIRED`, the final preview is correctly routed to existing Channel Control / Owner Bot; no full Telegram text was rendered in ChatGPT and no approval, schedule or publication was simulated;
+- the already-prepared canonical package was reused without changing text, visual, preview state or production fields; `main` was not changed.
+
+Interpretation: Gate 08 passed current candidate selection, source/coverage validation, package QA and canonical preview routing. The exact next owner action remains review/approval of this existing Content_ID in Channel Control.
 ## Runtime PASS criteria
 
 A test becomes PASS only when:
