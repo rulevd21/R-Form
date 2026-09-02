@@ -1,6 +1,6 @@
 # R/Form Operating Architecture Acceptance Matrix
 
-Status date: 2026-08-31.
+Status date: 2026-09-02.
 
 This matrix distinguishes static architecture validation from runtime E2E validation. Do not mark runtime PASS until the actual installed R/Form Operating System routes the command and canonical readback verifies the result.
 
@@ -15,7 +15,7 @@ This matrix distinguishes static architecture validation from runtime E2E valida
 | 06 | Обнови статус подготовки | OS → PREP_STATUS | training + metrics + plans + decisions | none by default | **RUNTIME PASS — current taper, training, recovery, bodyweight and nutrition decision read; deterministic B-session fallback reported without write (2026-09-01)** |
 | 07 | Сформируй Weekly Report | OS → WEEKLY_BUILD | closed period facts + exact Weekly artifact | DRAFT/update | **RUNTIME PASS — verified and reused current W35 Weekly artifact; source coverage and non-blocking caveat read back, no duplicate version created (2026-09-01)** |
 | 08 | Подготовь публикацию | OS → PUBLICATION_PREPARE | CONTENT_QUEUE + DATA_EVENTS + decisions | package/draft only | **RUNTIME PASS — selected and verified existing Series 06 TEXT_ONLY package; owner-preview handoff preserved, no duplicate or publication (2026-09-01)** |
-| 09 | Опубликуй | OS → resolve exact object → publication pipeline | exact approved current preview + CONTENT_QUEUE | external publish + writeback | STATIC PASS / RUNTIME PENDING |
+| 09 | Опубликуй | OS → resolve exact object → publication pipeline | exact approved current preview + CONTENT_QUEUE | external publish + writeback | **RUNTIME BLOCKED — `CNT-20260821-SERIES-06-DIARIES` is not approved and its canonical preview is not reviewed; no Telegram handoff (2026-09-02)** |
 | 10 | Что требует моего решения? | OS → OWNER_DECISIONS | domain blockers/gates | none | STATIC PASS / RUNTIME PENDING |
 
 ## Runtime activation attempt — 2026-08-31
@@ -116,6 +116,18 @@ The installed Skill routed `Подготовь публикацию` to `PUBLICA
 - the already-prepared canonical package was reused without changing text, visual, preview state or production fields; `main` was not changed.
 
 Interpretation: Gate 08 passed current candidate selection, source/coverage validation, package QA and canonical preview routing. The exact next owner action remains review/approval of this existing Content_ID in Channel Control.
+## Gate 09 runtime publication gate — 2026-09-02
+
+The installed Skill routed the acceptance example `Опубликуй CNT-20260821-SERIES-06-DIARIES` to the exact content-publication workflow and re-read the canonical production state before any transport action.
+
+- exact selected existing object: `CNT-20260821-SERIES-06-DIARIES` (`RFORM-SERIES-20260821-006`), public data allowed, `TEXT_ONLY`, visual `NOT_REQUIRED`;
+- canonical queue readback: `Text_Status=READY`, `Approval_Status=NOT_READY`, `Publication_Status=PLANNED`, `Current_Stage=CHANNEL_CONTROL_REVIEW`, `Preview_Review_Status=NOT_REVIEWED` and `AutoPost_Allowed=NO`;
+- `CONTENT_REGISTRY` contains no row for this Content_ID, and `QA_LOG` contains no content-specific issue; it is neither published nor resolved by a new blocker;
+- publication requires the exact current preview to be reviewed and approved. Those conditions are not met, so the Skill correctly did not hand the object to Telegram Autopost, alter `CONTENT_QUEUE`, or report a publication;
+- no canonical business data, Telegram transport, deployment or `main` change occurred.
+
+Interpretation: Gate 09 validates the runtime publication permission gate by safely blocking an explicit publication command for an unreviewed, unapproved object. Re-run only after the exact current Channel Control preview has been reviewed and approved through the existing owner flow.
+
 ## Runtime PASS criteria
 
 A test becomes PASS only when:
