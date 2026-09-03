@@ -1,6 +1,6 @@
 # R/Form Operating Architecture Acceptance Matrix
 
-Status date: 2026-09-02.
+Status date: 2026-09-03.
 
 This matrix distinguishes static architecture validation from runtime E2E validation. Do not mark runtime PASS until the actual installed R/Form Operating System routes the command and canonical readback verifies the result.
 
@@ -16,7 +16,7 @@ This matrix distinguishes static architecture validation from runtime E2E valida
 | 07 | Сформируй Weekly Report | OS → WEEKLY_BUILD | closed period facts + exact Weekly artifact | DRAFT/update | **RUNTIME PASS — verified and reused current W35 Weekly artifact; source coverage and non-blocking caveat read back, no duplicate version created (2026-09-01)** |
 | 08 | Подготовь публикацию | OS → PUBLICATION_PREPARE | CONTENT_QUEUE + DATA_EVENTS + decisions | package/draft only | **RUNTIME PASS — selected and verified existing Series 06 TEXT_ONLY package; owner-preview handoff preserved, no duplicate or publication (2026-09-01)** |
 | 09 | Опубликуй | OS → resolve exact object → publication pipeline | exact approved current preview + CONTENT_QUEUE | external publish + writeback | **RUNTIME BLOCKED — `CNT-20260821-SERIES-06-DIARIES` is not approved and its canonical preview is not reviewed; no Telegram handoff (2026-09-02)** |
-| 10 | Что требует моего решения? | OS → OWNER_DECISIONS | domain blockers/gates | none | STATIC PASS / RUNTIME PENDING |
+| 10 | Что требует моего решения? | OS → OWNER_DECISIONS | domain blockers/gates | none | **RUNTIME PASS — returned the three current, ranked owner gates without a write or publication (2026-09-03)** |
 
 ## Runtime activation attempt — 2026-08-31
 
@@ -127,6 +127,20 @@ The installed Skill routed the acceptance example `Опубликуй CNT-202608
 - no canonical business data, Telegram transport, deployment or `main` change occurred.
 
 Interpretation: Gate 09 validates the runtime publication permission gate by safely blocking an explicit publication command for an unreviewed, unapproved object. Re-run only after the exact current Channel Control preview has been reviewed and approved through the existing owner flow.
+
+## Gate 10 runtime PASS — 2026-09-03
+
+The installed Skill routed the acceptance example `Что требует моего решения?` to `OWNER_DECISIONS`, built a bounded cross-domain snapshot and returned only material owner gates. It made no state change.
+
+Ranked output from current canonical sources:
+
+1. `EVT-02092026-DECISION-DEC-20260902-TRAINING-WEEKDAYS-ONLY` is `OWNER_GATE` with `Manual_Gate=YES · COMPETITION_OR_NUTRITION`: the owner must approve the public interpretation before any publication. The underlying training decision is current and remains distinct from a content approval.
+2. `CNT-20260821-SERIES-06-DIARIES` requires exact preview review and then owner approve/change/hold: `Text_Status=READY`, `Visual_Status=NOT_REQUIRED`, `Approval_Status=NOT_READY`, `Publication_Status=PLANNED`, `Current_Stage=CHANNEL_CONTROL_REVIEW`, `Preview_Review_Status=NOT_REVIEWED`, `AutoPost_Allowed=NO`.
+3. `CNT-20260825-SERIES-07-WEEKLY-REVIEW` has the same current Channel Control review gate and is the next eligible series item.
+
+All three returned content objects have no registry publication row, no content-specific QA row and no duplicate flag. `CNT-20260828-SERIES-08-VERSIONING` is also in the same review state, but was correctly omitted from the top-three response as lower priority. The 01.09 START HERE item remains `HOLD`; old open QA and the 29.08 weight warning were not escalated as owner decisions because they are either historical audit items or explicitly non-blocking.
+
+Interpretation: Gate 10 passed the cross-domain router, canonical-state, prioritisation and concise owner-decision contract. No approval, schedule, publication, content-state change, deployment or `main` change occurred.
 
 ## Runtime PASS criteria
 
