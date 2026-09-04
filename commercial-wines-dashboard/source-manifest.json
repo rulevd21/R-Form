@@ -1,0 +1,10 @@
+{
+  "dashboard_version": "v17",
+  "generated_at": "2026-08-31T10:18:00+03:00",
+  "drive_folder": "https://drive.google.com/drive/folders/1bJV2lYhfOVDK9tQ0EuQksieHVUczGnnV",
+  "sources": [
+    {"role":"sales","file_id":"1K_xgbNtYpc-4zqBiIvJyN1bR37Mn6PhV","title":"Коммерческие вина 2026_31.08.xlsx","modified_at":"2026-08-31T06:58:55.882Z","grain":"year x month x holding x brand x SKU x metric"},
+    {"role":"shelf_prices","file_id":"1Tq_7RKcNTtgeg-2BCqGP70w8IbvxDOED","title":"Мониторинг цен коммерческие вина_35W.xlsx","modified_at":"2026-08-31T06:20:15.000Z","snapshot":"35W"}
+  ],
+  "rules":{"project_start_month":6,"last_closed_month":7,"partial_month":8,"excluded_future_month":9,"target_return":0.15,"baseline_ku_default":0.52,"baseline_ku_krinitsa":0.40,"celebritys_financial_basis":"56% conservative upper bound of agreed 50-56% range"}
+}
