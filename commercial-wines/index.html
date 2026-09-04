@@ -237,4 +237,38 @@ window.validateWeeklyRefresh=function(sales,prices){
 (()=>{const holding=document.getElementById('holdingDetails'),actions=document.querySelector('.hactions');if(holding&&actions&&!document.getElementById('closeHoldingSheet')){const b=document.createElement('button');b.id='closeHoldingSheet';b.type='button';b.textContent='Готово';b.addEventListener('click',()=>holding.open=false);actions.appendChild(b)}document.title='Коммерческие вина 2026 — v20.7';const v=document.querySelector('#reportVersion');if(v)v.innerHTML='<b>Версия</b> v20.7';const log=document.querySelector('.version-log ul');if(log)log.insertAdjacentHTML('afterbegin','<li>v20.7 — мобильные фильтры и touch-управление.</li>')})();
 </script>
 <style id="v207-close-control">#closeHoldingSheet{display:none}@media(max-width:820px){#closeHoldingSheet{display:block}}</style>
+<style id="v208-open-period">
+.pill.open-month{border-color:#e1c171;background:#fff9eb;color:#73531a}
+@media(max-width:820px){.meta .pill.open-month{width:100%;justify-content:center}}
+</style>
+<script id="v208-open-period-script">
+(()=>{
+ const projectWeeks=[
+  {week:23,month:'Июн'},{week:24,month:'Июн'},{week:25,month:'Июн'},{week:26,month:'Июн'},
+  {week:27,month:'Июл'},{week:28,month:'Июл'},{week:29,month:'Июл'},{week:30,month:'Июл'},
+  {week:31,month:'Авг'},{week:32,month:'Авг'},{week:33,month:'Авг'},{week:34,month:'Авг'},{week:35,month:'Авг'},
+  {week:36,month:'Сен',open:true},{week:37,month:'Сен',open:true}
+ ];
+ const defsBeforeV208=defs,drawBeforeV208=drawMain;
+ const projectDefs=projectWeeks.map(d=>({label:'W'+d.week,weeks:[d.week],months:[],month:d.month,open:!!d.open}));
+ defs=function(){return state.scale==='week'?projectDefs:defsBeforeV208()};
+ function groupWeeklyCanvas(){
+  const c=$('mainChart');if(!c)return;
+  const r=c.getBoundingClientRect(),x=c.getContext('2d');if(!x||!r.width||!r.height)return;
+  const p={l:78,r:62,t:30,b:54},cw=r.width-p.l-p.r,ch=r.height-p.t-p.b,g=cw/projectDefs.length;
+  const groups=[];projectDefs.forEach((d,i)=>{let q=groups[groups.length-1];if(!q||q.month!==d.month){q={month:d.month,open:d.open,start:i,end:i};groups.push(q)}else q.end=i});
+  x.save();
+  groups.forEach((q,i)=>{const left=p.l+q.start*g,width=(q.end-q.start+1)*g;x.fillStyle=q.open?'rgba(201,145,33,.10)':(i%2?'rgba(47,91,145,.045)':'rgba(255,255,255,.02)');x.fillRect(left,p.t,width,ch);if(q.start){x.beginPath();x.strokeStyle='#c6d1df';x.lineWidth=1;x.moveTo(left,p.t);x.lineTo(left,p.t+ch);x.stroke()}});
+  x.font='600 10px Segoe UI';x.textAlign='center';groups.forEach(q=>{const mid=p.l+(q.start+q.end+1)*g/2;x.fillStyle=q.open?'#8a671c':'#52677f';x.fillText(q.month+(q.open?' · открыт':''),mid,p.t-10)});
+  x.restore();
+  const sub=$('chartSub');if(sub)sub.textContent='Недельный факт после старта проекта: W23–W37 · июнь–сентябрь 2026; сентябрь — открытый месяц';
+ }
+ drawMain=function(){drawBeforeV208();if(state.scale==='week')groupWeeklyCanvas()};
+ const meta=document.querySelector('.meta');if(meta&&!document.getElementById('openMonthPill')){const p=document.createElement('div');p.id='openMonthPill';p.className='pill open-month';p.innerHTML='Текущий открытый месяц: <b>сентябрь · W36–W37</b>';meta.append(p)};
+ const note=[...document.querySelectorAll('.note.warn')].find(e=>/продажи сентября 2026/i.test(e.textContent));if(note)note.textContent='Текущий открытый месяц: сентябрь 2026 (W36–W37). Он показан в недельной динамике; месячные разделы сохраняют август как последний закрытый период.';
+ const qa=document.querySelector('.quality-alert');if(qa)qa.textContent='Текущий открытый месяц — сентябрь 2026 (W36–W37): он отображается только в недельной динамике. Месячные разделы сохраняют закрытый период по август включительно.';
+ document.title='Коммерческие вина 2026 — v20.8';const v=document.querySelector('#reportVersion');if(v)v.innerHTML='<b>Версия</b> v20.8';const log=document.querySelector('.version-log ul');if(log&&!log.textContent.includes('v20.8'))log.insertAdjacentHTML('afterbegin','<li>v20.8 — открыт сентябрь; недели от старта проекта сгруппированы по месяцам.</li>');
+ render();
+})();
+</script>
 </body></html>
