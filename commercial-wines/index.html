@@ -302,4 +302,42 @@ window.validateWeeklyRefresh=function(sales,prices){
  render();
 })();
 </script>
+<style id="v210-assortment-filter-style">
+.extra-filters.with-assortment{grid-template-columns:repeat(2,minmax(240px,1fr));max-width:900px}
+@media(max-width:820px){.extra-filters.with-assortment{grid-template-columns:1fr!important;max-width:none}}
+</style>
+<script id="v210-assortment-filter">
+(()=>{
+ const ASSORTMENT_BY_BRAND={
+  'Бодегас Протос':'коммерческие вина (Premium)','Бушар Эне и Фис':'коммерческие вина (core)','Вилла Вольф':'коммерческие вина (Premium)','Винодельня Криница':'коммерческие вина (Premium)','Др. Лоозен':'коммерческие вина (Premium)','Канти':'коммерческие вина (core)','Кастелларе ди Кастеллина':'коммерческие вина (Premium)','Комо уна Мото':'коммерческие вина (core)','Петер Мертес':'коммерческие вина (core)','Селебритис':'коммерческие вина (core)','Фиорино д Оро':'коммерческие вина (core)'
+ };
+ const ASSORTMENTS=['коммерческие вина (core)','коммерческие вина (Premium)'];
+ state.assortment=ASSORTMENTS.includes(state.assortment)?state.assortment:'ALL';
+ SALES.forEach(r=>r.assortment=ASSORTMENT_BY_BRAND[r.brand]||'');PRICES.forEach(r=>r.assortment=ASSORTMENT_BY_BRAND[r.brand]||'');
+ const brandSelectedBeforeV210=brandSelected,conditionScopeBeforeV210=conditionScope,renderBeforeV210=render;
+ brandSelected=function(brand){return brandSelectedBeforeV210(brand)&&(state.assortment==='ALL'||ASSORTMENT_BY_BRAND[brand]===state.assortment)};
+ conditionScope=function(){return conditionScopeBeforeV210().filter(c=>brandSelected(c.brand))};
+ if(window.WEEKLY_UPDATE_CONTRACT&&!window.WEEKLY_UPDATE_CONTRACT.salesFields.includes('assortment')){window.WEEKLY_UPDATE_CONTRACT.salesFields.push('assortment');window.WEEKLY_UPDATE_CONTRACT.version='v20.10'}
+ const filters=document.querySelector('.extra-filters');if(!filters)return;
+ filters.classList.remove('without-manager');filters.classList.add('with-assortment');
+ let field=document.getElementById('assortmentFilter')?.closest('div');
+ if(!field){field=document.createElement('div');field.innerHTML='<label for="assortmentFilter">Вид ассортимента</label><select id="assortmentFilter" aria-label="Фильтр по виду ассортимента"></select>';filters.append(field)}
+ const assortmentFilter=document.getElementById('assortmentFilter'),brandFilter=document.getElementById('brandFilter');
+ assortmentFilter.innerHTML='<option value="ALL">Все виды ассортимента</option>'+ASSORTMENTS.map(a=>'<option value="'+esc(a)+'">'+esc(a)+'</option>').join('');
+ function syncBrandOptions(){const brands=state.assortment==='ALL'?BRANDS:BRANDS.filter(b=>ASSORTMENT_BY_BRAND[b]===state.assortment);if(state.brand!=='ALL'&&!brands.includes(state.brand))state.brand='ALL';brandFilter.innerHTML='<option value="ALL">Все бренды</option>'+brands.map(b=>'<option value="'+esc(b)+'">'+esc(b)+'</option>').join('');brandFilter.value=state.brand}
+ function syncAssortmentUrl(){try{const url=new URL(location.href);if(state.assortment==='ALL')url.searchParams.delete('a');else url.searchParams.set('a',state.assortment);history.replaceState(null,'',url)}catch(_){}}
+ function setShareUrl(){try{const url=new URL(location.href);url.search='';url.searchParams.set('v','1');url.searchParams.set('s',state.scale);url.searchParams.set('m',state.measure);url.searchParams.set('x',state.matrix);url.searchParams.set('c',String(state.cutoff));url.searchParams.set('b',String(state.brand==='ALL'?-1:BRANDS.indexOf(state.brand)));url.searchParams.set('h',[...state.holdings].map(h=>HOLDINGS.indexOf(h)).filter(i=>i>=0).join('.'));if(state.assortment!=='ALL')url.searchParams.set('a',state.assortment);history.replaceState(null,'',url);return url}catch(_){return null}}
+ function applyAssortmentUrl(){try{const p=new URLSearchParams(location.search),value=p.get('a'),scale=p.get('s');state.assortment=ASSORTMENTS.includes(value)?value:'ALL';if(['month','quarter','half','year','week'].includes(scale)){state.scale=scale;document.querySelectorAll('#scaleSeg button').forEach(btn=>btn.classList.toggle('active',btn.dataset.v===scale))}}catch(_){state.assortment='ALL'}assortmentFilter.value=state.assortment;syncBrandOptions()}
+ function updateFilterContext(){const label=state.assortment==='ALL'?'Все виды ассортимента':state.assortment;['chartSub','postSub','finSub'].forEach(id=>{const el=document.getElementById(id);if(el){el.textContent=el.textContent.replace(/ · Вид ассортимента:.*$/,'');if(state.assortment!=='ALL')el.textContent+=' · Вид ассортимента: '+label}});document.querySelectorAll('.scope-badge').forEach(b=>{if(!b.dataset.baseText)b.dataset.baseText=b.textContent;b.textContent=b.dataset.baseText.includes('вид ассортимента')?b.dataset.baseText:b.dataset.baseText.replace('бренд','бренд и вид ассортимента')});}
+ render=function(){renderBeforeV210();updateFilterContext()};
+ assortmentFilter.addEventListener('change',()=>{state.assortment=assortmentFilter.value;syncBrandOptions();render();syncAssortmentUrl()});
+ document.getElementById('resetFilters')?.addEventListener('click',()=>{state.assortment='ALL';assortmentFilter.value='ALL';syncBrandOptions();render();syncAssortmentUrl()});
+ const oldCopy=document.getElementById('copyView');if(oldCopy){const copy=oldCopy.cloneNode(true);oldCopy.replaceWith(copy);copy.addEventListener('click',async()=>{setShareUrl();const status=document.getElementById('reportStatus');try{await navigator.clipboard.writeText(location.href);status.textContent='Ссылка на текущий срез скопирована'}catch(_){status.textContent='Ссылка обновлена в адресной строке'}})}
+ document.addEventListener('change',()=>setTimeout(syncAssortmentUrl,0),true);document.addEventListener('click',()=>setTimeout(syncAssortmentUrl,0));
+ window.addEventListener('popstate',()=>{applyAssortmentUrl();render()});
+ const sourceNote=document.querySelector('.filter-source-note');if(sourceNote)sourceNote.textContent='Вид ассортимента — поле источника продаж; фильтр применяется ко всем показателям выбранного контура.';
+ applyAssortmentUrl();document.title='Коммерческие вина 2026 — v20.10';const v=document.querySelector('#reportVersion');if(v)v.innerHTML='<b>Версия</b> v20.10';const log=document.querySelector('.version-log ul');if(log&&!log.textContent.includes('v20.10'))log.insertAdjacentHTML('afterbegin','<li>v20.10 — добавлен фильтр по виду ассортимента.</li>');
+ render();syncAssortmentUrl();
+})();
+</script>
 </body></html>
