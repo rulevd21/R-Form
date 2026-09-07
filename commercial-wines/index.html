@@ -271,4 +271,35 @@ window.validateWeeklyRefresh=function(sales,prices){
  render();
 })();
 </script>
+<script id="v209-weekly-post-kpis">
+(()=>{
+ const monthByProjectWeek={23:6,24:6,25:6,26:6,27:7,28:7,29:7,30:7,31:8,32:8,33:8,34:8,35:8,36:9,37:9};
+ const targetIncomeBeforeV209=targetIncome;
+ targetIncome=function(r){const m=r&&monthByProjectWeek[r.week];return r&&r.year===2026&&!r.monthNum&&m?targetIncomeBeforeV209({...r,monthNum:m}):targetIncomeBeforeV209(r)};
+ function loadWeeklyRows(){
+  const source=document.getElementById('v205-weekly-sales');if(!source)return[];
+  const text=source.textContent,start=text.indexOf('const z=')+'const z='.length,end=text.indexOf('],W=z[2].map',start);
+  if(start<'const z='.length||end<0)return[];
+  try{const z=JSON.parse(text.slice(start,end+1));return z[2].map(r=>({year:r[0],week:r[1],monthNum:monthByProjectWeek[r[1]],holding:z[0][r[2]],brand:z[1][r[3]],base:r[4],revenue:r[5],qty:r[6],baselineKu:r[7],agreementKu:r[8]}))}catch(e){console.warn('Не удалось прочитать недельный набор продаж',e);return[]}
+ }
+ const weeklyRows=loadWeeklyRows(),renderPostBeforeV209=renderPost;
+ function setPostHeader(text){const section=document.getElementById('postSub')?.closest('.section-head');const note=section&&[...section.children].find(e=>e.classList.contains('small'));if(note)note.textContent=text}
+ function weeklyMetrics(year,weeks){const rows=weeklyRows.filter(r=>r.year===year&&weeks.has(r.week)&&selected(r));const q=metric(rows,'qty'),rev=metric(rows,'revenue'),inc=metric(rows,'income');return{r:rows,q,rev,inc,unit:q?inc/q:NaN,ku:wdisc(rows)}}
+ renderPost=function(){
+  if(state.scale!=='week'||!weeklyRows.length){renderPostBeforeV209();setPostHeader('Реагирует на выбранные холдинги и последний закрытый месяц');return}
+  const weeks=new Set();defs().forEach(d=>d.weeks.forEach(w=>weeks.add(w)));const first=Math.min(...weeks),last=Math.max(...weeks),a=weeklyMetrics(2025,weeks),b=weeklyMetrics(2026,weeks);
+  $('postSub').textContent=`Сопоставимые недели W${first}–W${last}: 2026 против 2025 · сентябрь открыт (W36–W37) · ${state.brand==='ALL'?'все бренды':state.brand}`;
+  setPostHeader('Реагирует на выбранные холдинги и недельный контур');
+  cards('postKpis',[
+   ['Объём, бут.',qty(b.q),`2025: ${qty(a.q)} · ${pct(a.q?b.q/a.q*100-100:NaN)}`,cls(b.q-a.q)],
+   ['Объём, ₽',rub(b.rev),`2025: ${rub(a.rev)} · ${pct(a.rev?b.rev/a.rev*100-100:NaN)}`,cls(b.rev-a.rev)],
+   ['Расчётный целевой доход',rub(b.inc),`2025: ${rub(a.inc)} · ${pct(a.inc?b.inc/a.inc*100-100:NaN)}`,cls(b.inc-a.inc)],
+   ['Расчётный доход на бутылку',rub(b.unit),`2025: ${rub(a.unit)} · ${pct(a.unit?b.unit/a.unit*100-100:NaN)}`,cls(b.unit-a.unit)],
+   ['Эффективные КУ',pct(b.ku),`2025: ${pct(a.ku)} · Δ ${pp(b.ku-a.ku)}<br>база ${pct(wbase(b.r))} · согласовано ${pct(wagree(b.r))}`,(b.ku-a.ku)<=0?'pos':'neg']
+  ]);
+ };
+ document.title='Коммерческие вина 2026 — v20.9';const v=document.querySelector('#reportVersion');if(v)v.innerHTML='<b>Версия</b> v20.9';const log=document.querySelector('.version-log ul');if(log&&!log.textContent.includes('v20.9'))log.insertAdjacentHTML('afterbegin','<li>v20.9 — карточки «После запуска» учитывают открытый месяц в недельном режиме.</li>');
+ render();
+})();
+</script>
 </body></html>
