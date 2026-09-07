@@ -1,0 +1,83 @@
+<style>
+/* R/Form Channel Control v0.3.2 · publish date/time editor */
+#editPublishAtField .schedule-edit-row{display:flex;gap:8px;align-items:center}
+#editPublishAtField .schedule-edit-row input{flex:1}
+#editPublishAtField .schedule-edit-note{margin-top:7px;color:var(--muted);font-size:11px;line-height:1.4}
+@media(max-width:640px){#editPublishAtField .schedule-edit-row{display:grid;grid-template-columns:1fr}}
+</style>
+<script>
+(function(){
+'use strict';
+
+const cc32BaseOpenEdit = window.openEdit;
+
+function cc32EnsureScheduleField(){
+  if(document.getElementById('editPublishAtField')) return;
+  const actions=document.querySelector('#editModal .modal-actions');
+  if(!actions) return;
+  const field=document.createElement('div');
+  field.className='field';
+  field.id='editPublishAtField';
+  field.innerHTML=`
+    <label>Дата и время публикации · Москва</label>
+    <div class="schedule-edit-row">
+      <input id="editPublishAt" type="datetime-local">
+      <button id="editPublishAtSave" class="btn primary" type="button">Сохранить дату/время</button>
+    </div>
+    <div id="editPublishAtNote" class="schedule-edit-note">Изменение даты/времени не меняет проверенный текст или визуал. Для сохранения версия должна иметь Preview = VERIFIED/LOCKED.</div>`;
+  actions.parentNode.insertBefore(field,actions);
+}
+
+function cc32ToLocalInput(value){
+  const s=String(value||'').trim();
+  if(!s) return '';
+  let m=s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})[ T](\d{1,2}):(\d{2})/);
+  if(m) return `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}T${String(m[4]).padStart(2,'0')}:${m[5]}`;
+  m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{2})/);
+  if(m) return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}T${String(m[4]).padStart(2,'0')}:${m[5]}`;
+  const d=new Date(s);
+  return isNaN(d)?'':localInput(d);
+}
+
+async function cc32SavePublishAt(id){
+  const raw=document.getElementById('editPublishAt').value;
+  if(!raw){alert('Укажите дату и время публикации.');return}
+  if(!confirm('Изменить дату/время публикации '+id+' на '+raw.replace('T',' ')+' по Москве?')) return;
+  setLoading(true);
+  try{
+    await api('rformCcRescheduleV032',{contentId:id,publishAtLocal:raw});
+    closeModal('editModal');
+    await refresh();
+  }catch(err){
+    alert(err.message||String(err));
+  }finally{
+    setLoading(false);
+  }
+}
+
+window.openEdit=function(id){
+  cc32BaseOpenEdit(id);
+  cc32EnsureScheduleField();
+  const x=item(id);
+  const wrap=document.getElementById('editPublishAtField');
+  const input=document.getElementById('editPublishAt');
+  const btn=document.getElementById('editPublishAtSave');
+  const note=document.getElementById('editPublishAtNote');
+  if(!x||!wrap||!input||!btn) return;
+
+  const live=x.Lifecycle_State==='PUBLISHED';
+  wrap.style.display=live?'none':'block';
+  if(live) return;
+
+  input.value=cc32ToLocalInput(x.Publish_At);
+  btn.onclick=()=>cc32SavePublishAt(id);
+  const approved=String(x.Approval_Status||'').toUpperCase()==='APPROVED';
+  btn.disabled=!approved;
+  note.textContent=approved
+    ? 'Можно изменить дату/время без повторного согласования текста и визуала. Перед записью backend проверит Preview = VERIFIED/LOCKED.'
+    : 'Сначала требуется Approval_Status = APPROVED и финальный Preview.';
+};
+
+cc32EnsureScheduleField();
+})();
+</script>

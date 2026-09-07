@@ -1,0 +1,224 @@
+<style>
+.btn.preview{border-color:rgba(138,174,190,.45);background:rgba(138,174,190,.08)}
+.dialog.preview-wide{width:min(1460px,97vw);max-height:95vh}
+.preview-grid{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:20px;margin-top:16px;align-items:start}
+.preview-side{background:#0c1014;border:1px solid var(--line);border-radius:14px;padding:14px;align-self:start;position:sticky;top:0}
+.preview-kv{display:grid;grid-template-columns:100px 1fr;gap:7px 10px;font-size:11px}
+.preview-kv span:nth-child(odd){color:var(--muted)}
+.preview-warn{background:rgba(216,173,100,.08);border:1px solid rgba(216,173,100,.22);border-radius:9px;padding:8px 9px;font-size:11px;color:#e6cf9f;margin-top:8px;line-height:1.4}
+.tg-shell{max-width:1040px;margin:0;background:#17212b;border-radius:18px;overflow:hidden;border:1px solid rgba(255,255,255,.08)}
+.tg-head{display:flex;gap:10px;align-items:center;padding:12px 14px;background:#202b36}
+.tg-avatar{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:#0d1115;color:var(--brass);font-weight:800;border:1px solid rgba(198,161,91,.45)}
+.tg-post{padding:12px}
+.tg-copy{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.48;background:#182533;border-radius:10px;padding:11px 12px;color:#f2f4f5}
+.tg-foot{display:flex;justify-content:space-between;color:var(--muted);font-size:10px;padding-top:8px}
+.preview-media{background:#0d1115;border-radius:12px;overflow:hidden;min-width:0;border:1px solid rgba(255,255,255,.055)}
+.preview-media-button{display:block;width:100%;padding:0;border:0;background:transparent;cursor:zoom-in}
+.preview-media img{width:100%;display:block;max-height:760px;object-fit:contain;background:#05080a}
+.preview-media-meta{display:flex;justify-content:space-between;gap:8px;padding:7px 9px;font-size:10px;color:var(--muted)}
+.preview-pair{display:grid;grid-template-columns:repeat(2,minmax(300px,1fr));gap:12px;margin-bottom:12px}
+.preview-single{margin-bottom:12px}.preview-single .preview-media{max-width:720px;margin:auto}
+.gallery-main{position:relative;margin-bottom:10px}.gallery-main .preview-media{max-width:760px;margin:auto}
+.gallery-arrow{position:absolute;top:50%;transform:translateY(-50%);z-index:2;width:42px;height:42px;border-radius:50%;border:1px solid rgba(255,255,255,.18);background:rgba(8,11,15,.78);color:var(--text);font-size:22px;cursor:pointer;display:grid;place-items:center}
+.gallery-arrow:hover{border-color:rgba(198,161,91,.65);background:rgba(8,11,15,.92)}
+.gallery-arrow.prev{left:12px}.gallery-arrow.next{right:12px}
+.gallery-counter{position:absolute;right:14px;top:12px;padding:5px 8px;border-radius:999px;background:rgba(8,11,15,.78);border:1px solid rgba(255,255,255,.14);font-size:11px;color:var(--text)}
+.gallery-thumbs{display:flex;gap:8px;overflow-x:auto;padding:3px 2px 8px;scrollbar-width:thin}
+.gallery-thumb{flex:0 0 96px;height:122px;padding:0;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#080b0f;cursor:pointer;opacity:.68}
+.gallery-thumb.active{opacity:1;border-color:rgba(198,161,91,.75);box-shadow:0 0 0 1px rgba(198,161,91,.15)}
+.gallery-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.gallery-toolbar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 0 9px;color:var(--muted);font-size:11px}
+.preview-placeholder{padding:40px;text-align:center;border:1px dashed var(--line);border-radius:12px;color:var(--muted);margin-bottom:10px}
+.preview-schedule{display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}.preview-schedule.show{display:block}
+.preview-source{display:inline-block;margin-top:10px;color:#bfd7e0;text-decoration:none;font-size:11px}
+.preview-lightbox{position:fixed;inset:0;z-index:80;display:none;background:rgba(2,4,6,.94);padding:18px}.preview-lightbox.open{display:grid;grid-template-rows:auto minmax(0,1fr) auto}
+.lightbox-top{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--text);padding:2px 4px 10px}
+.lightbox-title{font-size:12px;color:#c7d0d8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lightbox-actions{display:flex;align-items:center;gap:8px}.lightbox-btn{border:1px solid rgba(255,255,255,.18);background:#10151a;color:var(--text);border-radius:9px;padding:8px 10px;cursor:pointer}.lightbox-btn:hover{border-color:rgba(198,161,91,.65)}
+.lightbox-stage{position:relative;min-height:0;display:grid;place-items:center;overflow:hidden}.lightbox-stage img{max-width:calc(100vw - 120px);max-height:calc(100vh - 140px);object-fit:contain;display:block;cursor:zoom-out}
+.lightbox-nav{position:absolute;top:50%;transform:translateY(-50%);width:48px;height:48px;border-radius:50%;border:1px solid rgba(255,255,255,.2);background:rgba(8,11,15,.82);color:var(--text);font-size:26px;cursor:pointer}.lightbox-nav.prev{left:8px}.lightbox-nav.next{right:8px}
+.lightbox-bottom{text-align:center;font-size:11px;color:var(--muted);padding-top:8px}
+@media(max-width:1180px){.preview-grid{grid-template-columns:1fr}.preview-side{position:static}.dialog.preview-wide{width:min(98vw,98vw)}}
+@media(max-width:840px){.dialog.preview-wide{padding:14px;width:98vw}.preview-pair{grid-template-columns:1fr}.gallery-thumb{flex-basis:76px;height:96px}.lightbox-stage img{max-width:calc(100vw - 28px);max-height:calc(100vh - 150px)}.lightbox-nav{width:40px;height:40px}.lightbox-nav.prev{left:2px}.lightbox-nav.next{right:2px}}
+</style>
+
+<div class="modal" id="rformPreviewModal">
+  <div class="dialog preview-wide">
+    <h2>Предпросмотр публикации</h2><p id="rformPreviewId"></p>
+    <div class="preview-grid">
+      <div>
+        <div id="rformTelegramPreview"></div>
+        <a id="rformPreviewSource" class="preview-source" href="#" target="_blank" rel="noopener" style="display:none">Открыть источник визуала</a>
+      </div>
+      <aside class="preview-side">
+        <h3 style="margin-top:0">Контроль перед отправкой</h3>
+        <div id="rformPreviewMeta" class="preview-kv"></div>
+        <div id="rformPreviewWarnings"></div>
+        <div id="rformPreviewSchedule" class="preview-schedule">
+          <div class="field"><label>Дата и время · Москва</label><input id="rformPreviewAt" type="datetime-local"></div>
+          <div class="sub" style="margin-top:8px">В Telegram уйдёт версия, показанная в предпросмотре.</div>
+        </div>
+      </aside>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('rformPreviewModal')">Закрыть</button>
+      <button class="btn" id="rformPreviewEdit">Редактировать</button>
+      <button class="btn primary" id="rformPreviewScheduleBtn" style="display:none">Запланировать</button>
+    </div>
+  </div>
+</div>
+
+<div class="preview-lightbox" id="rformLightbox" aria-hidden="true">
+  <div class="lightbox-top">
+    <div class="lightbox-title" id="rformLightboxTitle"></div>
+    <div class="lightbox-actions">
+      <span id="rformLightboxCounter" class="sub"></span>
+      <button class="lightbox-btn" id="rformLightboxOpenSource">Оригинал</button>
+      <button class="lightbox-btn" onclick="rformCcCloseLightbox_()">Закрыть</button>
+    </div>
+  </div>
+  <div class="lightbox-stage" id="rformLightboxStage">
+    <button class="lightbox-nav prev" id="rformLightboxPrev" aria-label="Предыдущая карточка">‹</button>
+    <img id="rformLightboxImage" alt="Предпросмотр карточки">
+    <button class="lightbox-nav next" id="rformLightboxNext" aria-label="Следующая карточка">›</button>
+  </div>
+  <div class="lightbox-bottom">← → переключение · Esc закрыть · клик по изображению закрыть</div>
+</div>
+
+<script>
+let RFORM_PREVIEW={id:'',forSchedule:false,data:null};
+let RFORM_GALLERY_INDEX=0;
+let RFORM_LIGHTBOX_INDEX=0;
+const rformCcBaseCardHtml=cardHtml;
+cardHtml=function(x){
+  const html=rformCcBaseCardHtml(x);
+  const button=`<button class="btn preview" onclick="rformCcOpenPreview('${esc(x.Content_ID)}',false)">Предпросмотр</button>`;
+  return html.replace('<div class="actions">','<div class="actions">'+button);
+};
+openSchedule=function(id){rformCcOpenPreview(id,true)};
+
+async function rformCcOpenPreview(id,forSchedule){
+  setLoading(true);
+  try{
+    const p=await api('rformCcGetPreviewV021',{contentId:id});
+    if(!p || typeof p!=='object' || !p.item){
+      throw new Error('Сервер вернул пустой payload предпросмотра. Обновите backend PreviewBackend_v0_2_1.gs и deployment.');
+    }
+    RFORM_PREVIEW={id:id,forSchedule:!!forSchedule,data:p};
+    RFORM_GALLERY_INDEX=0;
+    rformCcDrawPreview_(p,!!forSchedule);
+    openModal('rformPreviewModal');
+  }catch(e){alert('Ошибка предпросмотра: '+e.message)}finally{setLoading(false)}
+}
+
+function rformCcMediaCard_(v,i,total){
+  return `<div class="preview-media">
+    <button class="preview-media-button" onclick="rformCcOpenLightbox_(${i})" title="Увеличить карточку">
+      <img src="${esc(v.previewUrl)}" alt="${esc(v.name||'visual')}">
+    </button>
+    <div class="preview-media-meta"><span>${i+1}/${total}</span><a class="link" href="${esc(v.sourceUrl||v.previewUrl)}" target="_blank" rel="noopener">${esc(v.name||'Открыть')}</a></div>
+  </div>`;
+}
+
+function rformCcMediaHtml_(vs){
+  if(!vs.length) return '<div class="preview-placeholder">Визуал не найден или пока не прикреплён.</div>';
+  if(vs.length===1) return `<div class="preview-single">${rformCcMediaCard_(vs[0],0,1)}</div>`;
+  if(vs.length===2) return `<div class="preview-pair">${vs.map((v,i)=>rformCcMediaCard_(v,i,2)).join('')}</div>`;
+  return `<div class="gallery-toolbar"><span>Карточек: ${vs.length}. Выберите миниатюру или используйте стрелки.</span><button class="btn" style="padding:6px 9px;font-size:11px" onclick="rformCcOpenLightbox_(RFORM_GALLERY_INDEX)">На весь экран</button></div>
+    <div class="gallery-main" id="rformGalleryMain"></div>
+    <div class="gallery-thumbs">${vs.map((v,i)=>`<button class="gallery-thumb ${i===0?'active':''}" data-index="${i}" onclick="rformCcSetGalleryIndex_(${i})" title="Карточка ${i+1}"><img src="${esc(v.previewUrl)}" alt="${esc(v.name||'visual')}"></button>`).join('')}</div>`;
+}
+
+function rformCcDrawPreview_(p,forSchedule){
+  if(!p || !p.item) throw new Error('Preview payload is empty.');
+  const x=p.item||{},vs=Array.isArray(p.visuals)?p.visuals:[],mode=String(x.Telegram_Post_Mode||'TEXT_ONLY').toUpperCase();
+  document.getElementById('rformPreviewId').textContent=`${x.Content_ID||''} · ${mode} · ${x.Lifecycle_State||''}`;
+  const media=mode==='TEXT_ONLY'?'':rformCcMediaHtml_(vs);
+  const copy=esc(x.Telegram_Text||'').replace(/\n/g,'<br>')||'<span style="color:#7f919d">Текст отсутствует</span>';
+  document.getElementById('rformTelegramPreview').innerHTML=`<div class="tg-shell"><div class="tg-head"><div class="tg-avatar">R/</div><div><b>R/Form</b><div class="sub">@r_form</div></div></div><div class="tg-post">${media}<div class="tg-copy">${copy}</div><div class="tg-foot"><span>${mode}</span><span>${p.textLength||0} знаков</span></div></div></div>`;
+  if(vs.length>2) rformCcRenderGalleryMain_();
+
+  const source=document.getElementById('rformPreviewSource');
+  if(x.Telegram_Visual_URL){source.href=x.Telegram_Visual_URL;source.style.display='inline-block'}else source.style.display='none';
+  const meta=[['Lifecycle',x.Lifecycle_State||'—'],['Text',x.Text_Status||'—'],['Visual',x.Visual_Status||'—'],['Approval',x.Approval_Status||'—'],['Режим',mode],['Карточек',vs.length],['Знаков',p.textLength||0],['Publish at',x.Publish_At||'—']];
+  document.getElementById('rformPreviewMeta').innerHTML=meta.map(([k,v])=>`<span>${esc(k)}</span><span>${esc(v)}</span>`).join('');
+  document.getElementById('rformPreviewWarnings').innerHTML=(p.warnings||[]).map(w=>`<div class="preview-warn">${esc(w)}</div>`).join('');
+  document.getElementById('rformPreviewEdit').onclick=()=>{closeModal('rformPreviewModal');openEdit(x.Content_ID)};
+
+  const gate=document.getElementById('rformPreviewSchedule'),btn=document.getElementById('rformPreviewScheduleBtn');
+  gate.classList.toggle('show',forSchedule);btn.style.display=forSchedule?'inline-block':'none';
+  if(forSchedule){
+    const d=new Date(Date.now()+24*3600e3);d.setMinutes(0,0,0);
+    document.getElementById('rformPreviewAt').value=localInput(d);
+    btn.onclick=rformCcScheduleFromPreview_;
+  }
+}
+
+function rformCcRenderGalleryMain_(){
+  const root=document.getElementById('rformGalleryMain');
+  const vs=RFORM_PREVIEW.data&&Array.isArray(RFORM_PREVIEW.data.visuals)?RFORM_PREVIEW.data.visuals:[];
+  if(!root||!vs.length) return;
+  if(RFORM_GALLERY_INDEX<0)RFORM_GALLERY_INDEX=vs.length-1;
+  if(RFORM_GALLERY_INDEX>=vs.length)RFORM_GALLERY_INDEX=0;
+  const v=vs[RFORM_GALLERY_INDEX];
+  root.innerHTML=`<button class="gallery-arrow prev" onclick="rformCcGalleryStep_(-1)" aria-label="Предыдущая карточка">‹</button>
+    ${rformCcMediaCard_(v,RFORM_GALLERY_INDEX,vs.length)}
+    <span class="gallery-counter">${RFORM_GALLERY_INDEX+1}/${vs.length}</span>
+    <button class="gallery-arrow next" onclick="rformCcGalleryStep_(1)" aria-label="Следующая карточка">›</button>`;
+  document.querySelectorAll('.gallery-thumb').forEach(el=>el.classList.toggle('active',Number(el.dataset.index)===RFORM_GALLERY_INDEX));
+  const active=document.querySelector(`.gallery-thumb[data-index="${RFORM_GALLERY_INDEX}"]`);
+  if(active) active.scrollIntoView({block:'nearest',inline:'center',behavior:'smooth'});
+}
+function rformCcSetGalleryIndex_(i){RFORM_GALLERY_INDEX=Number(i)||0;rformCcRenderGalleryMain_()}
+function rformCcGalleryStep_(delta){RFORM_GALLERY_INDEX+=delta;rformCcRenderGalleryMain_()}
+
+function rformCcOpenLightbox_(index){
+  const vs=RFORM_PREVIEW.data&&Array.isArray(RFORM_PREVIEW.data.visuals)?RFORM_PREVIEW.data.visuals:[];
+  if(!vs.length)return;
+  RFORM_LIGHTBOX_INDEX=Math.max(0,Math.min(Number(index)||0,vs.length-1));
+  rformCcRenderLightbox_();
+  const lb=document.getElementById('rformLightbox');lb.classList.add('open');lb.setAttribute('aria-hidden','false');
+}
+function rformCcRenderLightbox_(){
+  const vs=RFORM_PREVIEW.data&&Array.isArray(RFORM_PREVIEW.data.visuals)?RFORM_PREVIEW.data.visuals:[];
+  if(!vs.length)return;
+  if(RFORM_LIGHTBOX_INDEX<0)RFORM_LIGHTBOX_INDEX=vs.length-1;
+  if(RFORM_LIGHTBOX_INDEX>=vs.length)RFORM_LIGHTBOX_INDEX=0;
+  const v=vs[RFORM_LIGHTBOX_INDEX];
+  document.getElementById('rformLightboxImage').src=v.previewUrl;
+  document.getElementById('rformLightboxImage').alt=v.name||'Карточка';
+  document.getElementById('rformLightboxTitle').textContent=v.name||'Карточка';
+  document.getElementById('rformLightboxCounter').textContent=`${RFORM_LIGHTBOX_INDEX+1} / ${vs.length}`;
+  document.getElementById('rformLightboxPrev').style.display=vs.length>1?'block':'none';
+  document.getElementById('rformLightboxNext').style.display=vs.length>1?'block':'none';
+  document.getElementById('rformLightboxOpenSource').onclick=()=>window.open(v.sourceUrl||v.previewUrl,'_blank','noopener');
+}
+function rformCcLightboxStep_(delta){RFORM_LIGHTBOX_INDEX+=delta;rformCcRenderLightbox_()}
+function rformCcCloseLightbox_(){const lb=document.getElementById('rformLightbox');lb.classList.remove('open');lb.setAttribute('aria-hidden','true')}
+
+document.getElementById('rformLightboxPrev').onclick=()=>rformCcLightboxStep_(-1);
+document.getElementById('rformLightboxNext').onclick=()=>rformCcLightboxStep_(1);
+document.getElementById('rformLightboxImage').onclick=rformCcCloseLightbox_;
+document.getElementById('rformLightboxStage').addEventListener('click',e=>{if(e.target.id==='rformLightboxStage')rformCcCloseLightbox_()});
+document.addEventListener('keydown',e=>{
+  const lb=document.getElementById('rformLightbox');
+  if(lb.classList.contains('open')){
+    if(e.key==='Escape')rformCcCloseLightbox_();
+    if(e.key==='ArrowLeft')rformCcLightboxStep_(-1);
+    if(e.key==='ArrowRight')rformCcLightboxStep_(1);
+  }
+});
+
+async function rformCcScheduleFromPreview_(){
+  const raw=document.getElementById('rformPreviewAt').value;
+  if(!raw){alert('Укажите дату и время');return}
+  if(!confirm('Предпросмотр проверен. Запланировать '+RFORM_PREVIEW.id+' на '+raw+'?'))return;
+  setLoading(true);
+  try{
+    await api('rformCcSchedule',{contentId:RFORM_PREVIEW.id,publishAt:new Date(raw).toISOString()});
+    closeModal('rformPreviewModal');await refresh();
+  }catch(e){alert(e.message)}finally{setLoading(false)}
+}
+
+renderQueue();
+</script>
