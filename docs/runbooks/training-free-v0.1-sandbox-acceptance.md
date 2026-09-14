@@ -24,12 +24,35 @@ Base:
 - `TrainingFreeSessionService.gs`
 - `TrainingFreeSetService.gs`
 - `TrainingFreeRegression.gs`
+- `TrainingFreeRuntimeAcceptance.gs`
 
 ## File to replace in the sandbox Apps Script project
 
 - `TodayService.gs`
 
 Do not replace `TrainingAdapterLegacyV21.gs` or `TrainingExerciseService.gs`.
+
+## Preferred one-shot runtime gate
+
+After the files above are present in the sandbox Apps Script project, run exactly one function:
+
+`runTrainingFreeRuntimeAcceptance()`
+
+The function performs, in order:
+
+1. `migrateTrainingFreeSchema()`;
+2. the same migration a second time and verifies idempotency;
+3. `runTrainingFreeFoundationRegression()`;
+4. `inspectTrainingFreeFoundationState()`;
+5. verifies `productionWriterChanged = false`.
+
+Required top-level result:
+
+`status = PASS`
+
+The returned object includes `firstMigration`, `secondMigration`, `regression`, `state`, and per-check details. It is also written to the Apps Script execution log as JSON.
+
+If the one-shot gate returns `FAIL`, stop. Do not proceed to FREE UI implementation and do not run any production migration.
 
 ## Gate FREE-02A — preflight
 
@@ -62,6 +85,9 @@ Run `migrateTrainingFreeSchema()` a second time.
 
 Expected:
 
+- `sessionHeadersAdded = []`;
+- `setHeadersAdded = []`;
+- `eventTypesAdded = []`;
 - no duplicate headers;
 - no duplicate dictionary values;
 - no legacy column movement.
