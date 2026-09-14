@@ -21,6 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: JavaScript syntax
         shell: bash
         run: |
@@ -42,7 +44,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git diff --exit-code origin/${{ github.base_ref || 'release/training-exercise-changes-v0.1-rc1' }}...HEAD -- apps-script/TrainingAdapterLegacyV21.gs || {
+          git diff --exit-code origin/release/training-exercise-changes-v0.1-rc1...HEAD -- apps-script/TrainingAdapterLegacyV21.gs || {
             echo 'Legacy TrainingAdapterLegacyV21.gs changed unexpectedly.'
             exit 1
           }
