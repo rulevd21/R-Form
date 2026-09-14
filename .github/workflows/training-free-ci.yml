@@ -1,0 +1,48 @@
+name: Training FREE foundation checks
+
+on:
+  push:
+    branches:
+      - feature/training-free-session-v0.1
+    paths:
+      - 'apps-script/TrainingFree*.gs'
+      - 'apps-script/TodayService.gs'
+      - 'docs/contracts/training-free-session-v0.1.md'
+      - '.github/workflows/training-free-ci.yml'
+  pull_request:
+    paths:
+      - 'apps-script/TrainingFree*.gs'
+      - 'apps-script/TodayService.gs'
+      - 'docs/contracts/training-free-session-v0.1.md'
+      - '.github/workflows/training-free-ci.yml'
+
+jobs:
+  syntax-and-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in apps-script/TrainingFree*.gs apps-script/TodayService.gs; do
+            echo "Checking $f"
+            node --check < "$f"
+          done
+      - name: Contract invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "const RFORM_TRAINING_FREE_OPEN_STATUS = 'DRAFT'" apps-script/TrainingFreeSessionService.gs
+          grep -q "const RFORM_TRAINING_FREE_MODE = 'FREE'" apps-script/TrainingFreeSessionService.gs
+          grep -q "RFORM_TRAINING_FREE_SET_TYPES = Object.freeze(\['WARMUP','WORKING'\])" apps-script/TrainingFreeSetService.gs
+          grep -q "mode === 'FREE'" apps-script/TodayService.gs
+          grep -q "production Training Mobile v2.1 writer" docs/contracts/training-free-session-v0.1.md
+      - name: Legacy writer isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code origin/${{ github.base_ref || 'release/training-exercise-changes-v0.1-rc1' }}...HEAD -- apps-script/TrainingAdapterLegacyV21.gs || {
+            echo 'Legacy TrainingAdapterLegacyV21.gs changed unexpectedly.'
+            exit 1
+          }
