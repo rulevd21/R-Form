@@ -33,7 +33,6 @@ function getDayStateByDate_(dateKey) {
 
   const dailyValues = daily.getRange(dailyRow, 1, 1, daily.getLastColumn()).getValues()[0];
   const dayId = valueByHeader_(dailyValues, dailyHeaders, 'Day_ID');
-
   const day = {
     dayId,
     date: dateKey,
@@ -76,14 +75,7 @@ function getNutritionStateByDayId_(ss, dayId) {
   const required = ['Day_ID','Meal_Count','Calories_Min','Calories_Max','Protein_Min','Protein_Max','Fat_Min','Fat_Max','Carbs_Min','Carbs_Max','Plan_Status','Status'];
   requireHeaders_(headers, required, 'NUTRITION_DAILY');
   const row = findRowByExactValue_(sheet, headers.Day_ID, dayId);
-  if (!row) {
-    return {
-      mealCount: 0,
-      fact: null,
-      planStatus: '',
-      status: 'MISSING'
-    };
-  }
+  if (!row) return { mealCount:0, fact:null, planStatus:'', status:'MISSING' };
   const values = sheet.getRange(row, 1, 1, sheet.getLastColumn()).getValues()[0];
   return {
     mealCount: valueByHeader_(values, headers, 'Meal_Count') || 0,
@@ -100,14 +92,12 @@ function getNutritionStateByDayId_(ss, dayId) {
 
 function getTrainingStateByDate_(ss, dateKey, dayId, config) {
   const sessions = ss.getSheetByName('TRAINING_SESSIONS');
-  if (!sessions) return { required: false, status: 'UNAVAILABLE', launchAvailable: false };
+  const free = getFreeTrainingStateByDate_(sessions, dateKey, dayId, config);
+  if (!sessions) return { required:false, status:'UNAVAILABLE', launchAvailable:false, free };
   const headers = getHeaderMap_(sessions);
-  const required = ['Session_ID','Day_ID','Date','Session_Type','Plan_Status','Session_Status'];
-  requireHeaders_(headers, required, 'TRAINING_SESSIONS');
+  requireHeaders_(headers, ['Session_ID','Day_ID','Date','Session_Type','Plan_Status','Session_Status'], 'TRAINING_SESSIONS');
 
-  let row = dayId ? findRowByExactValue_(sessions, headers.Day_ID, dayId) : 0;
-  if (!row) row = findRowByDate_(sessions, headers.Date, dateKey, config.timezone);
-
+  const row = findLegacyPlannedSessionRow_(sessions, headers, dateKey, dayId, config.timezone);
   if (row) {
     const values = sessions.getRange(row, 1, 1, sessions.getLastColumn()).getValues()[0];
     return {
@@ -116,35 +106,72 @@ function getTrainingStateByDate_(ss, dateKey, dayId, config) {
       trainingCode: valueByHeader_(values, headers, 'Session_Type'),
       planStatus: valueByHeader_(values, headers, 'Plan_Status'),
       status: valueByHeader_(values, headers, 'Session_Status') || 'UNKNOWN',
-      launchAvailable: Boolean(config.trainingLegacyUrl)
+      launchAvailable: Boolean(config.trainingLegacyUrl),
+      free
     };
   }
 
   const planned = getPlannedTrainingByDate_(ss, dateKey, config.timezone);
-  if (!planned) return { required: false, status: 'NOT_REQUIRED', launchAvailable: false };
+  if (!planned) return { required:false, status:'NOT_REQUIRED', launchAvailable:false, free };
   return {
     required: true,
     sessionId: planned.sessionId,
     trainingCode: planned.trainingCode,
     planStatus: 'PLANNED',
     status: 'NOT_STARTED',
-    launchAvailable: Boolean(config.trainingLegacyUrl)
+    launchAvailable: Boolean(config.trainingLegacyUrl),
+    free
   };
+}
+
+function findLegacyPlannedSessionRow_(sessions, headers, dateKey, dayId, timezone) {
+  const lastRow = sessions.getLastRow();
+  if (lastRow < 2) return 0;
+  const values = sessions.getRange(2, 1, lastRow - 1, sessions.getLastColumn()).getValues();
+  for (let i = values.length - 1; i >= 0; i--) {
+    const row = values[i];
+    const mode = headers.Session_Mode ? String(row[headers.Session_Mode - 1] || '').trim().toUpperCase() : '';
+    if (mode === 'FREE') continue;
+    const sameDay = dayId && String(row[headers.Day_ID - 1] || '') === String(dayId);
+    const sameDate = normalizeDateKey_(row[headers.Date - 1], timezone) === dateKey;
+    if (sameDay || sameDate) return i + 2;
+  }
+  return 0;
+}
+
+function getFreeTrainingStateByDate_(sessions, dateKey, dayId, config) {
+  if (!sessions) return { available:false, status:'UNAVAILABLE' };
+  const headers = getHeaderMap_(sessions);
+  if (!headers.Session_Mode) return { available:false, status:'SCHEMA_NOT_MIGRATED' };
+  requireHeaders_(headers, ['Session_ID','Day_ID','Date','Session_Status','Session_Mode'], 'TRAINING_SESSIONS');
+  const lastRow = sessions.getLastRow();
+  if (lastRow < 2) return { available:true, status:'NOT_STARTED' };
+  const values = sessions.getRange(2, 1, lastRow - 1, sessions.getLastColumn()).getValues();
+  for (let i = values.length - 1; i >= 0; i--) {
+    const row = values[i];
+    if (String(row[headers.Session_Mode - 1] || '').trim().toUpperCase() !== 'FREE') continue;
+    const sameDay = dayId && String(row[headers.Day_ID - 1] || '') === String(dayId);
+    const sameDate = normalizeDateKey_(row[headers.Date - 1], config.timezone) === dateKey;
+    if (!sameDay && !sameDate) continue;
+    return {
+      available:true,
+      sessionId:String(row[headers.Session_ID - 1] || ''),
+      status:String(row[headers.Session_Status - 1] || 'UNKNOWN'),
+      canResume:String(row[headers.Session_Status - 1] || '') !== 'CLOSED'
+    };
+  }
+  return { available:true, status:'NOT_STARTED', canResume:false };
 }
 
 function getPlannedTrainingByDate_(ss, dateKey, timezone) {
   const sheet = ss.getSheetByName('TRAINING_PLAN');
   if (!sheet) return null;
   const headers = getHeaderMap_(sheet);
-  const required = ['Date','Session_ID','Session_Type'];
-  requireHeaders_(headers, required, 'TRAINING_PLAN');
+  requireHeaders_(headers, ['Date','Session_ID','Session_Type'], 'TRAINING_PLAN');
   const row = findRowByDate_(sheet, headers.Date, dateKey, timezone);
   if (!row) return null;
   const values = sheet.getRange(row, 1, 1, sheet.getLastColumn()).getValues()[0];
-  return {
-    sessionId: valueByHeader_(values, headers, 'Session_ID'),
-    trainingCode: valueByHeader_(values, headers, 'Session_Type')
-  };
+  return { sessionId:valueByHeader_(values,headers,'Session_ID'), trainingCode:valueByHeader_(values,headers,'Session_Type') };
 }
 
 function findRowByDate_(sheet, column, dateKey, timezone) {
@@ -173,17 +200,9 @@ function valueByHeader_(rowValues, headerMap, header) {
 }
 
 function rangePair_(rowValues, headerMap, minHeader, maxHeader) {
-  return {
-    min: valueByHeader_(rowValues, headerMap, minHeader),
-    max: valueByHeader_(rowValues, headerMap, maxHeader)
-  };
+  return { min:valueByHeader_(rowValues,headerMap,minHeader), max:valueByHeader_(rowValues,headerMap,maxHeader) };
 }
 
 function getServerMeta_(config) {
-  return {
-    appVersion: config.appVersion,
-    dataSchemaVersion: config.dataSchemaVersion,
-    readOnly: true,
-    timezone: config.timezone
-  };
+  return { appVersion:config.appVersion, dataSchemaVersion:config.dataSchemaVersion, readOnly:true, timezone:config.timezone };
 }

@@ -1,0 +1,239 @@
+<style>
+  .free-launch-wrap{display:grid;gap:8px;margin-top:10px}.free-launch-wrap button{font-size:13px;padding:11px 12px}
+  .free-sheet{max-height:96vh}.free-head-meta{font-size:11px;color:var(--muted);margin-top:3px}.free-timer{font-variant-numeric:tabular-nums;font-weight:800;font-size:16px}
+  .free-toolbar{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}.free-toolbar button{font-size:13px;padding:11px 10px}
+  .free-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0}.free-stat{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:10px}.free-stat-label{font-size:10px;color:var(--muted)}.free-stat-value{font-size:18px;font-weight:800;margin-top:3px}
+  .free-exercises{display:grid;gap:12px}.free-exercise{border:1px solid var(--line);background:var(--panel2);border-radius:15px;padding:12px}.free-exercise-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.free-exercise-title{font-weight:800;font-size:14px}.free-exercise-meta{font-size:11px;color:var(--muted);margin-top:2px}.free-mini-actions{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}.free-mini{width:auto!important;padding:5px 8px!important;font-size:11px!important;border:1px solid var(--line)!important;background:transparent!important;color:var(--muted)!important;border-radius:9px!important}.free-mini:disabled{opacity:.35}
+  .free-set-table{display:grid;gap:6px;margin-top:10px}.free-set-row{display:grid;grid-template-columns:28px 1fr 54px 48px 28px;gap:6px;align-items:center;border-top:1px solid var(--line);padding-top:7px;font-size:12px;cursor:pointer}.free-set-row:first-child{border-top:0}.free-set-num{color:var(--muted)}.free-set-load{font-weight:750}.free-set-rir{text-align:right}.free-set-kind{font-size:9px;border:1px solid var(--line);border-radius:999px;padding:2px 4px;text-align:center;color:var(--muted)}
+  .free-exercise-comment{font-size:11px;color:var(--muted);margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)}.free-add-set{margin-top:10px!important;padding:9px 10px!important;font-size:12px!important}
+  .free-empty{padding:22px 10px;text-align:center;color:var(--muted);font-size:13px;border:1px dashed var(--line);border-radius:14px}.free-danger{background:transparent!important;color:var(--danger)!important;border:1px solid rgba(255,180,171,.35)!important}
+  .free-picker-list{display:grid;gap:7px;max-height:42vh;overflow:auto}.free-picker-item{width:100%;text-align:left;background:var(--panel2);color:var(--text);border:1px solid var(--line);padding:10px 11px;font-size:13px}.free-picker-meta{display:block;font-size:10px;color:var(--muted);margin-top:2px;font-weight:400}.free-section-title{font-size:11px;color:var(--muted);margin:12px 0 7px}.free-chip-row{display:flex;gap:6px;flex-wrap:wrap}.free-chip{width:auto!important;background:var(--panel2)!important;color:var(--text)!important;border:1px solid var(--line)!important;padding:7px 9px!important;font-size:11px!important}
+  .free-rir-row{display:grid;grid-template-columns:repeat(6,1fr);gap:5px}.free-rir{padding:9px 4px!important;font-size:12px!important;background:var(--panel2)!important;color:var(--text)!important;border:1px solid var(--line)!important}.free-rir.active{background:var(--text)!important;color:var(--bg)!important}.free-inline-note{font-size:10px;color:var(--muted)}
+  .free-finish-list{display:grid;gap:8px}.free-finish-item{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--line);padding-bottom:7px;font-size:12px}.free-finish-item:last-child{border-bottom:0}.free-finish-best{font-weight:750;text-align:right}
+  .free-busy{opacity:.62;pointer-events:none}
+  #freeExercisePicker{z-index:35}#freeSetEditor{z-index:40}#freeFinishSheet{z-index:45}
+</style>
+
+<div id="freeTrainingSheet" class="sheet-backdrop" hidden>
+  <section class="sheet free-sheet" role="dialog" aria-modal="true" aria-labelledby="freeTrainingTitle">
+    <div class="sheet-head">
+      <div><h2 id="freeTrainingTitle">Свободная тренировка</h2><div class="free-head-meta" id="freeTrainingMeta">—</div></div>
+      <div style="display:flex;align-items:center;gap:8px"><div class="free-timer" id="freeTimer">00:00</div><button class="close" id="closeFreeTraining" type="button">×</button></div>
+    </div>
+    <div id="freeTrainingStatus" class="sync notice"></div>
+    <div class="free-summary">
+      <div class="free-stat"><div class="free-stat-label">Упражнений</div><div class="free-stat-value" id="freeExerciseCount">0</div></div>
+      <div class="free-stat"><div class="free-stat-label">Рабочих</div><div class="free-stat-value" id="freeWorkingCount">0</div></div>
+      <div class="free-stat"><div class="free-stat-label">Разминка</div><div class="free-stat-value" id="freeWarmupCount">0</div></div>
+    </div>
+    <div id="freeExerciseList" class="free-exercises"></div>
+    <div class="free-toolbar">
+      <button id="freeAddExercise" type="button" class="secondary">+ Добавить упражнение</button>
+      <button id="freeFinish" type="button" class="secondary">Завершить тренировку</button>
+    </div>
+  </section>
+</div>
+
+<div id="freeExercisePicker" class="sheet-backdrop" hidden>
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="freePickerTitle">
+    <div class="sheet-head"><div><h2 id="freePickerTitle">Добавить упражнение</h2><div class="hint">Выберите из истории или создайте новое.</div></div><button class="close" id="closeFreePicker" type="button">×</button></div>
+    <div class="field"><label for="freeExerciseSearch">Поиск</label><input id="freeExerciseSearch" placeholder="Например: жим, подтягивания, бицепс"></div>
+    <div class="free-section-title">Недавние</div><div id="freeRecentExercises" class="free-chip-row"></div>
+    <div class="free-section-title">Упражнения</div><div id="freeKnownExercises" class="free-picker-list"></div>
+    <div class="free-section-title">Новое упражнение</div>
+    <div class="form-grid"><div class="field"><label for="freeCustomExerciseName">Название</label><input id="freeCustomExerciseName" maxlength="120" placeholder="Название упражнения"></div><div class="field"><label for="freeCustomExerciseCategory">Категория</label><select id="freeCustomExerciseCategory"></select></div></div>
+    <button id="freeUseCustomExercise" type="button" class="secondary" style="margin-top:10px">Продолжить к подходу</button>
+  </section>
+</div>
+
+<div id="freeSetEditor" class="sheet-backdrop" hidden>
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="freeSetTitle">
+    <div class="sheet-head"><div><h2 id="freeSetTitle">Подход</h2><div class="hint" id="freeSetExercise">—</div></div><button class="close" id="closeFreeSet" type="button">×</button></div>
+    <form id="freeSetForm" class="form">
+      <div class="form-grid"><div class="field"><label for="freeSetType">Тип</label><select id="freeSetType"><option value="WORKING">Рабочий</option><option value="WARMUP">Разминка</option></select></div><div class="field"><label for="freeLoadUnit">Нагрузка</label><select id="freeLoadUnit"><option value="KG">кг</option><option value="BW">собственный вес</option><option value="BW_PLUS_KG">собственный + кг</option><option value="LEVEL">уровень тренажёра</option></select></div></div>
+      <div class="form-grid"><div class="field" id="freeLoadValueBlock"><label for="freeLoadValue" id="freeLoadLabel">Вес, кг</label><input id="freeLoadValue" type="number" min="0" max="2000" step="0.5" inputmode="decimal"></div><div class="field"><label for="freeReps">Повторы</label><input id="freeReps" type="number" min="1" max="1000" step="1" inputmode="numeric" required></div></div>
+      <div class="field"><label>RIR</label><div class="free-rir-row" id="freeRirButtons"></div><input id="freeRirValue" type="number" min="0" max="10" step="1" inputmode="numeric" placeholder="0–10"><div class="free-inline-note" id="freeRirHint">Для рабочего подхода RIR обязателен. Для разминки можно оставить пустым.</div></div>
+      <div class="field"><label for="freeSetComment">Комментарий к подходу</label><textarea id="freeSetComment" maxlength="500" placeholder="необязательно"></textarea></div>
+      <button id="saveFreeSet" type="submit">Сохранить подход</button>
+      <button id="deleteFreeSet" type="button" class="free-danger" hidden>Удалить подход</button>
+      <div id="freeSetStatus" class="sync notice"></div>
+    </form>
+  </section>
+</div>
+
+<div id="freeFinishSheet" class="sheet-backdrop" hidden>
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="freeFinishTitle">
+    <div class="sheet-head"><div><h2 id="freeFinishTitle">Проверка тренировки</h2><div class="hint">Проверьте итог перед закрытием.</div></div><button class="close" id="closeFreeFinish" type="button">×</button></div>
+    <div id="freeFinishStats" class="notice"></div><div id="freeFinishList" class="free-finish-list" style="margin-top:12px"></div>
+    <div class="field" style="margin-top:12px"><label for="freeSessionComment">Комментарий к тренировке</label><textarea id="freeSessionComment" maxlength="1000" placeholder="необязательно"></textarea></div>
+    <button id="confirmFreeFinish" type="button" style="margin-top:12px">Завершить тренировку</button>
+    <div id="freeFinishStatus" class="sync notice"></div>
+  </section>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  const SOURCE='RFORM_MOBILE';
+  let bootstrap=null,session=null,timerId=null,pickerSelection=null,setContext=null,busy=false;
+  const byId=id=>document.getElementById(id);
+  const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const uuid=()=>window.crypto&&crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0,v=c==='x'?r:(r&3|8);return v.toString(16)});
+  const errorText=e=>e&&e.message?e.message:String(e||'Неизвестная ошибка');
+
+  function server(method,arg){return new Promise((resolve,reject)=>{const runner=google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);arg===undefined?runner[method]():runner[method](arg)})}
+  function setBusy(next){busy=next;byId('freeTrainingSheet').classList.toggle('free-busy',next)}
+  function setStatus(text,isError){const el=byId('freeTrainingStatus');el.textContent=text||'';el.className='sync '+(isError?'error':'notice')}
+  function setSetStatus(text,isError){const el=byId('freeSetStatus');el.textContent=text||'';el.className='sync '+(isError?'error':'notice')}
+
+  async function boot(){
+    if(typeof google==='undefined'||!google.script||!google.script.run)return;
+    try{bootstrap=await server('getTrainingFreeClientBootstrap');attachLauncher();}
+    catch(e){console.warn('FREE bootstrap unavailable',e)}
+  }
+
+  function attachLauncher(){
+    if(byId('freeTrainingLauncher'))return;
+    const legacy=byId('trainingButton');if(!legacy)return;
+    const host=legacy.closest('article.card')||legacy.parentElement;
+    const wrap=document.createElement('div');wrap.className='free-launch-wrap';
+    const active=bootstrap&&bootstrap.activeSession&&bootstrap.activeSession.canEdit;
+    wrap.innerHTML=`<button id="freeTrainingLauncher" type="button" class="secondary">${active?'Продолжить свободную тренировку':'Свободная тренировка'}</button><div class="hint">Фиксация тренировки по факту без TRAINING_PLAN.</div>`;
+    host.appendChild(wrap);byId('freeTrainingLauncher').addEventListener('click',openFreeTraining);
+  }
+
+  async function refreshBootstrap(){bootstrap=await server('getTrainingFreeClientBootstrap');session=bootstrap.activeSession||session;const btn=byId('freeTrainingLauncher');if(btn)btn.textContent=bootstrap.activeSession&&bootstrap.activeSession.canEdit?'Продолжить свободную тренировку':'Свободная тренировка'}
+
+  async function openFreeTraining(){
+    if(busy)return;byId('freeTrainingSheet').hidden=false;setStatus('Загрузка…');setBusy(true);
+    try{
+      await refreshBootstrap();
+      if(bootstrap.activeSession&&bootstrap.activeSession.canEdit){session=bootstrap.activeSession;}
+      else{
+        const result=await server('startTrainingFreeSessionClient',{eventId:uuid(),date:bootstrap.date,source:SOURCE});session=result.state;
+      }
+      renderSession();setStatus('');startTimer();
+    }catch(e){setStatus(errorText(e),true)}finally{setBusy(false)}
+  }
+
+  function closeFreeTraining(){byId('freeTrainingSheet').hidden=true;stopTimer()}
+  function startTimer(){stopTimer();renderTimer();timerId=setInterval(renderTimer,1000)}
+  function stopTimer(){if(timerId){clearInterval(timerId);timerId=null}}
+  function renderTimer(){
+    if(!session||!session.startedAt){byId('freeTimer').textContent='00:00';return}
+    const start=new Date(session.startedAt).getTime();if(!Number.isFinite(start)){byId('freeTimer').textContent='--:--';return}
+    const sec=Math.max(0,Math.floor((Date.now()-start)/1000)),h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;
+    byId('freeTimer').textContent=h?`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`:`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  }
+
+  function renderSession(){
+    if(!session)return;
+    byId('freeTrainingMeta').textContent=`${session.date||''} · ${session.status||''}`;
+    byId('freeExerciseCount').textContent=(session.exercises||[]).length;
+    byId('freeWorkingCount').textContent=session.workingSetCount||0;
+    byId('freeWarmupCount').textContent=session.warmupSetCount||0;
+    const host=byId('freeExerciseList'),exercises=session.exercises||[];
+    if(!exercises.length){host.innerHTML='<div class="free-empty">Подходов пока нет. Добавьте упражнение и сохраните первый подход.</div>';return}
+    host.innerHTML=exercises.map((ex,index)=>exerciseHtml(ex,index,exercises.length)).join('');
+    host.querySelectorAll('[data-free-add]').forEach(btn=>btn.onclick=()=>openSetForExercise(findExercise(btn.dataset.freeAdd)));
+    host.querySelectorAll('[data-free-set]').forEach(row=>row.onclick=()=>{const parts=row.dataset.freeSet.split('|');const ex=findExercise(parts[0]);const set=ex&&ex.sets.find(s=>s.setId===parts[1]);if(ex&&set)openSetForExercise(ex,set)});
+    host.querySelectorAll('[data-free-comment]').forEach(btn=>btn.onclick=()=>editExerciseComment(findExercise(btn.dataset.freeComment)));
+    host.querySelectorAll('[data-free-up]').forEach(btn=>btn.onclick=()=>moveExercise(findExercise(btn.dataset.freeUp),-1));
+    host.querySelectorAll('[data-free-down]').forEach(btn=>btn.onclick=()=>moveExercise(findExercise(btn.dataset.freeDown),1));
+  }
+
+  function exerciseHtml(ex,index,total){
+    const rows=(ex.sets||[]).map(set=>`<div class="free-set-row" data-free-set="${esc(ex.exerciseInstanceId)}|${esc(set.setId)}"><span class="free-set-num">${set.setNumber}</span><span class="free-set-load">${esc(loadText(set))}</span><span>${set.reps} повт.</span><span class="free-set-rir">${set.rir==null?'RIR —':'RIR '+set.rir}</span><span class="free-set-kind">${set.setType==='WARMUP'?'Р':'РБ'}</span></div>`).join('');
+    return `<article class="free-exercise"><div class="free-exercise-head"><div><div class="free-exercise-title">${ex.exerciseOrder}. ${esc(ex.exerciseName)}</div><div class="free-exercise-meta">${esc(ex.exerciseCategory)} · ${(ex.sets||[]).length} подходов</div></div><div class="free-mini-actions"><button class="free-mini" data-free-up="${esc(ex.exerciseInstanceId)}" ${index===0?'disabled':''}>↑</button><button class="free-mini" data-free-down="${esc(ex.exerciseInstanceId)}" ${index===total-1?'disabled':''}>↓</button><button class="free-mini" data-free-comment="${esc(ex.exerciseInstanceId)}">Комментарий</button></div></div>${rows?`<div class="free-set-table">${rows}</div>`:''}${ex.exerciseComment?`<div class="free-exercise-comment">${esc(ex.exerciseComment)}</div>`:''}<button type="button" class="secondary free-add-set" data-free-add="${esc(ex.exerciseInstanceId)}">+ Подход</button></article>`
+  }
+
+  function findExercise(id){return (session&&session.exercises||[]).find(x=>x.exerciseInstanceId===id)||null}
+  function loadText(set){if(set.loadUnit==='BW')return 'BW';if(set.loadUnit==='BW_PLUS_KG')return `BW + ${fmt(set.loadValue)} кг`;if(set.loadUnit==='LEVEL')return `ур. ${fmt(set.loadValue)}`;return `${fmt(set.loadValue)} кг`}
+  function fmt(v){return v==null?'—':String(v).replace('.',',')}
+
+  function openPicker(){renderPicker();byId('freeExercisePicker').hidden=false;byId('freeExerciseSearch').value='';byId('freeExerciseSearch').focus()}
+  function closePicker(){byId('freeExercisePicker').hidden=true}
+  function renderPicker(query){
+    const q=String(query||'').trim().toLowerCase();
+    const known=(bootstrap&&bootstrap.knownExercises||[]).filter(x=>!q||`${x.name} ${x.category}`.toLowerCase().includes(q)).slice(0,80);
+    const recent=(bootstrap&&bootstrap.recentExercises||[]).slice(0,8);
+    byId('freeRecentExercises').innerHTML=recent.length?recent.map((x,i)=>`<button type="button" class="free-chip" data-free-recent="${i}">${esc(x.name)}</button>`).join(''):'<span class="hint">Пока нет</span>';
+    byId('freeKnownExercises').innerHTML=known.length?known.map((x,i)=>`<button type="button" class="free-picker-item" data-free-known="${i}">${esc(x.name)}<span class="free-picker-meta">${esc(x.category||'категория не задана')}</span></button>`).join(''):'<div class="hint">Ничего не найдено.</div>';
+    byId('freeRecentExercises').querySelectorAll('[data-free-recent]').forEach(btn=>btn.onclick=()=>selectExercise(recent[Number(btn.dataset.freeRecent)]));
+    byId('freeKnownExercises').querySelectorAll('[data-free-known]').forEach(btn=>btn.onclick=()=>selectExercise(known[Number(btn.dataset.freeKnown)]));
+  }
+
+  function selectExercise(item){
+    if(!item)return;pickerSelection={name:item.name,category:item.category||'',catalogId:item.catalogId||item.normalized||'',exerciseInstanceId:'',exerciseOrder:nextExerciseOrder()};
+    if(!pickerSelection.category){byId('freeCustomExerciseName').value=item.name;byId('freeCustomExerciseCategory').focus();return}
+    closePicker();openSetEditor(pickerSelection,null);
+  }
+  function nextExerciseOrder(){const ex=session&&session.exercises||[];return ex.length?Math.max.apply(null,ex.map(x=>Number(x.exerciseOrder)||0))+1:1}
+
+  function useCustomExercise(){
+    const name=byId('freeCustomExerciseName').value.trim(),category=byId('freeCustomExerciseCategory').value;
+    if(!name){alert('Укажите название упражнения.');return}
+    pickerSelection={name,category,catalogId:'',exerciseInstanceId:'',exerciseOrder:nextExerciseOrder()};closePicker();openSetEditor(pickerSelection,null);
+  }
+
+  function openSetForExercise(ex,set){if(!ex)return;openSetEditor({name:ex.exerciseName,category:ex.exerciseCategory,catalogId:ex.exerciseCatalogId||'',exerciseInstanceId:ex.exerciseInstanceId,exerciseOrder:ex.exerciseOrder},set||null)}
+  function openSetEditor(ex,set){
+    setContext={exercise:ex,set:set||null};byId('freeSetEditor').hidden=false;byId('freeSetExercise').textContent=ex.name;byId('freeSetTitle').textContent=set?'Изменить подход':'Новый подход';
+    const previous=!set&&ex.exerciseInstanceId?lastSet(findExercise(ex.exerciseInstanceId)):null;
+    byId('freeSetType').value=set?set.setType:'WORKING';byId('freeLoadUnit').value=set?set.loadUnit:(previous?previous.loadUnit:'KG');
+    byId('freeLoadValue').value=set&&set.loadValue!=null?set.loadValue:(previous&&previous.loadValue!=null?previous.loadValue:'');byId('freeReps').value=set?set.reps:(previous?previous.reps:'');
+    byId('freeRirValue').value=set&&set.rir!=null?set.rir:'';byId('freeSetComment').value=set?set.comment||'':'';byId('deleteFreeSet').hidden=!set;setSetStatus('');renderRirButtons();syncLoadUi();
+  }
+  function lastSet(ex){return ex&&ex.sets&&ex.sets.length?ex.sets[ex.sets.length-1]:null}
+  function closeSetEditor(){byId('freeSetEditor').hidden=true;setContext=null}
+  function renderRirButtons(){const current=String(byId('freeRirValue').value);byId('freeRirButtons').innerHTML=[0,1,2,3,4,5].map(v=>`<button type="button" class="free-rir ${current===String(v)?'active':''}" data-rir="${v}">${v}${v===5?'+':''}</button>`).join('');byId('freeRirButtons').querySelectorAll('[data-rir]').forEach(btn=>btn.onclick=()=>{byId('freeRirValue').value=btn.dataset.rir;renderRirButtons()})}
+  function syncLoadUi(){const unit=byId('freeLoadUnit').value,block=byId('freeLoadValueBlock');block.hidden=unit==='BW';byId('freeLoadLabel').textContent=unit==='LEVEL'?'Уровень':unit==='BW_PLUS_KG'?'Доп. вес, кг':'Вес, кг';if(unit==='BW')byId('freeLoadValue').value=''}
+
+  async function saveSet(event){
+    event.preventDefault();if(busy||!setContext)return;const ex=setContext.exercise,set=setContext.set,type=byId('freeSetType').value,unit=byId('freeLoadUnit').value,reps=Number(byId('freeReps').value),rir=byId('freeRirValue').value;
+    if(!Number.isInteger(reps)||reps<1){setSetStatus('Укажите количество повторов.',true);return}if(type==='WORKING'&&rir===''){setSetStatus('Для рабочего подхода укажите RIR.',true);return}
+    const payload={eventId:uuid(),sessionId:session.sessionId,source:SOURCE,setType:type,loadUnit:unit,loadValue:unit==='BW'?null:byId('freeLoadValue').value,reps,rir:rir===''?null:Number(rir),comment:byId('freeSetComment').value};
+    if(!set){Object.assign(payload,{exerciseInstanceId:ex.exerciseInstanceId||'',exerciseCatalogId:ex.catalogId||'',exerciseName:ex.name,exerciseCategory:ex.category,exerciseOrder:Number(ex.exerciseOrder),exerciseComment:''})}else payload.setId=set.setId;
+    setSetStatus('Сохранение…');byId('saveFreeSet').disabled=true;
+    try{const result=await server(set?'updateTrainingFreeSetClient':'createTrainingFreeSetClient',payload);session=result.state;closeSetEditor();renderSession();setStatus('Подход сохранён.');}
+    catch(e){setSetStatus(errorText(e),true)}finally{byId('saveFreeSet').disabled=false}
+  }
+
+  async function deleteSet(){if(!setContext||!setContext.set||busy)return;if(!confirm('Удалить этот подход?'))return;byId('deleteFreeSet').disabled=true;setSetStatus('Удаление…');try{const result=await server('deleteTrainingFreeSetClient',{eventId:uuid(),sessionId:session.sessionId,setId:setContext.set.setId,source:SOURCE});session=result.state;closeSetEditor();renderSession();setStatus('Подход удалён.')}catch(e){setSetStatus(errorText(e),true)}finally{byId('deleteFreeSet').disabled=false}}
+
+  async function editExerciseComment(ex){if(!ex||busy)return;const value=prompt('Комментарий тренера к упражнению:',ex.exerciseComment||'');if(value===null)return;try{setBusy(true);const result=await server('updateTrainingFreeExerciseClient',{eventId:uuid(),sessionId:session.sessionId,exerciseInstanceId:ex.exerciseInstanceId,exerciseOrder:ex.exerciseOrder,exerciseComment:value,source:SOURCE});session=result.state;renderSession();setStatus('Комментарий сохранён.')}catch(e){setStatus(errorText(e),true)}finally{setBusy(false)}}
+
+  async function moveExercise(ex,delta){
+    if(!ex||busy)return;const list=(session.exercises||[]).slice().sort((a,b)=>a.exerciseOrder-b.exerciseOrder),index=list.findIndex(x=>x.exerciseInstanceId===ex.exerciseInstanceId),other=list[index+delta];if(!other)return;
+    setBusy(true);setStatus('Изменение порядка…');
+    try{
+      await server('updateTrainingFreeExerciseClient',{eventId:uuid(),sessionId:session.sessionId,exerciseInstanceId:ex.exerciseInstanceId,exerciseOrder:other.exerciseOrder,exerciseComment:ex.exerciseComment||'',source:SOURCE});
+      const result=await server('updateTrainingFreeExerciseClient',{eventId:uuid(),sessionId:session.sessionId,exerciseInstanceId:other.exerciseInstanceId,exerciseOrder:ex.exerciseOrder,exerciseComment:other.exerciseComment||'',source:SOURCE});session=result.state;renderSession();setStatus('Порядок обновлён.');
+    }catch(e){setStatus(errorText(e),true)}finally{setBusy(false)}
+  }
+
+  function openFinish(){
+    if(!session||!session.setCount){setStatus('Нельзя завершить тренировку без сохранённых подходов.',true);return}
+    byId('freeFinishStats').textContent=`${(session.exercises||[]).length} упражнений · ${session.workingSetCount||0} рабочих · ${session.warmupSetCount||0} разминка`;
+    byId('freeFinishList').innerHTML=(session.exercises||[]).map(ex=>`<div class="free-finish-item"><span>${esc(ex.exerciseName)}</span><span class="free-finish-best">${esc(bestSetText(ex))}</span></div>`).join('');byId('freeSessionComment').value=session.comment||'';byId('freeFinishStatus').textContent='';byId('freeFinishSheet').hidden=false;
+  }
+  function closeFinish(){byId('freeFinishSheet').hidden=true}
+  function bestSetText(ex){const work=(ex.sets||[]).filter(s=>s.setType==='WORKING');if(!work.length)return 'только разминка';const best=work.slice().sort((a,b)=>numericLoad(b)-numericLoad(a)||b.reps-a.reps)[0];return `${loadText(best)} × ${best.reps} · RIR ${best.rir==null?'—':best.rir}`}
+  function numericLoad(set){return set.loadUnit==='BW'?0:Number(set.loadValue||0)}
+
+  async function finishSession(){
+    if(busy)return;byId('confirmFreeFinish').disabled=true;byId('freeFinishStatus').textContent='Закрытие…';
+    try{const result=await server('completeTrainingFreeSessionClient',{eventId:uuid(),sessionId:session.sessionId,source:SOURCE,comment:byId('freeSessionComment').value});session=result.state;stopTimer();closeFinish();renderSession();setStatus('Тренировка завершена.');byId('freeAddExercise').disabled=true;byId('freeFinish').disabled=true;await refreshBootstrap()}
+    catch(e){const el=byId('freeFinishStatus');el.textContent=errorText(e);el.className='sync error'}finally{byId('confirmFreeFinish').disabled=false}
+  }
+
+  function populateCategories(){const options=(bootstrap&&bootstrap.categories||[]).map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');byId('freeCustomExerciseCategory').innerHTML=options}
+
+  byId('closeFreeTraining').addEventListener('click',closeFreeTraining);byId('freeTrainingSheet').addEventListener('click',e=>{if(e.target===byId('freeTrainingSheet'))closeFreeTraining()});
+  byId('freeAddExercise').addEventListener('click',()=>{populateCategories();openPicker()});byId('freeFinish').addEventListener('click',openFinish);
+  byId('closeFreePicker').addEventListener('click',closePicker);byId('freeExercisePicker').addEventListener('click',e=>{if(e.target===byId('freeExercisePicker'))closePicker()});byId('freeExerciseSearch').addEventListener('input',e=>renderPicker(e.target.value));byId('freeUseCustomExercise').addEventListener('click',useCustomExercise);
+  byId('closeFreeSet').addEventListener('click',closeSetEditor);byId('freeSetEditor').addEventListener('click',e=>{if(e.target===byId('freeSetEditor'))closeSetEditor()});byId('freeSetForm').addEventListener('submit',saveSet);byId('deleteFreeSet').addEventListener('click',deleteSet);byId('freeLoadUnit').addEventListener('change',syncLoadUi);byId('freeSetType').addEventListener('change',()=>{if(byId('freeSetType').value==='WARMUP')byId('freeRirHint').textContent='Для разминки RIR можно оставить пустым.';else byId('freeRirHint').textContent='Для рабочего подхода RIR обязателен.'});byId('freeRirValue').addEventListener('input',renderRirButtons);
+  byId('closeFreeFinish').addEventListener('click',closeFinish);byId('freeFinishSheet').addEventListener('click',e=>{if(e.target===byId('freeFinishSheet'))closeFinish()});byId('confirmFreeFinish').addEventListener('click',finishSession);
+  document.addEventListener('DOMContentLoaded',boot);if(document.readyState!=='loading')setTimeout(boot,0);
+})();
+</script>
