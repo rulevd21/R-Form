@@ -66,6 +66,10 @@ function updateTrainingFreeExerciseClient(payload) {
   return trainingFreeClientSerialize_(updateTrainingFreeExercise(payload));
 }
 
+function swapTrainingFreeExercisesClient(payload) {
+  return trainingFreeClientSerialize_(swapTrainingFreeExercises(payload));
+}
+
 function completeTrainingFreeSessionClient(payload) {
   return trainingFreeClientSerialize_(completeTrainingFreeSession(payload));
 }
