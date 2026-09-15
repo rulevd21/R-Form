@@ -289,22 +289,45 @@ function trainingFreeCopyRowScaffold_(sheet,row) {
   source.copyTo(target,SpreadsheetApp.CopyPasteType.PASTE_FORMAT,false);
   source.copyTo(target,SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION,false);
 }
-function trainingFreeWriteAudit_(sheet,h,spec) {
-  const row=trainingFreeNextRow_(sheet);
+function trainingFreeWriteAudit_(sheet, h, spec) {
+  const row = trainingFreeNextRow_(sheet);
   try {
-    trainingFreeCopyRowScaffold_(sheet,row);
-    const now=new Date();
-    const values={Inbox_Event_ID:spec.inboxId,Received_At:now,Event_Date:spec.eventDate,Event_Type:spec.eventType,Raw_Message:spec.rawMessage||'',Parsed_Entity:spec.parsedEntity||'',Target_Sheet:spec.targetSheet,Target_Record_ID:spec.targetRecordId,Validation_Status:'VALID',Missing_Fields:'',Processing_Status:'APPLIED',Applied_At:now,Applied_By:'RFORM_MOBILE',Source_Chat:'RFORM_MOBILE',Version:RFORM_TRAINING_FREE_VERSION,Correction_Of:'',Duplicate_Flag:'',Note:spec.note||''};
-    Object.keys(values).forEach(k=>{if(h[k])sheet.getRange(row,h[k]).setValue(values[k]);});
-    if(h.Received_At)sheet.getRange(row,h.Received_At).setNumberFormat('dd.mm.yyyy hh:mm');
-    if(h.Event_Date)sheet.getRange(row,h.Event_Date).setNumberFormat('dd.mm.yyyy');
-    if(h.Applied_At)sheet.getRange(row,h.Applied_At).setNumberFormat('dd.mm.yyyy hh:mm');
+    trainingFreeCopyRowScaffold_(sheet, row);
+    const now = new Date();
+    const values = {
+      Inbox_Event_ID: spec.inboxId,
+      Received_At: now,
+      Event_Date: spec.eventDate,
+      Event_Type: spec.eventType,
+      Raw_Message: spec.rawMessage || '',
+      Parsed_Entity: spec.parsedEntity || '',
+      Target_Sheet: spec.targetSheet,
+      Target_Record_ID: spec.targetRecordId,
+      Validation_Status: 'VALID',
+      Missing_Fields: '',
+      Processing_Status: 'APPLIED',
+      Applied_At: now,
+      Applied_By: 'OWNER',
+      Source_Chat: 'RFORM_MOBILE',
+      Version: RFORM_TRAINING_FREE_VERSION,
+      Correction_Of: '',
+      Note: spec.note || ''
+    };
+    Object.keys(values).forEach(key => {
+      if (h[key]) sheet.getRange(row, h[key]).setValue(values[key]);
+    });
+    if (h.Duplicate_Flag) {
+      sheet.getRange(row, h.Duplicate_Flag).setFormula(`=IF(A${row}="";"";IF(COUNTIF($A$2:$A$5000;A${row})>1;"DUPLICATE";""))`);
+    }
+    if (h.Received_At) sheet.getRange(row, h.Received_At).setNumberFormat('dd.mm.yyyy hh:mm');
+    if (h.Event_Date) sheet.getRange(row, h.Event_Date).setNumberFormat('dd.mm.yyyy');
+    if (h.Applied_At) sheet.getRange(row, h.Applied_At).setNumberFormat('dd.mm.yyyy hh:mm');
     SpreadsheetApp.flush();
-    if (String(sheet.getRange(row,h.Inbox_Event_ID).getDisplayValue() || '') !== spec.inboxId) throw new Error('VERIFY_FAILED:INBOX_LOG:Inbox_Event_ID');
-    if (String(sheet.getRange(row,h.Duplicate_Flag).getDisplayValue() || '')) throw new Error('VERIFY_FAILED:INBOX_LOG:DUPLICATE');
+    if (String(sheet.getRange(row, h.Inbox_Event_ID).getDisplayValue() || '') !== spec.inboxId) throw new Error('VERIFY_FAILED:INBOX_LOG:Inbox_Event_ID');
+    if (String(sheet.getRange(row, h.Duplicate_Flag).getDisplayValue() || '')) throw new Error('VERIFY_FAILED:INBOX_LOG:DUPLICATE');
     return row;
   } catch (error) {
-    sheet.getRange(row,1,1,sheet.getLastColumn()).clearContent();
+    sheet.getRange(row, 1, 1, sheet.getLastColumn()).clearContent();
     SpreadsheetApp.flush();
     throw error;
   }
