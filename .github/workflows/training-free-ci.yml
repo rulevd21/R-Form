@@ -6,13 +6,17 @@ on:
       - feature/training-free-session-v0.1
     paths:
       - 'apps-script/TrainingFree*.gs'
+      - 'apps-script/TrainingFreeSession.html'
       - 'apps-script/TodayService.gs'
+      - 'apps-script/Code.gs'
       - 'docs/contracts/training-free-session-v0.1.md'
       - '.github/workflows/training-free-ci.yml'
   pull_request:
     paths:
       - 'apps-script/TrainingFree*.gs'
+      - 'apps-script/TrainingFreeSession.html'
       - 'apps-script/TodayService.gs'
+      - 'apps-script/Code.gs'
       - 'docs/contracts/training-free-session-v0.1.md'
       - '.github/workflows/training-free-ci.yml'
 
@@ -27,10 +31,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for f in apps-script/TrainingFree*.gs apps-script/TodayService.gs; do
+          for f in apps-script/TrainingFree*.gs apps-script/TodayService.gs apps-script/Code.gs; do
             echo "Checking $f"
             node --check < "$f"
           done
+      - name: FREE UI script syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          text = Path('apps-script/TrainingFreeSession.html').read_text(encoding='utf-8')
+          scripts = re.findall(r'<script>(.*?)</script>', text, flags=re.S|re.I)
+          if not scripts:
+              raise SystemExit('No script block found in TrainingFreeSession.html')
+          Path('/tmp/training-free-ui.js').write_text('\n'.join(scripts), encoding='utf-8')
+          PY
+          node --check /tmp/training-free-ui.js
       - name: Contract invariants
         shell: bash
         run: |
@@ -39,6 +57,9 @@ jobs:
           grep -q "const RFORM_TRAINING_FREE_MODE = 'FREE'" apps-script/TrainingFreeSessionService.gs
           grep -q "RFORM_TRAINING_FREE_SET_TYPES = Object.freeze(\['WARMUP','WORKING'\])" apps-script/TrainingFreeSetService.gs
           grep -q "mode === 'FREE'" apps-script/TodayService.gs
+          grep -q "getTrainingFreeClientBootstrap" apps-script/TrainingFreeClientService.gs
+          grep -q "runTrainingFreeWriterE2EAcceptance" apps-script/TrainingFreeE2E.gs
+          grep -q "HtmlService.createHtmlOutputFromFile('TrainingFreeSession')" apps-script/Code.gs
           grep -q "production Training Mobile v2.1 writer" docs/contracts/training-free-session-v0.1.md
       - name: Legacy writer isolation
         shell: bash
