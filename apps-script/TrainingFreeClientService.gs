@@ -63,6 +63,22 @@ function deleteTrainingFreeSetClient(payload) {
 }
 
 function updateTrainingFreeExerciseClient(payload) {
+  if (!payload || typeof payload !== 'object') throw new Error('VALIDATION:PAYLOAD_REQUIRED');
+  const state = getTrainingFreeSessionState(payload.sessionId);
+  const targetOrder = Number(payload.exerciseOrder);
+  const currentId = String(payload.exerciseInstanceId || '').trim();
+  const collision = (state.exercises || []).find(ex =>
+    ex.exerciseInstanceId !== currentId && Number(ex.exerciseOrder) === targetOrder
+  );
+  if (collision) {
+    return trainingFreeClientSerialize_(swapTrainingFreeExercises({
+      eventId: payload.eventId,
+      sessionId: payload.sessionId,
+      source: payload.source,
+      firstExerciseInstanceId: currentId,
+      secondExerciseInstanceId: collision.exerciseInstanceId
+    }));
+  }
   return trainingFreeClientSerialize_(updateTrainingFreeExercise(payload));
 }
 
