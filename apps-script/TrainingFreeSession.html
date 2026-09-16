@@ -87,9 +87,22 @@
   function setSetStatus(text,isError){const el=byId('freeSetStatus');el.textContent=text||'';el.className='sync '+(isError?'error':'notice')}
 
   async function boot(){
-    if(typeof google==='undefined'||!google.script||!google.script.run)return;
-    try{bootstrap=await server('getTrainingFreeClientBootstrap');attachLauncher();}
-    catch(e){console.warn('FREE bootstrap unavailable',e)}
+    attachLauncher();
+    if(typeof google==='undefined'||!google.script||!google.script.run){
+      console.warn('FREE google.script.run unavailable');
+      return;
+    }
+    try{
+      bootstrap=await server('getTrainingFreeClientBootstrap');
+      const btn=byId('freeTrainingLauncher');
+      if(btn){
+        btn.textContent=bootstrap&&bootstrap.activeSession&&bootstrap.activeSession.canEdit
+          ? 'Продолжить свободную тренировку'
+          : 'Свободная тренировка';
+      }
+    }catch(e){
+      console.warn('FREE bootstrap unavailable',e);
+    }
   }
 
   function attachLauncher(){
@@ -204,11 +217,23 @@
   async function editExerciseComment(ex){if(!ex||busy)return;const value=prompt('Комментарий тренера к упражнению:',ex.exerciseComment||'');if(value===null)return;try{setBusy(true);const result=await server('updateTrainingFreeExerciseClient',{eventId:uuid(),sessionId:session.sessionId,exerciseInstanceId:ex.exerciseInstanceId,exerciseOrder:ex.exerciseOrder,exerciseComment:value,source:SOURCE});session=result.state;renderSession();setStatus('Комментарий сохранён.')}catch(e){setStatus(errorText(e),true)}finally{setBusy(false)}}
 
   async function moveExercise(ex,delta){
-    if(!ex||busy)return;const list=(session.exercises||[]).slice().sort((a,b)=>a.exerciseOrder-b.exerciseOrder),index=list.findIndex(x=>x.exerciseInstanceId===ex.exerciseInstanceId),other=list[index+delta];if(!other)return;
+    if(!ex||busy)return;
+    const list=(session.exercises||[]).slice().sort((a,b)=>a.exerciseOrder-b.exerciseOrder);
+    const index=list.findIndex(x=>x.exerciseInstanceId===ex.exerciseInstanceId);
+    const other=list[index+delta];
+    if(!other)return;
     setBusy(true);setStatus('Изменение порядка…');
     try{
-      await server('updateTrainingFreeExerciseClient',{eventId:uuid(),sessionId:session.sessionId,exerciseInstanceId:ex.exerciseInstanceId,exerciseOrder:other.exerciseOrder,exerciseComment:ex.exerciseComment||'',source:SOURCE});
-      const result=await server('updateTrainingFreeExerciseClient',{eventId:uuid(),sessionId:session.sessionId,exerciseInstanceId:other.exerciseInstanceId,exerciseOrder:ex.exerciseOrder,exerciseComment:other.exerciseComment||'',source:SOURCE});session=result.state;renderSession();setStatus('Порядок обновлён.');
+      const result=await server('swapTrainingFreeExercisesClient',{
+        eventId:uuid(),
+        sessionId:session.sessionId,
+        source:SOURCE,
+        firstExerciseInstanceId:ex.exerciseInstanceId,
+        secondExerciseInstanceId:other.exerciseInstanceId
+      });
+      session=result.state;
+      renderSession();
+      setStatus('Порядок обновлён.');
     }catch(e){setStatus(errorText(e),true)}finally{setBusy(false)}
   }
 
