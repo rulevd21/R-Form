@@ -63,6 +63,22 @@ jobs:
           grep -q "attachLauncher();" apps-script/TrainingFreeSession.html
           grep -q "swapTrainingFreeExercisesClient" apps-script/TrainingFreeSession.html
           grep -q "production Training Mobile v2.1 writer" docs/contracts/training-free-session-v0.1.md
+      - name: RC source layout invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "function getConfig_" apps-script/Config.gs
+          grep -q "function getMasterSpreadsheet_" apps-script/Config.gs
+          grep -q "function getDayStateByDate_" apps-script/TodayService.gs
+          grep -q "function getTrainingStateByDate_" apps-script/TodayService.gs
+          for symbol in getConfig_ getMasterSpreadsheet_ getDayStateByDate_ getTrainingStateByDate_; do
+            if grep -q "function ${symbol}" apps-script/Code.gs; then
+              echo "Code.gs must not duplicate ${symbol}; keep service/config ownership isolated."
+              exit 1
+            fi
+          done
+          grep -q "R/Form Training — Sandbox" apps-script/Code.gs
+          grep -q "RFORM_MASTER_DATA_SANDBOX_" apps-script/Config.gs
       - name: Legacy writer isolation
         shell: bash
         run: |
