@@ -1,0 +1,89 @@
+name: Training FREE foundation checks
+
+on:
+  push:
+    branches:
+      - feature/training-free-session-v0.1
+    paths:
+      - 'apps-script/TrainingFree*.gs'
+      - 'apps-script/TrainingFreeSession.html'
+      - 'apps-script/RFormTrainingThemeV22.html'
+      - 'apps-script/Code.gs'
+      - 'apps-script/TodayService.gs'
+      - 'docs/contracts/training-free-session-v0.1.md'
+      - '.github/workflows/training-free-ci.yml'
+  pull_request:
+    paths:
+      - 'apps-script/TrainingFree*.gs'
+      - 'apps-script/TrainingFreeSession.html'
+      - 'apps-script/RFormTrainingThemeV22.html'
+      - 'apps-script/Code.gs'
+      - 'apps-script/TodayService.gs'
+      - 'docs/contracts/training-free-session-v0.1.md'
+      - '.github/workflows/training-free-ci.yml'
+
+jobs:
+  syntax-and-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in apps-script/TrainingFree*.gs apps-script/TodayService.gs apps-script/Code.gs; do
+            echo "Checking $f"
+            node --check < "$f"
+          done
+      - name: FREE UI script syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -n '/<script>/,/<\/script>/p' apps-script/TrainingFreeSession.html | sed '1d;$d' > /tmp/free-ui.js
+          node --check /tmp/free-ui.js
+      - name: Training visual theme script syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -n '/<script>/,/<\/script>/p' apps-script/RFormTrainingThemeV22.html | sed '1d;$d' > /tmp/free-theme.js
+          node --check /tmp/free-theme.js
+      - name: Contract invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "const RFORM_TRAINING_FREE_OPEN_STATUS = 'DRAFT'" apps-script/TrainingFreeSessionService.gs
+          grep -q "const RFORM_TRAINING_FREE_MODE = 'FREE'" apps-script/TrainingFreeSessionService.gs
+          grep -q "RFORM_TRAINING_FREE_SET_TYPES = Object.freeze(\['WARMUP','WORKING'\])" apps-script/TrainingFreeSetService.gs
+          grep -q "mode === 'FREE'" apps-script/TodayService.gs
+          grep -q "Applied_By: 'OWNER'" apps-script/TrainingFreeSessionService.gs
+          grep -q "Source_Chat: 'RFORM_MOBILE'" apps-script/TrainingFreeSessionService.gs
+          grep -q "RFormTrainingThemeV22" apps-script/Code.gs
+          grep -q "attachLauncher();" apps-script/TrainingFreeSession.html
+          grep -q "swapTrainingFreeExercisesClient" apps-script/TrainingFreeSession.html
+          grep -q "production Training Mobile v2.1 writer" docs/contracts/training-free-session-v0.1.md
+      - name: RC source layout invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q "function getConfig_" apps-script/Config.gs
+          grep -q "function getMasterSpreadsheet_" apps-script/Config.gs
+          grep -q "function getDayStateByDate_" apps-script/TodayService.gs
+          grep -q "function getTrainingStateByDate_" apps-script/TodayService.gs
+          for symbol in getConfig_ getMasterSpreadsheet_ getDayStateByDate_ getTrainingStateByDate_; do
+            if grep -q "function ${symbol}" apps-script/Code.gs; then
+              echo "Code.gs must not duplicate ${symbol}; keep service/config ownership isolated."
+              exit 1
+            fi
+          done
+          grep -q "R/Form Training — Sandbox" apps-script/Code.gs
+          grep -q "RFORM_MASTER_DATA_SANDBOX_" apps-script/Config.gs
+      - name: Legacy writer isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code origin/release/training-exercise-changes-v0.1-rc1...HEAD -- apps-script/TrainingAdapterLegacyV21.gs || {
+            echo 'Legacy TrainingAdapterLegacyV21.gs changed unexpectedly.'
+            exit 1
+          }

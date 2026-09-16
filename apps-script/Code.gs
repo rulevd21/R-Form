@@ -3,12 +3,23 @@
 function doGet() {
   const base = HtmlService.createHtmlOutputFromFile('Index').getContent();
   const trainingControls = HtmlService.createHtmlOutputFromFile('TrainingExerciseControls').getContent();
+  const freeTraining = HtmlService.createHtmlOutputFromFile('TrainingFreeSession').getContent();
+
+  // Visual layer only. If it is missing, keep the sandbox operational.
+  let trainingTheme = '';
+  try {
+    trainingTheme = HtmlService.createHtmlOutputFromFile('RFormTrainingThemeV22').getContent();
+  } catch (error) {
+    console.warn('RFormTrainingThemeV22 unavailable: ' + (error && error.message ? error.message : error));
+  }
+
+  const injected = `${trainingControls}\n${freeTraining}\n${trainingTheme}`;
   const html = base.indexOf('</body>') >= 0
-    ? base.replace('</body>', `${trainingControls}\n</body>`)
-    : `${base}\n${trainingControls}`;
+    ? base.replace('</body>', `${injected}\n</body>`)
+    : `${base}\n${injected}`;
 
   return HtmlService.createHtmlOutput(html)
-    .setTitle('R/Form Mobile — Sandbox');
+    .setTitle('R/Form Training — Sandbox');
 }
 
 function getAppBootstrap() {
@@ -39,6 +50,7 @@ function buildAppBootstrap_(config) {
       nutrition: false,
       trainingLegacy: true,
       trainingStructuredChanges: true,
+      trainingFree: true,
       measurements: false,
       dayClose: false
     }
