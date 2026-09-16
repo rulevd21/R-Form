@@ -6,12 +6,18 @@ on:
       - feature/training-free-session-v0.1
     paths:
       - 'apps-script/TrainingFree*.gs'
+      - 'apps-script/TrainingFreeSession.html'
+      - 'apps-script/RFormTrainingThemeV22.html'
+      - 'apps-script/Code.gs'
       - 'apps-script/TodayService.gs'
       - 'docs/contracts/training-free-session-v0.1.md'
       - '.github/workflows/training-free-ci.yml'
   pull_request:
     paths:
       - 'apps-script/TrainingFree*.gs'
+      - 'apps-script/TrainingFreeSession.html'
+      - 'apps-script/RFormTrainingThemeV22.html'
+      - 'apps-script/Code.gs'
       - 'apps-script/TodayService.gs'
       - 'docs/contracts/training-free-session-v0.1.md'
       - '.github/workflows/training-free-ci.yml'
@@ -27,7 +33,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for f in apps-script/TrainingFree*.gs apps-script/TodayService.gs; do
+          for f in apps-script/TrainingFree*.gs apps-script/TodayService.gs apps-script/Code.gs; do
             echo "Checking $f"
             node --check < "$f"
           done
@@ -37,6 +43,12 @@ jobs:
           set -euo pipefail
           sed -n '/<script>/,/<\/script>/p' apps-script/TrainingFreeSession.html | sed '1d;$d' > /tmp/free-ui.js
           node --check /tmp/free-ui.js
+      - name: Training visual theme script syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -n '/<script>/,/<\/script>/p' apps-script/RFormTrainingThemeV22.html | sed '1d;$d' > /tmp/free-theme.js
+          node --check /tmp/free-theme.js
       - name: Contract invariants
         shell: bash
         run: |
@@ -47,6 +59,9 @@ jobs:
           grep -q "mode === 'FREE'" apps-script/TodayService.gs
           grep -q "Applied_By: 'OWNER'" apps-script/TrainingFreeSessionService.gs
           grep -q "Source_Chat: 'RFORM_MOBILE'" apps-script/TrainingFreeSessionService.gs
+          grep -q "RFormTrainingThemeV22" apps-script/Code.gs
+          grep -q "attachLauncher();" apps-script/TrainingFreeSession.html
+          grep -q "swapTrainingFreeExercisesClient" apps-script/TrainingFreeSession.html
           grep -q "production Training Mobile v2.1 writer" docs/contracts/training-free-session-v0.1.md
       - name: Legacy writer isolation
         shell: bash
