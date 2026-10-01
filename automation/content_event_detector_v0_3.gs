@@ -54,18 +54,19 @@ function rformContentEventDetectorWriteV03() {
   const existing = rformContentV03ExistingRows_(sheet, h);
   const now = new Date();
   const activeIds = {};
-  let inserted = 0, updated = 0, filtered = 0;
+  let inserted = 0, updated = 0, unchanged = 0, filtered = 0, filteredUnchanged = 0;
 
   preview.events.forEach(e => {
     activeIds[e.eventId] = true;
-    const row = existing[e.eventId];
-    if (row) {
-      rformContentV03WriteRow_(sheet, row, h, e, now, false);
-      updated++;
+    const record = existing[e.eventId];
+    if (record) {
+      const changed = rformContentV03WriteRow_(sheet, record.rowNumber, h, e, now, false, record.values);
+      if (changed) updated++;
+      else unchanged++;
     } else {
       const target = Math.max(sheet.getLastRow() + 1, 2);
-      rformContentV03WriteRow_(sheet, target, h, e, now, true);
-      existing[e.eventId] = target;
+      rformContentV03WriteRow_(sheet, target, h, e, now, true, null);
+      existing[e.eventId] = {rowNumber:target, values:null};
       inserted++;
     }
   });
@@ -75,11 +76,22 @@ function rformContentEventDetectorWriteV03() {
   Object.keys(existing).forEach(id => {
     if (!/^EVT-\d{8}-(SESSION|DECISION)-/.test(id)) return;
     if (activeIds[id]) return;
-    const row = existing[id];
-    if (h.Status !== undefined) sheet.getRange(row, h.Status + 1).setValue('FILTERED_OUT_V03');
-    if (h.Manual_Gate !== undefined) sheet.getRange(row, h.Manual_Gate + 1).setValue('NO');
-    if (h.Owner_Action !== undefined) sheet.getRange(row, h.Owner_Action + 1).setValue('NONE · filtered by v0.3 active-window/source gates');
-    if (h.Updated_At !== undefined) sheet.getRange(row, h.Updated_At + 1).setValue(now);
+    const record = existing[id];
+    const desired = {
+      Status:'FILTERED_OUT_V03',
+      Manual_Gate:'NO',
+      Owner_Action:'NONE · filtered by v0.3 active-window/source gates'
+    };
+    const changedKeys = Object.keys(desired).filter(k =>
+      h[k] !== undefined &&
+      !rformContentV03ValueEqual_(record.values && record.values[h[k]], desired[k])
+    );
+    if (!changedKeys.length) {
+      filteredUnchanged++;
+      return;
+    }
+    changedKeys.forEach(k => sheet.getRange(record.rowNumber, h[k] + 1).setValue(desired[k]));
+    if (h.Updated_At !== undefined) sheet.getRange(record.rowNumber, h.Updated_At + 1).setValue(now);
     filtered++;
   });
 
@@ -89,9 +101,11 @@ function rformContentEventDetectorWriteV03() {
     mode:'DATA_EVENTS_ONLY',
     inserted,
     updated,
+    unchanged,
     filtered,
+    filteredUnchanged,
     totalDetected:preview.events.length,
-    note:'Only DATA_EVENTS changed. CONTENT_QUEUE and Telegram were not changed.'
+    note:'Only DATA_EVENTS changed. Updated_At changes only when event fields change. CONTENT_QUEUE and Telegram were not changed.'
   };
 }
 
@@ -299,23 +313,49 @@ function rformContentV03Finalize_(e) {
   return e;
 }
 
-function rformContentV03WriteRow_(sheet,rowNumber,h,e,now,isNew) {
+function rformContentV03WriteRow_(sheet,rowNumber,h,e,now,isNew,currentRow) {
   const values = {
     Event_ID:e.eventId, Date:e.date, Entity:e.entity, Event_Type:e.eventType, Source:e.source, Fact:e.fact,
     Relevance_0_10:e.relevance, Novelty_0_10:e.novelty, Education_0_10:e.education, Emotion_0_10:e.emotion,
     Proof_0_10:e.proof, Narrative_0_10:e.narrative, Audience_0_10:e.audience, Content_Value_Score:e.contentValueScore,
     Editorial_Trigger:e.trigger, Manual_Gate:e.manualGate, Candidate_Content_ID:e.candidateContentId || '', Status:e.status,
-    Recommended_Angle_1:e.angle1 || '', Recommended_Angle_2:e.angle2 || '', Recommended_Angle_3:e.angle3 || '', Owner_Action:e.ownerAction || '', Updated_At:now
+    Recommended_Angle_1:e.angle1 || '', Recommended_Angle_2:e.angle2 || '', Recommended_Angle_3:e.angle3 || '', Owner_Action:e.ownerAction || ''
   };
-  if (isNew) values.Created_At = now;
-  Object.keys(values).forEach(k => { if (h[k] !== undefined) sheet.getRange(rowNumber,h[k]+1).setValue(values[k]); });
+
+  if (isNew) {
+    values.Created_At = now;
+    values.Updated_At = now;
+    Object.keys(values).forEach(k => {
+      if (h[k] !== undefined) sheet.getRange(rowNumber,h[k]+1).setValue(values[k]);
+    });
+    return true;
+  }
+
+  const changedKeys = Object.keys(values).filter(k =>
+    h[k] !== undefined &&
+    !rformContentV03ValueEqual_(currentRow && currentRow[h[k]], values[k])
+  );
+  if (!changedKeys.length) return false;
+
+  changedKeys.forEach(k => sheet.getRange(rowNumber,h[k]+1).setValue(values[k]));
+  if (h.Updated_At !== undefined) sheet.getRange(rowNumber,h.Updated_At+1).setValue(now);
+  return true;
+}
+
+function rformContentV03ValueEqual_(left,right) {
+  const a = left === null || left === undefined ? '' : String(left).trim();
+  const b = right === null || right === undefined ? '' : String(right).trim();
+  return a === b;
 }
 
 function rformContentV03ExistingRows_(sheet,h) {
   const out = {};
   if (sheet.getLastRow() < 2) return out;
   const values = sheet.getRange(2,1,sheet.getLastRow()-1,sheet.getLastColumn()).getDisplayValues();
-  values.forEach((row,i) => { const id = row[h.Event_ID]; if (id) out[id] = i+2; });
+  values.forEach((row,i) => {
+    const id = row[h.Event_ID];
+    if (id) out[id] = {rowNumber:i+2, values:row};
+  });
   return out;
 }
 
