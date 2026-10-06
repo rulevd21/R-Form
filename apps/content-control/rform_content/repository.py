@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import secrets
 import time
 from dataclasses import dataclass
@@ -993,3 +994,37 @@ def diagnostics(bundle: DataBundle) -> dict[str, Any]:
         "event_rows": len(bundle.events),
         "session_rows": len(bundle.sessions),
     }
+
+
+
+OWNER_PREVIEW_FIELDS = (
+    "Content_ID", "Current_Stage", "Pipeline_Status", "Source_Packet_Status",
+    "Public_Data_Allowed", "Text_Status", "Visual_Status", "Approval_Status",
+    "Publication_Status", "AutoPost_Allowed", "Publish_At", "Duplicate_Flag",
+    "Blocking_Issue", "Publish_Error", "Telegram_Text", "Telegram_Post_Mode",
+    "Telegram_Visual_URL", "Telegram_Message_ID", "Telegram_Post_URL", "Posted_At",
+    "Preview_Review_Status", "Preview_Review_Hash", "Preview_Reviewed_At",
+    "Preview_Reviewed_By", "Updated_At",
+)
+
+def owner_preview_source_hash(row) -> str:
+    missing = [field for field in OWNER_PREVIEW_FIELDS if field not in row]
+    if missing:
+        raise ValueError("Для подготовки предпросмотра не хватает полей: " + ", ".join(missing))
+    values = [str(row[field] if not pd.isna(row[field]) else "").strip() for field in OWNER_PREVIEW_FIELDS]
+    return _sha256_text(json.dumps(values, ensure_ascii=False, separators=(",", ":")))
+
+def build_owner_preview_prepare_request(secret: str, row, *, timestamp=None, nonce=None, action_id=None):
+    content_id = str(row.get("Content_ID", "")).strip()
+    if not content_id:
+        raise ValueError("content_id is required")
+    source_hash = owner_preview_source_hash(row)
+    ts, request_nonce, aid = _request_identity(timestamp=timestamp, nonce=nonce, action_id=action_id)
+    operation = "queue_owner_preview_prepare"
+    return {"timestamp": ts, "nonce": request_nonce, "action_id": aid,
+            "operation": operation, "content_id": content_id, "source_hash": source_hash,
+            "signature": _sign_message(secret, [str(ts), request_nonce, operation, aid, content_id, source_hash])}
+
+def execute_owner_preview_prepare(endpoint_url: str, secret: str, row, *, action_id=None, timeout_seconds=20):
+    request = build_owner_preview_prepare_request(secret, row, action_id=action_id)
+    return _post_signed(endpoint_url, request, timeout_seconds, "подготовку предпросмотра владельца")

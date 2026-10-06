@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from datetime import datetime
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -16,6 +17,17 @@ APP_ROOT = Path(__file__).resolve().parents[1]
 
 
 class AppSmokeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # The fixtures describe a fixed August plan; wall-clock drift must not
+        # silently move every future row into the stale bucket.
+        class FixtureClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2026, 8, 20, 12, tzinfo=tz)
+        clock = patch('rform_content.material_plan.datetime', FixtureClock)
+        clock.start()
+        self.addCleanup(clock.stop)
+
     def test_fixture_dashboard_renders_without_exception(self) -> None:
         app = AppTest.from_file(str(APP_ROOT / "app.py"), default_timeout=30).run()
         self.assertEqual(list(app.exception), [])
