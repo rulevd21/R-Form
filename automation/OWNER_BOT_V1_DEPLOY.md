@@ -1,4 +1,33 @@
-# R/Form Owner Bot v1.0.3 · P0 Owner Inbox
+# R/Form Owner Bot v1.0.4 · P0 Owner Inbox
+
+## Текущая установленная версия: v1.0.4
+
+Установлена по точному разрешению владельца 06.10.2026. Код.gs прочитан обратно: SHA-256 `b682fa77fa082d3a25d4b0855d3820c448bf91111ea29b3b0a0053ccc20d1137`. Существующее WebApp обновлено с deployment version 3 до 4 в 18:16 (Москва); ID, URL, execute-as и доступ сохранены. /exec показал R/Form Owner Bot v1.0.4 в 18:17:08.
+
+Транспорт: ровно один подписанный POST с followRedirects=false, затем максимум один GET только на https://script.googleusercontent.com/macros/echo? для получения ContentService-ответа. POST не повторяется; GET не содержит payload/подпись. Другие и повторные redirect отклоняются.
+
+Native SelfTest PASS 18:15:41. Native Preflight PASS 18:18:15–18:18:36: version=1.0.4, contentApiVersion=0.5.4, queueRows=31, ownerFinalPreviewRows=0, ownerPaired=true, pollTriggerCount=1, botEnabled=YES, actionsEnabled=YES, webhookConfigured=true, webhookPendingUpdates=0, webhookLastErrorMessage/date пустые, channelPublishingCallsPresent=false.
+
+Автоматический Poll (HEAD) 18:16:51 завершился за 20.959 с. Cloud-журнал недоступен после обновления; поэтому автоматический запуск подтверждён, но независимая проверка его внутреннего READ по журналу остаётся PENDING. Native completed не считается самостоятельным функциональным PASS, поскольку Poll перехватывает ошибки. Исправленный READ отдельно подтверждён Preflight. При 0 ready rows отправка нового preview не проверена.
+
+19 offline tests PASS: `node automation/tests/owner_bot_v1_callback.test.cjs` (11), `node automation/tests/owner_bot_v1_transport.test.cjs` (8).
+
+### Callback error contract
+
+Сохранены callback hardening v1.0.3 и runtime v1.0.1 (HtmlService webhook response, max_connections=1, webhook diagnostics). Валидный callback владельца при исключении независимо пытается записать BOT_CALLBACK_ERROR / OUTCOME_UNKNOWN и отправить безопасное уведомление. После handoff запрос мог уже примениться; автоматического APPROVE/HOLD retry нет.
+
+Native controlled callback probe v1.0.3 в 18:05:17–18:05:19 подтвердил noticeSent=true, auditReadback=true, realContentActions=0. Это handler → audit/Telegram из редактора; полный входящий webhook E2E остаётся PENDING для текущего релиза. Историческая P0 acceptance не заменяет эту проверку.
+
+### Обновление и откат
+
+Install/Enable/SetWebhook, pairing, секреты и существующие триггеры не менялись. Диагностический файл в проекте сохранён неизменным; его probes имеют guard v1.0.3 и не запускались после обновления.
+
+Для отката v1.0.4 восстановить baseline HEAD v1.0.3 SHA-256 `5ec48501dc86f7ff70ae7436910f0596e1472dd28ce412b7bb191fdafc0b319a` и прежнюю WebApp version 3 на том же deployment. Один откат WebApp не меняет clock-trigger на HEAD. Disable/DeleteWebhook — аварийная остановка, не откат исходника.
+
+PR #6 остаётся draft/unmerged против существующей base agent/content-control-streamlit-readonly. В текущем main Owner Bot отсутствует. Production URLs и секреты в Git не добавляются.
+
+## История установки v1.0.3 (до обновления)
+
 
 ## Текущая установленная версия: v1.0.3
 
@@ -81,7 +110,7 @@ Bot Token не публиковать, не сохранять в Google Sheets 
 ```json
 {
   "ok": true,
-  "version": "1.0.3",
+  "version": "1.0.4",
   "readyFilter": "PASS",
   "previewFingerprint": "PASS",
   "constantTimeCompare": "PASS"

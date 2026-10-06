@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const source = fs.readFileSync(path.join(__dirname,'..','owner_bot_v1.gs'),'utf8');
+const source = fs.readFileSync(path.join(__dirname,'../owner_bot_v1.gs'),'utf8');
 const previewId = 'a'.repeat(32);
 function setup({failRead=false, failApprove=false, failHold=false, failNotify=false, failAudit=false, stale=false, enabled=true}={}) {
   const calls=[];

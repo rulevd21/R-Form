@@ -1,4 +1,4 @@
-// R/Form Owner Bot v1.0.3 · P0 Owner Inbox
+// R/Form Owner Bot v1.0.4 · P0 Owner Inbox
 // Standalone Google Apps Script project.
 // Purpose: private Telegram owner interface for OWNER_FINAL_PREVIEW materials.
 // Read/write contract:
@@ -24,7 +24,7 @@
 //   RFORM_OWNER_TELEGRAM_CHAT_ID
 
 const RFORM_OWNER_BOT_V1 = Object.freeze({
-  version: '1.0.3',
+  version: '1.0.4',
   spreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
   actionLogSheet: 'CONTENT_ACTION_LOG',
   pollMinutes: 5,
@@ -936,10 +936,27 @@ function rformOwnerBotV1ApiPost_(request) {
     contentType: 'application/json',
     payload: JSON.stringify(request),
     muteHttpExceptions: true,
-    followRedirects: true
+    followRedirects: false
   });
-  const status = response.getResponseCode();
-  const body = response.getContentText();
+  // Retrieve the ContentService result, never replay the signed action POST.
+  let resultResponse = response;
+  if (response.getResponseCode() === 302) {
+    const headers = response.getAllHeaders();
+    const locationKey = Object.keys(headers).find(function (name) {
+      return name.toLowerCase() === 'location';
+    });
+    const location = locationKey ? String(headers[locationKey]) : '';
+    if (!/^https:\/\/script\.googleusercontent\.com\/macros\/echo\?/.test(location)) {
+      throw new Error('Content Control API returned an unsupported response redirect.');
+    }
+    resultResponse = UrlFetchApp.fetch(location, {
+      method: 'get',
+      muteHttpExceptions: true,
+      followRedirects: false
+    });
+  }
+  const status = resultResponse.getResponseCode();
+  const body = resultResponse.getContentText();
   let parsed;
   try {
     parsed = JSON.parse(body);
@@ -1147,3 +1164,4 @@ function rformOwnerBotV1ConstantTimeEqual_(left, right) {
   }
   return diff === 0;
 }
+
