@@ -1,4 +1,4 @@
-// R/Form Owner Bot v1.0.0 · P0 Owner Inbox
+// R/Form Owner Bot v1.0.3 · P0 Owner Inbox
 // Standalone Google Apps Script project.
 // Purpose: private Telegram owner interface for OWNER_FINAL_PREVIEW materials.
 // Read/write contract:
@@ -24,7 +24,7 @@
 //   RFORM_OWNER_TELEGRAM_CHAT_ID
 
 const RFORM_OWNER_BOT_V1 = Object.freeze({
-  version: '1.0.0',
+  version: '1.0.3',
   spreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
   actionLogSheet: 'CONTENT_ACTION_LOG',
   pollMinutes: 5,
@@ -182,6 +182,13 @@ function rformOwnerBotV1Preflight() {
     webhookPendingUpdates: webhook && webhook.pending_update_count !== undefined
       ? webhook.pending_update_count
       : null,
+    webhookLastErrorMessage: webhook && webhook.last_error_message
+      ? String(webhook.last_error_message)
+      : '',
+    webhookLastErrorDate: webhook && webhook.last_error_date
+      ? new Date(Number(webhook.last_error_date) * 1000).toISOString()
+      : '',
+    webhookIpAddress: webhook && webhook.ip_address ? String(webhook.ip_address) : '',
     channelPublishingCallsPresent: false,
     note: 'Owner Bot only approves/holds prepared materials. Telegram channel publishing remains in telegram_autopost.'
   };
@@ -334,7 +341,8 @@ function rformOwnerBotV1SetWebhook_() {
   const result = rformOwnerBotV1Telegram_(token, 'setWebhook', {
     url: webhookUrl,
     allowed_updates: JSON.stringify(['message', 'callback_query']),
-    drop_pending_updates: true
+    drop_pending_updates: true,
+    max_connections: 1
   });
   return {ok: !!result, urlConfigured: true};
 }
@@ -345,10 +353,14 @@ function rformOwnerBotV1DeleteWebhook() {
   return rformOwnerBotV1Telegram_(token, 'deleteWebhook', {drop_pending_updates: true});
 }
 
+function rformOwnerBotV1WebResponse_(text) {
+  return HtmlService.createHtmlOutput(String(text || 'OK'));
+}
+
 function doGet() {
-  return ContentService
-    .createTextOutput('R/Form Owner Bot v' + RFORM_OWNER_BOT_V1.version)
-    .setMimeType(ContentService.MimeType.TEXT);
+  return rformOwnerBotV1WebResponse_(
+    'R/Form Owner Bot v' + RFORM_OWNER_BOT_V1.version
+  );
 }
 
 function doPost(e) {
@@ -356,9 +368,7 @@ function doPost(e) {
     return rformOwnerBotV1Webhook_(e);
   } catch (error) {
     console.error(error && error.stack ? error.stack : String(error));
-    return ContentService
-      .createTextOutput('OK')
-      .setMimeType(ContentService.MimeType.TEXT);
+    return rformOwnerBotV1WebResponse_('OK');
   }
 }
 
@@ -368,18 +378,18 @@ function rformOwnerBotV1Webhook_(e) {
   const actualHook = e && e.parameter ? String(e.parameter.hook || '') : '';
   if (!expectedHook || !rformOwnerBotV1ConstantTimeEqual_(actualHook, expectedHook)) {
     console.warn('Owner Bot webhook rejected: invalid hook secret.');
-    return ContentService.createTextOutput('OK');
+    return rformOwnerBotV1WebResponse_('OK');
   }
 
   const raw = e && e.postData && e.postData.contents ? e.postData.contents : '';
-  if (!raw) return ContentService.createTextOutput('OK');
+  if (!raw) return rformOwnerBotV1WebResponse_('OK');
 
   let update;
   try {
     update = JSON.parse(raw);
   } catch (error) {
     console.warn('Owner Bot webhook received invalid JSON.');
-    return ContentService.createTextOutput('OK');
+    return rformOwnerBotV1WebResponse_('OK');
   }
 
   if (update.callback_query) {
@@ -387,7 +397,7 @@ function rformOwnerBotV1Webhook_(e) {
   } else if (update.message) {
     rformOwnerBotV1HandleMessage_(update.message);
   }
-  return ContentService.createTextOutput('OK');
+  return rformOwnerBotV1WebResponse_('OK');
 }
 
 function rformOwnerBotV1HandleMessage_(message) {
@@ -658,7 +668,42 @@ function rformOwnerBotV1SendPreview_(preview, options) {
   );
 }
 
+// Candidate v1.0.3: errors are observable without retrying publication actions.
 function rformOwnerBotV1HandleCallback_(callback) {
+  try {
+    return rformOwnerBotV1HandleCallbackCore_(callback);
+  } catch (error) {
+    // Do not expose upstream response bodies, URLs, tokens or raw exception text.
+    console.error('Owner Bot callback failed; operation outcome must be checked.');
+    const props = PropertiesService.getScriptProperties();
+    const ownerUserId = props.getProperty(RFORM_OWNER_BOT_V1.props.ownerUserId) || '';
+    const fromId = String(callback && callback.from ? callback.from.id || '' : '');
+    const data = String(callback && callback.data ? callback.data : '');
+    const match = data.match(/^ob:([ah]):([a-f0-9]{32})$/);
+    // Never notify the owner or write owner-action audit for an untrusted callback.
+    if (!ownerUserId || fromId !== ownerUserId || !match) return;
+    try {
+      rformOwnerBotV1Audit_(
+        '', 'BOT_CALLBACK_ERROR',
+        'Callback processing failed; action=' + match[1] + '; outcome requires verification.',
+        match[2], 'OUTCOME_UNKNOWN'
+      );
+    } catch (auditError) {
+      console.error('Owner Bot callback error audit unavailable.');
+    }
+    try {
+      rformOwnerBotV1SendOwnerText_(
+        'Не удалось завершить обработку решения.\n' +
+        'Операция могла уже примениться. Проверьте текущий статус через /today ' +
+        'или Content Control перед повторным действием. Автоматический повтор не выполняется.'
+      );
+    } catch (notifyError) {
+      console.error('Owner Bot callback error notification unavailable.');
+    }
+  }
+}
+
+function rformOwnerBotV1HandleCallbackCore_(callback) {
   const props = PropertiesService.getScriptProperties();
   const token = rformOwnerBotV1RequireProperty_(props, RFORM_OWNER_BOT_V1.props.token);
   const fromId = String(callback && callback.from ? callback.from.id || '' : '');

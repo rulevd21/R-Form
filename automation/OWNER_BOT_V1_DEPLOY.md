@@ -1,4 +1,34 @@
-# R/Form Owner Bot v1 · P0 Owner Inbox
+# R/Form Owner Bot v1.0.3 · P0 Owner Inbox
+
+## Текущая установленная версия: v1.0.3
+
+Установлена 06.10.2026 в существующем Apps Script-проекте. WebApp обновлён с deployment version 2 до 3 на прежнем deployment ID и URL. Исходник после сохранения точно совпал с `automation/owner_bot_v1.gs` этой ветки:
+
+SHA-256: `5ec48501dc86f7ff70ae7436910f0596e1472dd28ce412b7bb191fdafc0b319a`.
+
+Live SelfTest PASS (17:32:14 Москва); действующий doGet показал `R/Form Owner Bot v1.0.3` (17:34:00). 11 офлайн-тестов: `node automation/tests/owner_bot_v1_callback.test.cjs`.
+
+Регрессия: сохранены изменения установленной v1.0.1 относительно Git v1.0.0 — HtmlService-ответ webhook, max_connections=1 и дополнительные диагностические поля webhook. Исторический исходник заявленной в документации v1.0.2 не найден в проверенных источниках; v1.0.3 — новое исправление, не восстановление этого релиза.
+
+### Callback error contract
+
+Для корректного callback владельца обработчик при исключении пытается независимо записать `BOT_CALLBACK_ERROR / OUTCOME_UNKNOWN` в существующий аудит и отправить владельцу безопасное уведомление. Сырые ошибки в новые сообщения и audit не включаются. APPROVE/HOLD автоматически не повторяется. Если исключение возникло до handoff, операция не отправлена; после отправки запрос мог уже примениться. Владелец должен проверить текущий статус через /today или Content Control перед повторным действием. При недоступности Sheets/Telegram долговечная запись/доставка не гарантируется.
+
+Production E2E новой error-ветки и автоматический Poll после обновления пока не подтверждены. Историческая P0 acceptance не считается acceptance v1.0.3. Последний наблюдённый Poll 17:31:51 завершился успешно, но предшествует обновлению WebApp.
+
+### Обновление существующей установки
+
+Не повторять шаги первоначальной установки ниже. Сохранить baseline и настройки; заменить только исходный код, запустить чистый SelfTest, обновить существующее WebApp-развёртывание и проверить /exec. Сохранить URL, pairing, Script Properties и существующий trigger. Не запускать Install/Enable/SetWebhook при обычном обновлении.
+
+### Откат кода v1.0.3
+
+Сохранённый baseline v1.0.1 имеет SHA-256 `fef3b9207a5d73b968da1a323c63f6f752201ce46a1998726cbb524c7c883ced`. Для полного отката восстановить этот HEAD и прежнюю WebApp version 2 на том же deployment. Один возврат WebApp к version 2 не откатит clock-trigger, работающий на HEAD. Disable/DeleteWebhook ниже — аварийная остановка, а не восстановление предыдущего кода.
+
+PR #6 остаётся draft/unmerged. Его существующая base — agent/content-control-streamlit-readonly. В текущем main Owner Bot отсутствует; этот PR не меняет активное Streamlit-приложение до разрешённого merge. Секреты и production URLs в Git не добавляются.
+
+## Первоначальная установка P0 (только для новой установки)
+
+
 
 ## Назначение
 
@@ -51,7 +81,7 @@ Bot Token не публиковать, не сохранять в Google Sheets 
 ```json
 {
   "ok": true,
-  "version": "1.0.0",
+  "version": "1.0.3",
   "readyFilter": "PASS",
   "previewFingerprint": "PASS",
   "constantTimeCompare": "PASS"
@@ -214,7 +244,8 @@ Owner Bot пишет технические события в существую
 - `BOT_PREVIEW_SENT`;
 - `BOT_APPROVE_CLICK`;
 - `BOT_HOLD_CLICK`;
-- `BOT_STALE_CALLBACK`.
+- `BOT_STALE_CALLBACK`;
+- `BOT_CALLBACK_ERROR` (при доступном audit backend).
 
 `Actor = OWNER_BOT`.
 
