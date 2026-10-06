@@ -1,4 +1,22 @@
-# R/Form Owner Bot v1.0.4 · P0 Owner Inbox
+# R/Form Owner Bot v1.0.5 · P0 Owner Inbox
+
+## Текущая установленная версия: v1.0.5
+
+Установлена по точному разрешению владельца 06.10.2026. Код.gs сохранён и прочитан после перезагрузки: SHA-256 `f0a86d4fc86d091c62b33d260b57dccd00613c22a2c58c6bf63e8ec0a643970a`. Существующее WebApp обновлено с deployment version 4 до 5 в 21:51 (Москва); прежние ID, URL, execute-as и доступ сохранены. doGet version 5, 21:51:50, показал R/Form Owner Bot v1.0.5.
+
+Native SelfTest выполнен один раз, 21:50:44–21:50:45: ok=true, version=1.0.5, readyFilter/previewFingerprint/constantTimeCompare PASS. 29 offline tests PASS: 11 callback, 8 transport, 10 observability. Внешние вызовы замоканы.
+
+v1.0.5 добавляет безопасный структурированный OWNER_BOT_API_READ_TRANSPORT log: статус POST/GET, число попыток, категория redirect, длина ответа, JSON/ok, этап/исход, общее время. Новая телеметрия не содержит URL/query/payload/ответ/подпись; тело non-JSON ошибки READ исключено из сообщения. Параметры HTTP и число запросов точно сохранены относительно v1.0.4: один signed POST и максимум один allowlisted ContentService GET; POST не повторяется, второй redirect не выполняется. Изменение является диагностическим; причина прежних GET 302/404 не установлена, исправление транспорта не заявляется.
+
+Два ближайших автоматических READ в штатном Poll подтверждены Cloud logs: 21:51:51 (log 21:51:56, elapsedMs=3937) и 21:56:52 (log 21:57:01, elapsedMs=6297), Москва 06.10.2026. Оба: version=1.0.5, stage=DONE, outcome=OK, postAttempts=1/getAttempts=1, POST HTTP 302, Location count=1/chars=394/CONTENT_SERVICE; GET HTTP 200, redirectRoute=NONE, bodyChars=173843, json=true, ok=true. Первый native execution completed, 5.32 с. Это подтверждение успешного API READ в двух штатных запусках, не доказательство причины прежнего сбоя или полного webhook/preview E2E.
+
+Три диагностических файла сохранены неизменными: их readback SHA совпал с baseline. Старые probes повторно не запускались. Install/Enable/SetWebhook, properties, pairing, секреты и существующий trigger не менялись. Ручной Poll, новые READ probes, реальные APPROVE/HOLD и публикации не запускались. Полный входящий webhook E2E остаётся PENDING.
+
+Откат v1.0.5 требует восстановления HEAD v1.0.4 SHA-256 `b682fa77fa082d3a25d4b0855d3820c448bf91111ea29b3b0a0053ccc20d1137` и прежней WebApp version 4 на том же deployment; один откат WebApp не меняет clock-trigger на HEAD. Откат требует отдельного разрешения.
+
+PR #6 остаётся draft/unmerged, base agent/content-control-streamlit-readonly. Production URLs и секреты в Git не добавляются.
+
+## История установки v1.0.4
 
 ## Текущая установленная версия: v1.0.4
 
@@ -112,7 +130,7 @@ Bot Token не публиковать, не сохранять в Google Sheets 
 ```json
 {
   "ok": true,
-  "version": "1.0.4",
+  "version": "1.0.5",
   "readyFilter": "PASS",
   "previewFingerprint": "PASS",
   "constantTimeCompare": "PASS"
@@ -332,4 +350,4 @@ Owner Bot пишет технические события в существую
 
 ## Automatic Poll 21:01 HTTP 404 and prepared v1.0.5 telemetry
 
-Проверка автоматического Poll после READ PASS: 06.10.2026, 21:01:51 (Москва), 17.445 с, native completed; Cloud log 21:02:08 подтверждает FAILED / API_READ: Content Control API returned non-JSON (HTTP 404), ApiPost_ Код:964 → ApiRead_ Код:839 → Poll Код:500. По установленному v1.0.4 это GET-ответ после ContentService redirect. В API executions по времени соответствует doPost deployment version 10, 21:01:53, 3.718 с, completed; связь основана на времени, не на nonce. JSON-результат API из этой строки не установлен. doGet в этом временном интервале в видимом списке отсутствует. Poll 20:56:51, 28.387 с, completed; журнал недоступен, функциональный результат UNKNOWN. API doPost 20:56:53, 3.29 с. READ probe имеет execution start 20:55:35, 11.501 с, а log start 20:55:36; это один и тот же единственный запуск. Успех READ probe не означает восстановления штатного Poll. Подготовлен, но НЕ установлен кандидат Owner Bot v1.0.5: безопасный структурированный READ transport log (статусы POST/GET, число попыток, классификация redirect, длина ответа, JSON/ok, этап/исход, общее время); без URL/query/payload/ответа/подписи. Тело non-JSON ошибки READ исключено из сообщения. HTTP-параметры и число запросов не меняются; 11 callback + 8 transport + 10 observability tests PASS. SHA-256 f0a86d4fc86d091c62b33d260b57dccd00613c22a2c58c6bf63e8ec0a643970a. Установленные main и WebApp остаются v1.0.4. Для установки v1.0.5 и обновления существующего WebApp требуется точное разрешение владельца; новые probes и ручной Poll не запускались.
+Проверка автоматического Poll после READ PASS: 06.10.2026, 21:01:51 (Москва), 17.445 с, native completed; Cloud log 21:02:08 подтверждает FAILED / API_READ: Content Control API returned non-JSON (HTTP 404), ApiPost_ Код:964 → ApiRead_ Код:839 → Poll Код:500. По установленному v1.0.4 это GET-ответ после ContentService redirect. В API executions по времени соответствует doPost deployment version 10, 21:01:53, 3.718 с, completed; связь основана на времени, не на nonce. JSON-результат API из этой строки не установлен. doGet в этом временном интервале в видимом списке отсутствует. Poll 20:56:51, 28.387 с, completed; журнал недоступен, функциональный результат UNKNOWN. API doPost 20:56:53, 3.29 с. READ probe имеет execution start 20:55:35, 11.501 с, а log start 20:55:36; это один и тот же единственный запуск. Успех READ probe не означает восстановления штатного Poll. На этапе 21:01 был подготовлен, но ещё не установлен кандидат Owner Bot v1.0.5: безопасный структурированный READ transport log (статусы POST/GET, число попыток, классификация redirect, длина ответа, JSON/ok, этап/исход, общее время); без URL/query/payload/ответа/подписи. Тело non-JSON ошибки READ исключено из сообщения. HTTP-параметры и число запросов не меняются; 11 callback + 8 transport + 10 observability tests PASS. SHA-256 f0a86d4fc86d091c62b33d260b57dccd00613c22a2c58c6bf63e8ec0a643970a. На момент 21:01 установленные main и WebApp оставались v1.0.4. Для установки v1.0.5 и обновления существующего WebApp требуется точное разрешение владельца; новые probes и ручной Poll не запускались.

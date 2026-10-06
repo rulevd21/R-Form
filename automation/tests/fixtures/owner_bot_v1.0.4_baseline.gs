@@ -1,4 +1,4 @@
-// R/Form Owner Bot v1.0.5 · P0 Owner Inbox
+// R/Form Owner Bot v1.0.4 · P0 Owner Inbox
 // Standalone Google Apps Script project.
 // Purpose: private Telegram owner interface for OWNER_FINAL_PREVIEW materials.
 // Read/write contract:
@@ -24,7 +24,7 @@
 //   RFORM_OWNER_TELEGRAM_CHAT_ID
 
 const RFORM_OWNER_BOT_V1 = Object.freeze({
-  version: '1.0.5',
+  version: '1.0.4',
   spreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
   actionLogSheet: 'CONTENT_ACTION_LOG',
   pollMinutes: 5,
@@ -931,20 +931,6 @@ function rformOwnerBotV1ApiHold_(preview) {
 function rformOwnerBotV1ApiPost_(request) {
   const props = PropertiesService.getScriptProperties();
   const url = rformOwnerBotV1RequireProperty_(props, RFORM_OWNER_BOT_V1.props.apiUrl);
-  const trace = request.operation === 'read' ? {event: 'OWNER_BOT_API_READ_TRANSPORT', version: RFORM_OWNER_BOT_V1.version, stage: 'POST', outcome: 'ERROR', postAttempts: 1, getAttempts: 0} : null;
-  const startedAt = Date.now();
-  function responseMeta_(reply) {
-    try {
-    const headers = reply.getAllHeaders();
-    const key = Object.keys(headers).find(function (name) { return name.toLowerCase() === 'location'; });
-    const raw = key ? headers[key] : null;
-    const count = raw === null ? 0 : (Array.isArray(raw) ? raw.length : 1);
-    const location = count === 1 ? String(Array.isArray(raw) ? raw[0] : raw) : '';
-    const route = /^https:\/\/script\.googleusercontent\.com\/macros\/echo\?/.test(location) ? 'CONTENT_SERVICE' : (/^https:\/\/accounts\.google\.com\//.test(location) ? 'GOOGLE_SIGN_IN' : (location ? 'OTHER' : 'NONE'));
-    return {httpStatus: reply.getResponseCode(), locationValueCount: count, locationChars: location.length, redirectRoute: route};
-    } catch (_) { return {metadataUnavailable: true}; }
-  }
-  try {
   const response = UrlFetchApp.fetch(url, {
     method: 'post',
     contentType: 'application/json',
@@ -952,7 +938,6 @@ function rformOwnerBotV1ApiPost_(request) {
     muteHttpExceptions: true,
     followRedirects: false
   });
-  if (trace) trace.postResponse = responseMeta_(response);
   // Retrieve the ContentService result, never replay the signed action POST.
   let resultResponse = response;
   if (response.getResponseCode() === 302) {
@@ -962,44 +947,29 @@ function rformOwnerBotV1ApiPost_(request) {
     });
     const location = locationKey ? String(headers[locationKey]) : '';
     if (!/^https:\/\/script\.googleusercontent\.com\/macros\/echo\?/.test(location)) {
-      if (trace) trace.stage = 'FIRST_REDIRECT_REJECTED';
       throw new Error('Content Control API returned an unsupported response redirect.');
     }
-    if (trace) { trace.stage = 'GET'; trace.getAttempts = 1; }
     resultResponse = UrlFetchApp.fetch(location, {
       method: 'get',
       muteHttpExceptions: true,
       followRedirects: false
     });
   }
-  if (trace) { trace.stage = 'PARSE'; trace.resultResponse = responseMeta_(resultResponse); }
   const status = resultResponse.getResponseCode();
   const body = resultResponse.getContentText();
-  if (trace) trace.bodyChars = body.length;
   let parsed;
   try {
     parsed = JSON.parse(body);
   } catch (error) {
-    if (trace) { trace.stage = 'NON_JSON'; trace.json = false; }
-    throw new Error('Content Control API returned non-JSON (HTTP ' + status + ')' + (trace ? '.' : ': ' + body.slice(0, 500)));
+    throw new Error('Content Control API returned non-JSON (HTTP ' + status + '): ' + body.slice(0, 500));
   }
-  if (trace) { trace.json = true; trace.ok = !!(parsed && parsed.ok); }
   if (status < 200 || status >= 300 || !parsed.ok) {
-    if (trace) trace.stage = 'API_REJECTED';
     throw new Error(
       'Content Control API rejected request: ' +
       (parsed && parsed.message ? parsed.message : body.slice(0, 500))
     );
   }
-  if (trace) { trace.stage = 'DONE'; trace.outcome = 'OK'; }
   return parsed;
-  } finally {
-    if (trace) {
-      trace.elapsedMs = Date.now() - startedAt;
-      // Telemetry must never change the transport outcome.
-      try { console.log(JSON.stringify(trace)); } catch (_) {}
-    }
-  }
 }
 
 function rformOwnerBotV1SendOwnerText_(text, extra) {
