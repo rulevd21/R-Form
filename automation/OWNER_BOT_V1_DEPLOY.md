@@ -8,7 +8,9 @@
 
 Native SelfTest PASS 18:15:41. Native Preflight PASS 18:18:15–18:18:36: version=1.0.4, contentApiVersion=0.5.4, queueRows=31, ownerFinalPreviewRows=0, ownerPaired=true, pollTriggerCount=1, botEnabled=YES, actionsEnabled=YES, webhookConfigured=true, webhookPendingUpdates=0, webhookLastErrorMessage/date пустые, channelPublishingCallsPresent=false.
 
-Автоматический Poll (HEAD) 18:16:51 завершился за 20.959 с. Cloud-журнал недоступен после обновления; поэтому автоматический запуск подтверждён, но независимая проверка его внутреннего READ по журналу остаётся PENDING. Native completed не считается самостоятельным функциональным PASS, поскольку Poll перехватывает ошибки. Исправленный READ отдельно подтверждён Preflight. При 0 ready rows отправка нового preview не проверена.
+Повторная проверка 18:21:51: автоматический Poll завершён за 35.027 с, но Cloud log 18:22:26 содержит Owner Bot poll failed: Content Control API returned non-JSON (HTTP 302), Код:964 → ApiRead_ → Poll. Функциональный Poll FAILED / API_READ. По установленному v1.0.4 ошибка возникает при разборе GET-ответа после принятого ContentService redirect: GET вернул ещё один HTTP 302. Host/path второго redirect ещё не измерены; причина не подтверждена. Preflight PASS 18:18:36 остаётся фактом отдельного успешного READ, не приёмкой автоматического Poll.
+
+Подготовлен отдельный diagnostic READ probe v1.0.4 для измерения второго redirect: максимум один POST и один allowlisted GET; повтор POST и follow второго redirect запрещены; лог только статусов и host/path, без query/body/секретов. 4 офлайн-теста PASS. Probe не установлен/не запущен. Полный webhook E2E отложен до устранения транспортного сбоя.
 
 19 offline tests PASS: `node automation/tests/owner_bot_v1_callback.test.cjs` (11), `node automation/tests/owner_bot_v1_transport.test.cjs` (8).
 
