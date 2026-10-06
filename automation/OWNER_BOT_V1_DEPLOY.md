@@ -323,3 +323,8 @@ Owner Bot пишет технические события в существую
 - публичный бот для подписчиков.
 
 Эти функции добавляются только после production acceptance P0.
+
+
+## URL-preservation READ probe — 06.10.2026, 20:55 Moscow
+
+Дополнительная URL-preservation READ-проверка выполнена по точному разрешению владельца ровно один раз, 20:55:36–20:55:47 (Москва, 06.10.2026): rformOwnerBotV104UrlProbe. Отдельный OwnerBot_v104_UrlProbe.gs сохранён и прочитан обратно, SHA-256 a9c000150df4c29b5a31241bfcd5a7f0670c10a9fdc792d58002778cebc2133d. Один signed READ POST HTTP 302; единственный Location (394 символа), без whitespace/fragment, script.googleusercontent.com /macros/echo. Два dry getRequest показали defaultRequestPreservesUrl=true и exactRequestPreservesUrl=true. Единственный GET с escaping=false: HTTP 200, JSON, ok=true, API v0.5.4, bodyChars=173843. Второго redirect нет, POST не повторялся. Это PASS отдельного чтения; гипотеза изменения URL при escaping в этом запуске не подтверждена. Стабильность автоматического Poll и причина прежних 302/404 остаются не подтверждены. Журналы Poll 20:31:51, 20:26:51 и 20:21:51 недоступны; native completed не считается приёмкой. Основной Код.gs после проверки точно сохранил SHA-256 b682fa77fa082d3a25d4b0855d3820c448bf91111ea29b3b0a0053ccc20d1137; deployment, триггеры и настройки не менялись. Следующий этап: log-based проверка ближайших автоматических Poll без ручного повторного запуска.
