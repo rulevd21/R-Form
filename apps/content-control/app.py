@@ -428,7 +428,7 @@ def _source_label(source: str) -> str:
 
 
 def render_header(source: str, capabilities: tuple[str, ...]) -> None:
-    badge = "АВТОМАТИЧЕСКИЙ РЕЖИМ · v0.5.5"
+    badge = "АВТОМАТИЧЕСКИЙ РЕЖИМ · v0.5.6"
     st.markdown('<div class="rf-kicker">R/Form · Контент-операции</div>', unsafe_allow_html=True)
     st.markdown('<div class="rf-title">Управление контентом</div>', unsafe_allow_html=True)
     st.markdown(
@@ -834,6 +834,9 @@ except DataSourceError as exc:
     render_header("APPS SCRIPT / ERROR", ())
     st.error(str(exc))
     st.caption("Приложение остановлено: при ошибке рабочего источника тестовые данные не подставляются.")
+    if st.button("Повторить чтение"):
+        st.cache_data.clear()
+        st.rerun()
     st.stop()
 
 render_header(bundle.source, bundle.capabilities)
@@ -850,7 +853,7 @@ with st.sidebar:
         label_visibility="collapsed",
     )
     st.markdown("---")
-    st.caption("R/Form · Управление контентом v0.5.5")
+    st.caption("R/Form · Управление контентом v0.5.6")
     st.caption("Источник истины остаётся в Google Таблицах.")
 
 if page == "Сегодня":
@@ -867,4 +870,3 @@ st.markdown(
     'Не угадывай. Управляй прогрессом.</div>',
     unsafe_allow_html=True,
 )
-

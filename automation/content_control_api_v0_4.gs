@@ -1,4 +1,4 @@
-// R/Form Content Control API v0.5.5
+// R/Form Content Control API v0.5.6
 // Standalone Apps Script web app for Channel Control.
 // Reads CONTENT_QUEUE + DATA_EVENTS, applies allowlisted content actions,
 // saves owner-facing event edits, stores private photo/video assets in Drive,
@@ -7,7 +7,7 @@
 // the separate Telegram Autopost project remains the only publishing transport.
 
 const RFORM_CONTENT_API_V04 = Object.freeze({
-  version: '0.5.5',
+  version: '0.5.6',
   spreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
   queueSheet: 'CONTENT_QUEUE',
   eventsSheet: 'DATA_EVENTS',
@@ -210,6 +210,9 @@ function doPost(e) {
     if (operation === 'queue_owner_preview_prepare') {
       return rformContentApiV04Json_(rformContentApiV04PrepareOwnerPreview_(request));
     }
+    if (operation === 'queue_text_draft_save') {
+      return rformContentApiV04Json_(rformContentApiV04SaveQueueTextDraft_(request));
+    }
     if (operation === 'content_action') {
       return rformContentApiV04Json_(rformContentApiV04ApplyContentAction_(request));
     }
@@ -267,7 +270,7 @@ function rformContentApiV04Payload_() {
       'content.read', 'content.action', 'event.review', 'event.decision', 'event.media',
       'training.read', 'publication.propose', 'publication.visual',
       'publication.approve_schedule', 'publication.queue_approve_schedule',
-      'publication.queue_assets', 'publication.owner_preview_prepare'
+      'publication.queue_assets', 'publication.owner_preview_prepare', 'publication.queue_text_draft_save'
     ],
     generated_at: new Date().toISOString(),
     queue_fields: RFORM_CONTENT_API_V04.queueFields,
@@ -311,7 +314,7 @@ function rformContentApiV04Authorize_(request) {
   if ([
     'read', 'content_action', 'event_review', 'event_decision', 'event_media',
     'publication_approval', 'queue_publication_approval', 'queue_publication_assets',
-    'queue_owner_preview_prepare'
+    'queue_owner_preview_prepare', 'queue_text_draft_save'
   ].indexOf(operation) === -1) {
     throw new Error('Операция не поддерживается.');
   }
@@ -339,6 +342,11 @@ function rformContentApiV04SignedMessage_(request) {
   if (operation === 'queue_owner_preview_prepare') {
     return [timestamp, nonce, operation, String(request.action_id || ''),
       String(request.content_id || ''), String(request.source_hash || '')].join('\n');
+  }
+  if (operation === 'queue_text_draft_save') {
+    return [timestamp, nonce, operation, String(request.action_id || ''),
+      String(request.content_id || ''), String(request.source_hash || ''),
+      rformContentApiV04Sha256Hex_(String(request.telegram_text || '').trim())].join('\n');
   }
 
   if (operation === 'content_action') {
@@ -1611,7 +1619,7 @@ function rformContentApiV04Json_(payload) {
 }
 
 
-// Preparation-only operation. v0.5.5 initially supports existing TEXT_ONLY material.
+// Preparation-only operations for existing TEXT_ONLY material; no owner approval.
 const RFORM_OWNER_PREVIEW_FIELDS = Object.freeze([
   'Content_ID', 'Current_Stage', 'Pipeline_Status', 'Source_Packet_Status',
   'Public_Data_Allowed', 'Text_Status', 'Visual_Status', 'Approval_Status',
@@ -1629,12 +1637,27 @@ function rformContentApiV04OwnerPreviewHash_(value) {
 }
 
 function rformContentApiV04PrepareOwnerPreview_(request) {
+  return rformContentApiV04QueuePreparation_(request, false);
+}
+
+function rformContentApiV04SaveQueueTextDraft_(request) {
+  return rformContentApiV04QueuePreparation_(request, true);
+}
+
+function rformContentApiV04QueuePreparation_(request, saveDraft) {
   const actionId = String(request.action_id || '').trim();
   const contentId = String(request.content_id || '').trim();
   const sourceHash = String(request.source_hash || '').trim();
+  const nextText = String(request.telegram_text || '').trim();
+  const action = saveDraft ? 'SAVE_TEXT_DRAFT' : 'PREPARE_OWNER_PREVIEW';
+  const auditComment = saveDraft ? JSON.stringify({source_hash: sourceHash,
+    text_hash: rformContentApiV04Sha256Hex_(nextText)}) : sourceHash;
   rformContentApiV04RequireActionId_(actionId);
   rformContentApiV04RequireRecordId_(contentId, 'Код материала');
   if (!/^[a-f0-9]{64}$/.test(sourceHash)) throw new Error('Некорректная версия материала.');
+  if (saveDraft && (!nextText || nextText.length > RFORM_CONTENT_API_V04.maxTelegramChars)) {
+    throw new Error('Текст публикации пуст или превышает лимит Telegram.');
+  }
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) throw new Error('Очередь занята.');
   try {
@@ -1654,15 +1677,20 @@ function rformContentApiV04PrepareOwnerPreview_(request) {
     if (prior) {
       const priorRow = log.getRange(prior, 1, 1, log.getLastColumn()).getDisplayValues()[0];
       if (priorRow[lm.Content_ID - 1] !== contentId ||
-          priorRow[lm.Action - 1] !== 'PREPARE_OWNER_PREVIEW' ||
-          priorRow[lm.Comment - 1] !== sourceHash) throw new Error('Action_ID относится к другому запросу.');
+          priorRow[lm.Action - 1] !== action ||
+          priorRow[lm.Comment - 1] !== auditComment) throw new Error('Action_ID относится к другому запросу.');
       if (priorRow[lm.Result - 1] !== 'APPLIED') throw new Error('Исход предыдущего запроса не подтверждён. Проверьте текущий статус.');
       const currentRow = rformContentApiV04FindUniqueRow_(queue, 'Content_ID', contentId);
       const current = queue.getRange(currentRow, 1, 1, queue.getLastColumn()).getDisplayValues()[0];
+      const previousValues = JSON.parse(priorRow[lm.Previous_Values - 1]);
+      const nextValues = JSON.parse(priorRow[lm.New_Values - 1]);
       const originalValue = function (field) {
-        return field === 'Current_Stage' ? 'CHANNEL_CONTROL_REVIEW' : String(current[map[field] - 1] || '').trim();
+        return Object.prototype.hasOwnProperty.call(previousValues, field)
+          ? String(previousValues[field]).trim() : String(current[map[field] - 1] || '').trim();
       };
-      if (String(current[map.Current_Stage - 1]).trim() !== 'OWNER_FINAL_PREVIEW' ||
+      if (Object.keys(nextValues).some(function (field) {
+            return String(current[map[field] - 1] || '').trim() !== nextValues[field];
+          }) ||
           rformContentApiV04OwnerPreviewHash_(originalValue) !== sourceHash) {
         throw new Error('Подготовка уже выполнялась, но материал изменился. Проверьте текущий статус.');
       }
@@ -1687,35 +1715,51 @@ function rformContentApiV04PrepareOwnerPreview_(request) {
     if (value('Duplicate_Flag') || value('Blocking_Issue') || value('Publish_Error') ||
         value('Telegram_Message_ID') || value('Telegram_Post_URL') || value('Posted_At') ||
         /HOLD|SUPERSEDED|ARCHIV|REWORK/i.test(value('Pipeline_Status'))) throw new Error('Материал закрыт, заблокирован или является дублем.');
-    if (['NOT_REVIEWED', 'RECHECK_REQUIRED'].indexOf(value('Preview_Review_Status')) === -1 ||
-        value('Preview_Review_Hash') || value('Preview_Reviewed_At') || value('Preview_Reviewed_By')) {
+    if ((!saveDraft && (['NOT_REVIEWED', 'RECHECK_REQUIRED'].indexOf(value('Preview_Review_Status')) === -1 ||
+        value('Preview_Review_Hash') || value('Preview_Reviewed_At') || value('Preview_Reviewed_By'))) ||
+        (saveDraft && ['NOT_REVIEWED', 'RECHECK_REQUIRED', 'REVIEWED'].indexOf(value('Preview_Review_Status')) === -1)) {
       throw new Error('Сначала требуется сброс устаревшего согласования штатным workflow.');
     }
-    const previous = {Current_Stage: value('Current_Stage')};
-    const next = {Current_Stage: 'OWNER_FINAL_PREVIEW'};
-    log.appendRow([actionId, new Date(), contentId, 'PREPARE_OWNER_PREVIEW', sourceHash,
-      'Current_Stage', JSON.stringify(previous), JSON.stringify(next), 'STREAMLIT_PREPARATION',
+    if (saveDraft && nextText === value('Telegram_Text')) throw new Error('Текст не изменился.');
+    const next = saveDraft ? {Telegram_Text: nextText,
+      Updated_At: Utilities.formatDate(new Date(), 'Europe/Moscow', 'dd.MM.yyyy HH:mm:ss'),
+      Preview_Review_Status: 'RECHECK_REQUIRED', Preview_Review_Hash: '',
+      Preview_Reviewed_At: '', Preview_Reviewed_By: ''} : {Current_Stage: 'OWNER_FINAL_PREVIEW'};
+    const fields = Object.keys(next);
+    const previous = {};
+    fields.forEach(function (field) { previous[field] = String(values[map[field] - 1] || ''); });
+    log.appendRow([actionId, new Date(), contentId, action, auditComment,
+      fields.join(','), JSON.stringify(previous), JSON.stringify(next), 'STREAMLIT_PREPARATION',
       String(request.nonce || ''), 'PENDING']);
     const logRow = log.getLastRow();
     try {
-      queue.getRange(row, map.Current_Stage).setValue(next.Current_Stage);
+      fields.forEach(function (field) {
+        queue.getRange(row, map[field]).setValue(rformContentApiV04SafeText_(next[field]));
+      });
       SpreadsheetApp.flush();
       const readback = queue.getRange(row, 1, 1, queue.getLastColumn()).getDisplayValues()[0];
       RFORM_OWNER_PREVIEW_FIELDS.forEach(function (field) {
-        const expected = field === 'Current_Stage' ? next.Current_Stage : value(field);
+        const expected = Object.prototype.hasOwnProperty.call(next, field) ? next[field] : value(field);
         if (String(readback[map[field] - 1] || '').trim() !== expected) throw new Error('Readback mismatch: ' + field);
       });
       log.getRange(logRow, lm.Result).setValue('APPLIED');
       SpreadsheetApp.flush();
       if (log.getRange(logRow, lm.Result).getDisplayValue() !== 'APPLIED') throw new Error('Audit readback mismatch');
       return {ok: true, status: 'APPLIED', action_id: actionId, content_id: contentId,
-        changed_fields: ['Current_Stage'], current_stage: next.Current_Stage};
+        changed_fields: fields, current_stage: value('Current_Stage') === 'CHANNEL_CONTROL_REVIEW' && !saveDraft
+          ? 'OWNER_FINAL_PREVIEW' : value('Current_Stage'), source_hash: rformContentApiV04OwnerPreviewHash_(function (field) {
+            return Object.prototype.hasOwnProperty.call(next, field) ? next[field] : value(field);
+          })};
     } catch (error) {
       // No POST replay. A failed rollback/audit leaves an explicitly unknown outcome.
       try {
-        queue.getRange(row, map.Current_Stage).setValue(previous.Current_Stage);
+        fields.forEach(function (field) {
+          queue.getRange(row, map[field]).setValue(rformContentApiV04SafeText_(previous[field]));
+        });
         SpreadsheetApp.flush();
-        if (queue.getRange(row, map.Current_Stage).getDisplayValue() !== previous.Current_Stage) throw new Error('Rollback readback mismatch');
+        fields.forEach(function (field) {
+          if (queue.getRange(row, map[field]).getDisplayValue() !== previous[field]) throw new Error('Rollback readback mismatch');
+        });
         log.getRange(logRow, lm.Result).setValue('FAILED_ROLLED_BACK');
         SpreadsheetApp.flush();
       } catch (rollbackError) {

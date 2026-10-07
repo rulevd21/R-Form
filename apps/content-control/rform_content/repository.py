@@ -1028,3 +1028,33 @@ def build_owner_preview_prepare_request(secret: str, row, *, timestamp=None, non
 def execute_owner_preview_prepare(endpoint_url: str, secret: str, row, *, action_id=None, timeout_seconds=20):
     request = build_owner_preview_prepare_request(secret, row, action_id=action_id)
     return _post_signed(endpoint_url, request, timeout_seconds, "подготовку предпросмотра владельца")
+
+
+def build_queue_text_draft_save_request(secret: str, row, telegram_text: str, *,
+                                      timestamp=None, nonce=None, action_id=None):
+    """Bind an unapproved text edit to one exact canonical queue snapshot."""
+    content_id = str(row.get("Content_ID", "")).strip()
+    text = str(telegram_text).strip()
+    if not content_id:
+        raise ValueError("content_id is required")
+    if not text or len(text.encode("utf-16-le")) // 2 > 4096:
+        raise ValueError("Текст публикации пуст или превышает лимит Telegram.")
+    source_hash = owner_preview_source_hash(row)
+    ts, request_nonce, aid = _request_identity(timestamp=timestamp, nonce=nonce, action_id=action_id)
+    operation = "queue_text_draft_save"
+    return {"timestamp": ts, "nonce": request_nonce, "action_id": aid,
+            "operation": operation, "content_id": content_id, "source_hash": source_hash,
+            "telegram_text": text,
+            "signature": _sign_message(secret, [str(ts), request_nonce, operation,
+                aid, content_id, source_hash, _sha256_text(text)])}
+
+
+def execute_queue_text_draft_save(endpoint_url: str, secret: str, row, telegram_text: str, *,
+                                 action_id=None, timeout_seconds=20):
+    request = build_queue_text_draft_save_request(secret, row, telegram_text, action_id=action_id)
+    result = _post_signed(endpoint_url, request, timeout_seconds, "сохранение текста без согласования")
+    if (result.get("status") not in {"APPLIED", "ALREADY_APPLIED"}
+            or result.get("content_id") != request["content_id"]
+            or result.get("action_id") != request["action_id"]):
+        raise DataSourceError("Сохранение текста не подтверждено. Обновите данные и проверьте материал.")
+    return result

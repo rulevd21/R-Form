@@ -120,7 +120,9 @@ def owner_ready_materials(queue: pd.DataFrame) -> pd.DataFrame:
             | pipeline.str.contains("FINAL PREVIEW READY", regex=False)
             | weekly_bundle_ready
         )
-        & ~publication.isin(TERMINAL_CONTENT_STATES | {"SCHEDULED"})
+        & ~publication.isin(TERMINAL_CONTENT_STATES | {"SCHEDULED", "HOLD"})
+        & ~pipeline.str.contains(r"HOLD|SUPERSEDED|ARCHIV|REWORK", regex=True)
+        & stage.ne("ARCHIVED_SUPERSEDED")
         & content_type.ne("TECH_TEST")
         & telegram_text.ne("")
         & public_allowed.isin({"YES", "ДА", "TRUE", "1"})
@@ -132,7 +134,9 @@ def owner_ready_materials(queue: pd.DataFrame) -> pd.DataFrame:
     selected["Owner_Ready_Sort"] = pd.to_datetime(
         _column(selected, "Updated_At"), errors="coerce", dayfirst=True, utc=True
     )
-    return selected.sort_values("Owner_Ready_Sort", ascending=False, na_position="last")
+    return selected.sort_values(
+        ["Owner_Ready_Sort", "Content_ID"], ascending=[False, True], na_position="last"
+    )
 
 
 def _first_statement(value: str) -> str:
