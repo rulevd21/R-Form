@@ -6,7 +6,7 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '..', 'content_control_api_v0_4.gs'), 'utf8');
 
-function setup(changes = {}) {
+function setup(changes = {}, dateFormattedTimestamp = false) {
   let releases = 0;
   class Sheet {
     constructor(name, rows) { this.name = name; this.rows = rows; this.fail = null; }
@@ -19,7 +19,13 @@ function setup(changes = {}) {
       return {
         getDisplayValues() { return Array.from({length:nr}, (_,i) => Array.from({length:nc}, (_,j) => String(self.rows[r+i-1]?.[c+j-1] ?? ''))); },
         getDisplayValue() { return this.getDisplayValues()[0][0]; },
-        setValue(v) { if (self.fail && self.fail(r,c,v)) throw Error('Injected write failure'); self.rows[r-1][c-1] = String(v).startsWith("'") ? String(v).slice(1) : v; }
+        setValue(v) { if (self.fail && self.fail(r,c,v)) throw Error('Injected write failure'); const literal = String(v).startsWith("'");
+          let stored = literal ? String(v).slice(1) : v;
+          // Production Updated_At is DATE_TIME dd.mm.yyyy hh:mm.
+          if (dateFormattedTimestamp && !literal && self.rows[0][c-1] === 'Updated_At' &&
+              /^\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2}$/.test(String(stored)))
+            stored = String(stored).slice(0,16);
+          self.rows[r-1][c-1] = stored; }
       };
     }
   }
@@ -168,7 +174,7 @@ test('draft protects leading formula syntax as literal text',()=> {
 test('partial draft write and audit failure restore the previous fields',()=> {
   for(const failure of ['field','audit']) {
     const x=setup({Preview_Review_Status:'REVIEWED',Preview_Review_Hash:'old'}),before=JSON.stringify(x.queue.rows);
-    if(failure==='field') x.queue.fail=(r,c,v)=>c===x.fields.indexOf('Updated_At')+1&&v==='07.10.2026 13:36:15';
+    if(failure==='field') x.queue.fail=(r,c,v)=>c===x.fields.indexOf('Updated_At')+1&&v==="'07.10.2026 13:36:15";
     else x.log.fail=(r,c,v)=>v==='APPLIED';
     const call=saveDraft(x);assert.throws(call,/Injected/);
     assert.equal(JSON.stringify(x.queue.rows),before);
@@ -206,4 +212,15 @@ test('signed draft POST reaches preparation only; tampered text cannot write',()
     if(tamper) { assert.equal(JSON.stringify(x.queue.rows),before);assert.equal(x.log.rows.length,1); }
     else { assert.equal(result.status,'APPLIED');assert.equal(x.log.rows[1][3],'SAVE_TEXT_DRAFT'); }
   }
+});
+
+
+test('draft timestamp survives production minute-only date formatting',()=> {
+  const x=setup({Updated_At:'21.08.2026 21:30'},true), before=[...x.queue.rows[1]];
+  const call=saveDraft(x);
+  assert.equal(call().status,'APPLIED');
+  assert.equal(x.queue.rows[1][x.fields.indexOf('Updated_At')],'07.10.2026 13:36:15');
+  assert.equal(call().status,'ALREADY_APPLIED');
+  for (const f of ['Current_Stage','Approval_Status','Publication_Status','AutoPost_Allowed','Publish_At'])
+    assert.equal(x.queue.rows[1][x.fields.indexOf(f)],before[x.fields.indexOf(f)]);
 });
