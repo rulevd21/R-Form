@@ -1,4 +1,4 @@
-// R/Form Content Control API v0.5.6
+// R/Form Content Control API v0.5.7
 // Standalone Apps Script web app for Channel Control.
 // Reads CONTENT_QUEUE + DATA_EVENTS, applies allowlisted content actions,
 // saves owner-facing event edits, stores private photo/video assets in Drive,
@@ -7,7 +7,7 @@
 // the separate Telegram Autopost project remains the only publishing transport.
 
 const RFORM_CONTENT_API_V04 = Object.freeze({
-  version: '0.5.6',
+  version: '0.5.7',
   spreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
   queueSheet: 'CONTENT_QUEUE',
   eventsSheet: 'DATA_EVENTS',
@@ -1734,7 +1734,10 @@ function rformContentApiV04QueuePreparation_(request, saveDraft) {
     const logRow = log.getLastRow();
     try {
       fields.forEach(function (field) {
-        queue.getRange(row, map[field]).setValue(rformContentApiV04SafeText_(next[field]));
+        // Keep the signed timestamp literal: Sheets may parse date-like strings
+        // and hide seconds under the existing dd.mm.yyyy hh:mm format.
+        const writeValue = field === 'Updated_At' ? "'" + next[field] : rformContentApiV04SafeText_(next[field]);
+        queue.getRange(row, map[field]).setValue(writeValue);
       });
       SpreadsheetApp.flush();
       const readback = queue.getRange(row, 1, 1, queue.getLastColumn()).getDisplayValues()[0];
