@@ -1,4 +1,4 @@
-// R/Form Content Control API v0.5.4
+// R/Form Content Control API v0.5.5
 // Standalone Apps Script web app for Channel Control.
 // Reads CONTENT_QUEUE + DATA_EVENTS, applies allowlisted content actions,
 // saves owner-facing event edits, stores private photo/video assets in Drive,
@@ -7,7 +7,7 @@
 // the separate Telegram Autopost project remains the only publishing transport.
 
 const RFORM_CONTENT_API_V04 = Object.freeze({
-  version: '0.5.4',
+  version: '0.5.5',
   spreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
   queueSheet: 'CONTENT_QUEUE',
   eventsSheet: 'DATA_EVENTS',
@@ -40,7 +40,8 @@ const RFORM_CONTENT_API_V04 = Object.freeze({
     'Editorial_Direction', 'Work_Packet_URL', 'Folder_URL', 'Text_URL',
     'Visual_URL', 'Proof_Source', 'Duplicate_Flag', 'Publish_Error', 'Current_Stage',
     'Audience_Problem', 'Telegram_Post_Mode', 'Telegram_Visual_URL', 'Telegram_Message_ID',
-    'Telegram_Post_URL', 'Posted_At'
+    'Telegram_Post_URL', 'Posted_At',
+    'Source_Packet_Status', 'AutoPost_Allowed', 'Preview_Review_Hash', 'Preview_Reviewed_At', 'Preview_Reviewed_By'
   ]),
   eventFields: Object.freeze([
     'Event_ID', 'Date', 'Entity', 'Event_Type', 'Source', 'Fact',
@@ -170,7 +171,7 @@ function rformContentApiV04Preflight() {
       'content.read', 'content.action', 'event.review', 'event.decision', 'event.media',
       'training.read', 'publication.propose', 'publication.visual',
       'publication.approve_schedule', 'publication.queue_approve_schedule',
-      'publication.queue_assets'
+      'publication.queue_assets', 'publication.owner_preview_prepare'
     ],
     spreadsheet: spreadsheet.getName(),
     queueRows: Math.max(queue.getLastRow() - 1, 0),
@@ -206,6 +207,9 @@ function doPost(e) {
     const request = rformContentApiV04ParseRequest_(e);
     rformContentApiV04Authorize_(request);
     const operation = String(request.operation || 'read');
+    if (operation === 'queue_owner_preview_prepare') {
+      return rformContentApiV04Json_(rformContentApiV04PrepareOwnerPreview_(request));
+    }
     if (operation === 'content_action') {
       return rformContentApiV04Json_(rformContentApiV04ApplyContentAction_(request));
     }
@@ -263,7 +267,7 @@ function rformContentApiV04Payload_() {
       'content.read', 'content.action', 'event.review', 'event.decision', 'event.media',
       'training.read', 'publication.propose', 'publication.visual',
       'publication.approve_schedule', 'publication.queue_approve_schedule',
-      'publication.queue_assets'
+      'publication.queue_assets', 'publication.owner_preview_prepare'
     ],
     generated_at: new Date().toISOString(),
     queue_fields: RFORM_CONTENT_API_V04.queueFields,
@@ -306,7 +310,8 @@ function rformContentApiV04Authorize_(request) {
   if (!/^[a-f0-9]{32}$/.test(nonce)) throw new Error('Некорректный nonce.');
   if ([
     'read', 'content_action', 'event_review', 'event_decision', 'event_media',
-    'publication_approval', 'queue_publication_approval', 'queue_publication_assets'
+    'publication_approval', 'queue_publication_approval', 'queue_publication_assets',
+    'queue_owner_preview_prepare'
   ].indexOf(operation) === -1) {
     throw new Error('Операция не поддерживается.');
   }
@@ -331,6 +336,10 @@ function rformContentApiV04SignedMessage_(request) {
   const nonce = String(request.nonce || '');
   const operation = String(request.operation || 'read');
   if (operation === 'read') return timestamp + '.' + nonce;
+  if (operation === 'queue_owner_preview_prepare') {
+    return [timestamp, nonce, operation, String(request.action_id || ''),
+      String(request.content_id || ''), String(request.source_hash || '')].join('\n');
+  }
 
   if (operation === 'content_action') {
     return [
@@ -1599,4 +1608,121 @@ function rformContentApiV04Headers_(sheet) {
 function rformContentApiV04Json_(payload) {
   return ContentService.createTextOutput(JSON.stringify(payload))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+
+// Preparation-only operation. v0.5.5 initially supports existing TEXT_ONLY material.
+const RFORM_OWNER_PREVIEW_FIELDS = Object.freeze([
+  'Content_ID', 'Current_Stage', 'Pipeline_Status', 'Source_Packet_Status',
+  'Public_Data_Allowed', 'Text_Status', 'Visual_Status', 'Approval_Status',
+  'Publication_Status', 'AutoPost_Allowed', 'Publish_At', 'Duplicate_Flag',
+  'Blocking_Issue', 'Publish_Error', 'Telegram_Text', 'Telegram_Post_Mode',
+  'Telegram_Visual_URL', 'Telegram_Message_ID', 'Telegram_Post_URL', 'Posted_At',
+  'Preview_Review_Status', 'Preview_Review_Hash', 'Preview_Reviewed_At',
+  'Preview_Reviewed_By', 'Updated_At'
+]);
+
+function rformContentApiV04OwnerPreviewHash_(value) {
+  return rformContentApiV04Sha256Hex_(JSON.stringify(RFORM_OWNER_PREVIEW_FIELDS.map(function (name) {
+    return value(name);
+  })));
+}
+
+function rformContentApiV04PrepareOwnerPreview_(request) {
+  const actionId = String(request.action_id || '').trim();
+  const contentId = String(request.content_id || '').trim();
+  const sourceHash = String(request.source_hash || '').trim();
+  rformContentApiV04RequireActionId_(actionId);
+  rformContentApiV04RequireRecordId_(contentId, 'Код материала');
+  if (!/^[a-f0-9]{64}$/.test(sourceHash)) throw new Error('Некорректная версия материала.');
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) throw new Error('Очередь занята.');
+  try {
+    const ss = SpreadsheetApp.openById(RFORM_CONTENT_API_V04.spreadsheetId);
+    const queue = rformContentApiV04RequireSheet_(ss, RFORM_CONTENT_API_V04.queueSheet);
+    const map = rformContentApiV04HeaderMap_(rformContentApiV04Headers_(queue));
+    RFORM_OWNER_PREVIEW_FIELDS.forEach(function (field) {
+      if (!map[field]) throw new Error('CONTENT_QUEUE missing field: ' + field);
+    });
+    // Existing audit schema only: preparation must never create a sheet or column.
+    const log = rformContentApiV04RequireSheet_(ss, RFORM_CONTENT_API_V04.actionLogSheet);
+    const lm = rformContentApiV04HeaderMap_(rformContentApiV04Headers_(log));
+    RFORM_CONTENT_API_V04.actionLogHeaders.forEach(function (field) {
+      if (!lm[field]) throw new Error('CONTENT_ACTION_LOG missing field: ' + field);
+    });
+    const prior = rformContentApiV04FindOptionalRow_(log, 'Action_ID', actionId);
+    if (prior) {
+      const priorRow = log.getRange(prior, 1, 1, log.getLastColumn()).getDisplayValues()[0];
+      if (priorRow[lm.Content_ID - 1] !== contentId ||
+          priorRow[lm.Action - 1] !== 'PREPARE_OWNER_PREVIEW' ||
+          priorRow[lm.Comment - 1] !== sourceHash) throw new Error('Action_ID относится к другому запросу.');
+      if (priorRow[lm.Result - 1] !== 'APPLIED') throw new Error('Исход предыдущего запроса не подтверждён. Проверьте текущий статус.');
+      const currentRow = rformContentApiV04FindUniqueRow_(queue, 'Content_ID', contentId);
+      const current = queue.getRange(currentRow, 1, 1, queue.getLastColumn()).getDisplayValues()[0];
+      const originalValue = function (field) {
+        return field === 'Current_Stage' ? 'CHANNEL_CONTROL_REVIEW' : String(current[map[field] - 1] || '').trim();
+      };
+      if (String(current[map.Current_Stage - 1]).trim() !== 'OWNER_FINAL_PREVIEW' ||
+          rformContentApiV04OwnerPreviewHash_(originalValue) !== sourceHash) {
+        throw new Error('Подготовка уже выполнялась, но материал изменился. Проверьте текущий статус.');
+      }
+      return {ok: true, status: 'ALREADY_APPLIED', action_id: actionId, content_id: contentId};
+    }
+    const row = rformContentApiV04FindUniqueRow_(queue, 'Content_ID', contentId);
+    const values = queue.getRange(row, 1, 1, queue.getLastColumn()).getDisplayValues()[0];
+    const value = function (name) { return String(values[map[name] - 1] || '').trim(); };
+    if (rformContentApiV04OwnerPreviewHash_(value) !== sourceHash) throw new Error('Материал изменился. Обновите данные перед подготовкой.');
+    if (value('Current_Stage') !== 'CHANNEL_CONTROL_REVIEW') throw new Error('Материал не на этапе подготовки финального предпросмотра.');
+    if (value('Publication_Status') !== 'PLANNED' || value('AutoPost_Allowed') !== 'NO' ||
+        value('Publish_At') || ['NOT_READY', 'PENDING'].indexOf(value('Approval_Status')) === -1) {
+      throw new Error('Материал уже согласован, отложен или имеет расписание.');
+    }
+    if (['READY', 'READY_FOR_SOURCE_DATA'].indexOf(value('Source_Packet_Status')) === -1 ||
+        value('Public_Data_Allowed') !== 'YES' || value('Text_Status') !== 'READY' ||
+        value('Visual_Status') !== 'NOT_REQUIRED' || value('Telegram_Post_Mode') !== 'TEXT_ONLY' ||
+        value('Telegram_Visual_URL') || !value('Telegram_Text') ||
+        value('Telegram_Text').length > RFORM_CONTENT_API_V04.maxTelegramChars) {
+      throw new Error('Для этой операции нужен готовый TEXT_ONLY материал без визуала.');
+    }
+    if (value('Duplicate_Flag') || value('Blocking_Issue') || value('Publish_Error') ||
+        value('Telegram_Message_ID') || value('Telegram_Post_URL') || value('Posted_At') ||
+        /HOLD|SUPERSEDED|ARCHIV|REWORK/i.test(value('Pipeline_Status'))) throw new Error('Материал закрыт, заблокирован или является дублем.');
+    if (['NOT_REVIEWED', 'RECHECK_REQUIRED'].indexOf(value('Preview_Review_Status')) === -1 ||
+        value('Preview_Review_Hash') || value('Preview_Reviewed_At') || value('Preview_Reviewed_By')) {
+      throw new Error('Сначала требуется сброс устаревшего согласования штатным workflow.');
+    }
+    const previous = {Current_Stage: value('Current_Stage')};
+    const next = {Current_Stage: 'OWNER_FINAL_PREVIEW'};
+    log.appendRow([actionId, new Date(), contentId, 'PREPARE_OWNER_PREVIEW', sourceHash,
+      'Current_Stage', JSON.stringify(previous), JSON.stringify(next), 'STREAMLIT_PREPARATION',
+      String(request.nonce || ''), 'PENDING']);
+    const logRow = log.getLastRow();
+    try {
+      queue.getRange(row, map.Current_Stage).setValue(next.Current_Stage);
+      SpreadsheetApp.flush();
+      const readback = queue.getRange(row, 1, 1, queue.getLastColumn()).getDisplayValues()[0];
+      RFORM_OWNER_PREVIEW_FIELDS.forEach(function (field) {
+        const expected = field === 'Current_Stage' ? next.Current_Stage : value(field);
+        if (String(readback[map[field] - 1] || '').trim() !== expected) throw new Error('Readback mismatch: ' + field);
+      });
+      log.getRange(logRow, lm.Result).setValue('APPLIED');
+      SpreadsheetApp.flush();
+      if (log.getRange(logRow, lm.Result).getDisplayValue() !== 'APPLIED') throw new Error('Audit readback mismatch');
+      return {ok: true, status: 'APPLIED', action_id: actionId, content_id: contentId,
+        changed_fields: ['Current_Stage'], current_stage: next.Current_Stage};
+    } catch (error) {
+      // No POST replay. A failed rollback/audit leaves an explicitly unknown outcome.
+      try {
+        queue.getRange(row, map.Current_Stage).setValue(previous.Current_Stage);
+        SpreadsheetApp.flush();
+        if (queue.getRange(row, map.Current_Stage).getDisplayValue() !== previous.Current_Stage) throw new Error('Rollback readback mismatch');
+        log.getRange(logRow, lm.Result).setValue('FAILED_ROLLED_BACK');
+        SpreadsheetApp.flush();
+      } catch (rollbackError) {
+        try { log.getRange(logRow, lm.Result).setValue('OUTCOME_UNKNOWN'); SpreadsheetApp.flush(); } catch (auditError) {}
+        throw new Error('Исход подготовки неизвестен. Проверьте текущий статус; автоматический повтор отключён.');
+      }
+      throw error;
+    }
+  } finally { lock.releaseLock(); }
 }

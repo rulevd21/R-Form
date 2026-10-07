@@ -50,8 +50,8 @@ class GatewayContractTests(unittest.TestCase):
         self.assertIn("sourceHash", block)
         self.assertNotIn("UrlFetchApp", block)
 
-    def test_v054_preflight_requires_explicit_owner_approval_for_scheduling(self) -> None:
-        self.assertIn("version: '0.5.4'", self.code)
+    def test_v055_preflight_requires_explicit_owner_approval_for_scheduling(self) -> None:
+        self.assertIn("version: '0.5.5'", self.code)
         self.assertIn("publication.approve_schedule", self.code)
         self.assertIn("publication.visual", self.code)
         self.assertIn("publication.queue_approve_schedule", self.code)
@@ -108,3 +108,4 @@ class GatewayContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

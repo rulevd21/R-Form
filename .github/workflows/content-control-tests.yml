@@ -7,11 +7,13 @@ on:
     paths:
       - 'apps/content-control/**'
       - 'automation/content_control_api_v0_4.gs'
+      - 'automation/tests/owner_preview_prepare.test.cjs'
       - '.github/workflows/content-control-tests.yml'
   pull_request:
     paths:
       - 'apps/content-control/**'
       - 'automation/content_control_api_v0_4.gs'
+      - 'automation/tests/owner_preview_prepare.test.cjs'
       - '.github/workflows/content-control-tests.yml'
   workflow_dispatch:
 
@@ -36,3 +38,6 @@ jobs:
         run: cp ../../automation/content_control_api_v0_4.gs /tmp/content_control_api_v0_4.js && node --check /tmp/content_control_api_v0_4.js
       - name: Run tests
         run: python -m unittest discover -s tests -v
+      - name: Test preparation-only Apps Script behavior
+        run: node --test ../../automation/tests/owner_preview_prepare.test.cjs
+

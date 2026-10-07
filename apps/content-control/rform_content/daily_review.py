@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 from html import escape
 from typing import Any
 
@@ -18,6 +19,8 @@ from .repository import (
     DataSourceError,
     execute_publication_approval,
     execute_queue_publication_approval,
+    execute_owner_preview_prepare,
+    owner_preview_source_hash,
     fetch_queue_publication_assets,
 )
 
@@ -259,6 +262,43 @@ def render_ready_queue_review(
             if has_visual:
                 st.link_button("Заменить карточки", visual_url, width="stretch")
 
+    prepare_supported = "publication.owner_preview_prepare" in set(bundle.capabilities)
+    if prepare_supported and post_mode == "TEXT_ONLY":
+        if _text(row, "Current_Stage", "") == "OWNER_FINAL_PREVIEW":
+            st.info("Материал передан на финальный предпросмотр в Owner Bot.")
+        else:
+            canonical_text = _text(row, "Telegram_Text", "")
+            draft_changed = telegram_text != canonical_text
+            try:
+                source_hash = owner_preview_source_hash(row)
+            except ValueError:
+                source_hash = ""
+            if st.button(
+                "Передать на предпросмотр в Owner Bot",
+                width="stretch",
+                disabled=bool(st.session_state[edit_key]) or draft_changed or not source_hash,
+                key=f"prepare_owner_preview::{content_id}",
+            ):
+                identity_key = f"owner_preview_action::{content_id}::{source_hash}"
+                st.session_state.setdefault(identity_key, secrets.token_hex(16))
+                endpoint_url, secret, timeout = _api_args(app_config, api_secrets)
+                try:
+                    result = execute_owner_preview_prepare(
+                        endpoint_url, secret, row,
+                        action_id=st.session_state[identity_key], timeout_seconds=timeout,
+                    )
+                    if result.get("status") not in {"APPLIED", "ALREADY_APPLIED"}:
+                        raise DataSourceError("Подготовка не подтверждена. Проверьте текущий статус.")
+                except (DataSourceError, ValueError):
+                    st.error("Подготовка не подтверждена. Обновите данные и проверьте статус перед повторным действием.")
+                else:
+                    st.session_state["daily_publication_success"] = "Материал передан на предпросмотр владельца в Owner Bot."
+                    st.cache_data.clear()
+                    st.rerun()
+            st.caption("Материал появится в Owner Bot при ближайшей проверке очереди или по /today. Публикация требует отдельного согласования.")
+            if draft_changed:
+                st.warning("Локальный текст изменён. Сначала сохраните его в каноническом материале через workflow подготовки.")
+
     enabled = "publication.queue_approve_schedule" in set(bundle.capabilities)
     if not enabled:
         st.warning("Для согласования этого готового материала требуется Apps Script v0.5.3.")
@@ -424,3 +464,4 @@ def render_daily_publication_review(
         "Второй вариант и другие материалы не изменятся."
     )
     return True
+
