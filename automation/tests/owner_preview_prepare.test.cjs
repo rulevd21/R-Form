@@ -19,13 +19,14 @@ function setup(changes = {}) {
       return {
         getDisplayValues() { return Array.from({length:nr}, (_,i) => Array.from({length:nc}, (_,j) => String(self.rows[r+i-1]?.[c+j-1] ?? ''))); },
         getDisplayValue() { return this.getDisplayValues()[0][0]; },
-        setValue(v) { if (self.fail && self.fail(r,c,v)) throw Error('Injected write failure'); self.rows[r-1][c-1] = v; }
+        setValue(v) { if (self.fail && self.fail(r,c,v)) throw Error('Injected write failure'); self.rows[r-1][c-1] = String(v).startsWith("'") ? String(v).slice(1) : v; }
       };
     }
   }
   const ctx = vm.createContext({console, Date, Utilities: {
     DigestAlgorithm: {SHA_256:'sha256'}, Charset:{UTF_8:'utf8'},
     computeDigest: (alg,s) => [...crypto.createHash('sha256').update(s).digest()],
+    formatDate: () => '07.10.2026 13:36:15',
   }, LockService:{getScriptLock:()=>({tryLock:()=>true,releaseLock:()=>releases++})}});
   vm.runInContext(source, ctx);
   const fields = Array.from(vm.runInContext('RFORM_OWNER_PREVIEW_FIELDS',ctx));
@@ -101,5 +102,108 @@ test('signature binds operation, action identity, object and snapshot',()=> {
   for (const field of ['action_id','content_id','source_hash','operation']) {
     const altered={...x.req,[field]:field==='operation'?'queue_publication_assets':'changed'};
     assert.notEqual(x.ctx.rformContentApiV04SignedMessage_(altered),m);
+  }
+});
+
+function saveDraft(x, text='Новая редакционная версия.') {
+  x.req.telegram_text=text;
+  return ()=>x.ctx.rformContentApiV04SaveQueueTextDraft_(x.req);
+}
+
+test('draft save changes text and invalidates review without approval, stage or schedule',()=> {
+  const x=setup({Preview_Review_Status:'REVIEWED',Preview_Review_Hash:'old-hash',
+    Preview_Reviewed_At:'old-time',Preview_Reviewed_By:'owner'}), before=[...x.queue.rows[1]];
+  const call=saveDraft(x);
+  assert.equal(call().status,'APPLIED');
+  const changed=x.queue.rows[1].map((v,i)=>v===before[i]?null:x.fields[i]).filter(Boolean);
+  assert.deepEqual(changed.sort(),['Telegram_Text','Updated_At','Preview_Review_Status',
+    'Preview_Review_Hash','Preview_Reviewed_At','Preview_Reviewed_By'].sort());
+  const value=f=>x.queue.rows[1][x.fields.indexOf(f)];
+  for (const f of ['Current_Stage','Approval_Status','Publication_Status','AutoPost_Allowed','Publish_At'])
+    assert.equal(value(f),before[x.fields.indexOf(f)],f);
+  assert.equal(value('Preview_Review_Status'),'RECHECK_REQUIRED');
+  assert.equal(x.log.rows[1][3],'SAVE_TEXT_DRAFT');
+  assert.equal(x.log.rows[1].at(-1),'APPLIED');
+  assert.equal(call().status,'ALREADY_APPLIED');
+  assert.equal(x.log.rows.length,2);
+});
+test('draft can be passed to the existing preview operation only after fresh snapshot',()=> {
+  const x=setup();saveDraft(x)();
+  x.req.action_id='c'.repeat(32);x.req.source_hash=x.hash();
+  assert.equal(x.call().status,'APPLIED');
+  assert.equal(x.queue.rows[1][x.fields.indexOf('Current_Stage')],'OWNER_FINAL_PREVIEW');
+});
+test('draft identity binds target text and refuses changed current state',()=> {
+  const x=setup(),call=saveDraft(x);call();
+  x.req.telegram_text='Другой текст';assert.throws(call,/Action_ID/);
+  x.req.telegram_text='Новая редакционная версия.';
+  x.queue.rows[1][x.fields.indexOf('Publication_Status')]='HOLD';
+  assert.throws(call,/уже выполнялась/);
+});
+test('draft signature binds the exact trimmed text',()=> {
+  const x=setup();Object.assign(x.req,{timestamp:123,operation:'queue_text_draft_save',telegram_text:'Текст'});
+  const original=x.ctx.rformContentApiV04SignedMessage_(x.req);
+  for (const field of ['telegram_text','action_id','content_id','source_hash','operation'])
+    assert.notEqual(x.ctx.rformContentApiV04SignedMessage_({...x.req,[field]:field==='operation'?'queue_owner_preview_prepare':'changed'}),original);
+});
+for (const [field,value] of Object.entries({Current_Stage:'OWNER_FINAL_PREVIEW',Publication_Status:'HOLD',
+  AutoPost_Allowed:'YES',Approval_Status:'APPROVED',Publish_At:'future',Duplicate_Flag:'YES',
+  Pipeline_Status:'HOLD',Blocking_Issue:'blocked',Public_Data_Allowed:'NO',Source_Packet_Status:'NOT_READY',
+  Text_Status:'SUPERSEDED',Visual_Status:'READY',Telegram_Post_Mode:'ALBUM_CAPTION',Telegram_Visual_URL:'media',
+  Telegram_Message_ID:'posted',Publish_Error:'error',Preview_Review_Status:'UNKNOWN'}))
+  test('draft refuses unsafe '+field,()=> {
+    const x=setup({[field]:value}),before=JSON.stringify(x.queue.rows);
+    assert.throws(saveDraft(x));assert.equal(JSON.stringify(x.queue.rows),before);assert.equal(x.log.rows.length,1);
+  });
+test('draft refuses stale or oversized text before writes',()=> {
+  const x=setup();x.queue.rows[1][x.fields.indexOf('Updated_At')]='changed';
+  assert.throws(saveDraft(x),/изменился/);assert.equal(x.log.rows.length,1);
+  assert.throws(saveDraft(setup(),'x'.repeat(4097)));
+  assert.throws(saveDraft(setup(),''));
+});
+test('draft protects leading formula syntax as literal text',()=> {
+  const x=setup();saveDraft(x,'=SUM(A1:A2)')();
+  assert.equal(x.queue.rows[1][x.fields.indexOf('Telegram_Text')],'=SUM(A1:A2)');
+});
+test('partial draft write and audit failure restore the previous fields',()=> {
+  for(const failure of ['field','audit']) {
+    const x=setup({Preview_Review_Status:'REVIEWED',Preview_Review_Hash:'old'}),before=JSON.stringify(x.queue.rows);
+    if(failure==='field') x.queue.fail=(r,c,v)=>c===x.fields.indexOf('Updated_At')+1&&v==='07.10.2026 13:36:15';
+    else x.log.fail=(r,c,v)=>v==='APPLIED';
+    const call=saveDraft(x);assert.throws(call,/Injected/);
+    assert.equal(JSON.stringify(x.queue.rows),before);
+    assert.equal(x.log.rows[1].at(-1),'FAILED_ROLLED_BACK');
+    assert.throws(call,/не подтверждён/);
+  }
+});
+test('draft rollback failure is unknown and cannot replay',()=> {
+  const x=setup(),original=x.item.Telegram_Text;
+  x.log.fail=(r,c,v)=>v==='APPLIED';x.queue.fail=(r,c,v)=>v===original;
+  const call=saveDraft(x);assert.throws(call,/неизвестен/);
+  assert.equal(x.log.rows[1].at(-1),'OUTCOME_UNKNOWN');assert.throws(call,/не подтверждён/);
+});
+
+test('draft rollback preserves original surrounding whitespace',()=> {
+  const x=setup({Telegram_Text:'  Исходный текст.  ',Updated_At:' old timestamp '}),before=JSON.stringify(x.queue.rows);
+  x.log.fail=(r,c,v)=>v==='APPLIED';assert.throws(saveDraft(x));
+  assert.equal(JSON.stringify(x.queue.rows),before);
+});
+
+test('signed draft POST reaches preparation only; tampered text cannot write',()=> {
+  for(const tamper of [false,true]) {
+    const x=setup();const cache=new Set();
+    x.ctx.PropertiesService={getScriptProperties:()=>({getProperty:()=> 'test-secret'})};
+    x.ctx.CacheService={getScriptCache:()=>({get:key=>cache.has(key)?'1':null,put:key=>cache.add(key)})};
+    x.ctx.Utilities.computeHmacSha256Signature=(message,secret)=>[...crypto.createHmac('sha256',secret).update(message).digest()];
+    x.ctx.Utilities.base64EncodeWebSafe=bytes=>Buffer.from(bytes).toString('base64url');
+    x.ctx.ContentService={MimeType:{JSON:'json'},createTextOutput:s=>({setMimeType:()=>JSON.parse(s)})};
+    Object.assign(x.req,{operation:'queue_text_draft_save',timestamp:Math.floor(Date.now()/1000),telegram_text:'Новая редакция.'});
+    x.req.signature=crypto.createHmac('sha256','test-secret').update(x.ctx.rformContentApiV04SignedMessage_(x.req)).digest('base64url');
+    if(tamper) x.req.telegram_text='Подмена';
+    const before=JSON.stringify(x.queue.rows);
+    const result=x.ctx.doPost({postData:{contents:JSON.stringify(x.req)}});
+    assert.equal(result.ok,!tamper);
+    if(tamper) { assert.equal(JSON.stringify(x.queue.rows),before);assert.equal(x.log.rows.length,1); }
+    else { assert.equal(result.status,'APPLIED');assert.equal(x.log.rows[1][3],'SAVE_TEXT_DRAFT'); }
   }
 });

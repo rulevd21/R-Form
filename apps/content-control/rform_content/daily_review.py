@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import secrets
 from html import escape
 from typing import Any
@@ -20,6 +21,7 @@ from .repository import (
     execute_publication_approval,
     execute_queue_publication_approval,
     execute_owner_preview_prepare,
+    execute_queue_text_draft_save,
     owner_preview_source_hash,
     fetch_queue_publication_assets,
 )
@@ -161,7 +163,25 @@ def render_ready_queue_review(
     materials = owner_ready_materials(bundle.queue)
     if materials.empty:
         return False
+    success_message = st.session_state.pop("queue_draft_success", "")
+    if success_message:
+        st.success(success_message)
+    if st.button("Обновить материалы", key="refresh_ready_materials"):
+        st.cache_data.clear()
+        st.rerun()
     row = materials.iloc[0]
+    if len(materials) > 1:
+        options = materials["Content_ID"].astype(str).tolist()
+        labels = {
+            _text(item, "Content_ID", ""): _text(item, "Telegram_Text", "").splitlines()[0]
+            for _, item in materials.iterrows()
+        }
+        selection_key = "ready_queue_selection"
+        if st.session_state.get(selection_key) not in options:
+            st.session_state.pop(selection_key, None)
+        selected_id = st.selectbox("Выберите готовый материал", options,
+            format_func=lambda value: labels.get(value, value), key=selection_key)
+        row = materials[materials["Content_ID"].astype(str) == selected_id].iloc[0]
     content_id = _text(row, "Content_ID", "")
     state_suffix = f"{content_id}::{_text(row, 'Updated_At', '')}"
     text_key = f"ready_queue_text::{state_suffix}"
@@ -170,6 +190,12 @@ def render_ready_queue_review(
     st.session_state.setdefault(text_key, _text(row, "Telegram_Text", ""))
     st.session_state.setdefault(edit_key, False)
     telegram_text = str(st.session_state[text_key]).strip()
+    draft_save_supported = (
+        "publication.queue_text_draft_save" in set(bundle.capabilities)
+        and _text(row, "Current_Stage", "") == "CHANNEL_CONTROL_REVIEW"
+        and _text(row, "Telegram_Post_Mode", "").upper() == "TEXT_ONLY"
+        and not _text(row, "Telegram_Visual_URL", "")
+    )
 
     st.subheader("Готово к согласованию")
     st.caption(
@@ -233,10 +259,33 @@ def render_ready_queue_review(
                 updated = str(st.session_state.get(input_key, "")).strip()
                 if not updated:
                     st.error("Текст публикации не может быть пустым.")
+                elif draft_save_supported and updated != _text(row, "Telegram_Text", ""):
+                    try:
+                        source_hash = owner_preview_source_hash(row)
+                        # The identity survives a timeout, but is scoped to this exact edit.
+                        text_hash = hashlib.sha256(updated.encode("utf-8")).hexdigest()
+                        action_key = f"save_draft_action::{content_id}::{source_hash}::{text_hash}"
+                        st.session_state.setdefault(action_key, secrets.token_hex(16))
+                        endpoint_url, secret, timeout = _api_args(app_config, api_secrets)
+                        execute_queue_text_draft_save(endpoint_url, secret, row, updated,
+                            action_id=st.session_state[action_key], timeout_seconds=timeout)
+                    except (DataSourceError, ValueError) as exc:
+                        st.error(str(exc))
+                        st.info("Исход записи нужно проверить через «Обновить материалы». Автоматический повтор не выполняется.")
+                    else:
+                        for state_key in (text_key, edit_key, input_key):
+                            st.session_state.pop(state_key, None)
+                        st.session_state["queue_draft_success"] = (
+                            "Текст сохранён в очереди без согласования. Требуется новый предпросмотр."
+                        )
+                        st.cache_data.clear()
+                        st.rerun()
                 else:
                     st.session_state[text_key] = updated
                     st.session_state[edit_key] = False
                     st.rerun()
+        if not draft_save_supported:
+            st.caption("Изменения здесь остаются локальным черновиком. Сохранение в очередь без согласования недоступно для этого материала или версии шлюза.")
         with cancel_col:
             if st.button("Отменить", width="stretch", key=f"cancel_ready::{state_suffix}"):
                 st.session_state.pop(input_key, None)
@@ -464,4 +513,3 @@ def render_daily_publication_review(
         "Второй вариант и другие материалы не изменятся."
     )
     return True
-
