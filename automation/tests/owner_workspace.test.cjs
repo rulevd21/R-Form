@@ -113,7 +113,7 @@ test('AI request and proposal never mutate text; stale proposals are refused',()
 });
 
 test('enable snapshots old CLOSED sessions; new closed session produces one factual draft',()=>{
-  const x=harness();x.addSession({Session_ID:'OLD'});x.api.rformContentApiV04EnableTrainingDrafts();
+  const x=harness();delete x.props.RFORM_AUTO_DRAFT_BASELINE;x.addSession({Session_ID:'OLD'});x.api.rformContentApiV04EnableTrainingDrafts();
   x.addSession();const r=x.api.rformContentApiV04Workspace_({action_id:'a'.repeat(32),payload:{action:'sync_training'}});
   assert.equal(r.created.length,1);const item=x.item(2);
   assert(item.Telegram_Text.includes('80×4×4'));assert.equal(item.Publication_Status,'PLANNED');

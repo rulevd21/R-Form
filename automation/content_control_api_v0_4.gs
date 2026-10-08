@@ -2169,7 +2169,10 @@ function rformContentApiV04TrainingText_(s) {
 function rformContentApiV04TrainingDrafts_(c,request) {
   const props=PropertiesService.getScriptProperties();
   if(props.getProperty('RFORM_AUTO_DRAFT_ENABLED')!=='YES') return {ok:true,status:'DISABLED',created:[]};
-  const baseline=JSON.parse(props.getProperty('RFORM_AUTO_DRAFT_BASELINE') || '[]');
+  const baselineRaw=props.getProperty('RFORM_AUTO_DRAFT_BASELINE');
+  if(!baselineRaw) throw new Error('Baseline отсутствует. Автоматический импорт истории запрещён.');
+  const baseline=JSON.parse(baselineRaw);
+  if(!Array.isArray(baseline) || baseline.some(function(id){return typeof id!=='string';})) throw new Error('Baseline повреждён. Требуется проверка.');
   const sessions=rformContentApiV04ReadRows_(rformContentApiV04RequireSheet_(c.ss,RFORM_CONTENT_API_V04.trainingSessionsSheet),
     RFORM_CONTENT_API_V04.trainingSessionFields.concat(['Completed_At','Duplicate_Flag']),'Session_ID');
   const queue=rformContentApiV04ReadRows_(c.queue,RFORM_CONTENT_API_V04.queueFields,'Content_ID');

@@ -77,6 +77,7 @@ function harness(){
   const sheetApp={openById:()=>spreadsheet,flush:()=>{}};
   api.SpreadsheetApp=sheetApp;folder(cfg.assetsRootFolderId);
   props.RFORM_CONTENT_API_SECRET='fixture-secret';
+  props.RFORM_AUTO_DRAFT_BASELINE='[]'; // Valid configured baseline in isolated fixtures.
   const bot=vm.createContext({...environment,SpreadsheetApp:sheetApp});vm.runInContext(botSource,bot);
   Object.assign(props,{RFORM_OWNER_BOT_TOKEN:'fixture',RFORM_CONTENT_API_SECRET:'fixture-secret',
     RFORM_OWNER_TELEGRAM_USER_ID:'42',RFORM_OWNER_TELEGRAM_CHAT_ID:'42',RFORM_OWNER_BOT_ACTIONS_ENABLED:'YES'});

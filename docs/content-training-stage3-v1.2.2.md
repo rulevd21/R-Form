@@ -22,7 +22,7 @@
 
 Текущий проект Training открыт и прочитан 08.10.2026: SessionService.finish закрывает плановую сессию, не записывая Completed_At; normalize_ не возвращает его; CREATE_SESSION/UPDATE_DRAFT_SESSION в действующем SchemaService не разрешают запись этого поля. При этом текущая 23-польная схема и FREE операции уже присутствуют и должны сохраняться.
 
-49 канонических CLOSED: у 31 пустой Completed_At, в том числе у сессий 28/30 сентября и 02/05/07 октября. Это факт текущего чтения, а не основание восстанавливать время по дате или длительности. 49 старых CLOSED уже входят в существующий baseline автоматических черновиков; массовый импорт/ремонт не входит в этап.
+49 канонических CLOSED: у 31 пустой Completed_At, в том числе у сессий 28/30 сентября и 02/05/07 октября. Это факт текущего чтения, а не основание восстанавливать время по дате или длительности. 49 старых CLOSED уже входят в существующий baseline автоматических черновиков; массовый импорт/ремонт не входит в этап. Отсутствующий или повреждённый baseline блокирует синхронизацию, а не запускает импорт истории.
 
 Источник Training: существующий проект 14fiFX0QrV_ewmjBH7AoXJiREEa7EEYjcjvVczSYlWP0EmA6CdY-pmZuY. Живой интерфейс подтвердил UI 2.2.1 / CORE 2.1.8. Основной deployment:
 https://script.google.com/macros/s/AKfycbwAPl_CXbaCPj1Ps9fOGMNdsIU3nwfJJDqkmhcEb8-1gxwrt1qZuWehynY_DeU483C9Ng/exec
@@ -38,7 +38,7 @@ https://script.google.com/macros/s/AKfycbwAPl_CXbaCPj1Ps9fOGMNdsIU3nwfJJDqkmhcEb
 
 ## Проверки кандидата
 
-- 157 Node tests PASS (15 новых): create/update planned close, VALID/WARNING, точный timestamp журнала, replay, потеря timestamp, writer→sync→private preview, длинные факты, один черновик, PARTIAL с причинами, superseded AI request, мост ChatGPT, отказ устаревшего пакета, read-only очередь ИИ.
+- 158 Node tests PASS (16 новых): create/update planned close, VALID/WARNING, точный timestamp журнала, replay, потеря timestamp, writer→sync→private preview, длинные факты, один черновик, PARTIAL с причинами, superseded AI request, мост ChatGPT, отказ устаревшего пакета, read-only очередь ИИ.
 - 92 Python tests PASS; существующий Streamlit совместим с новым API.
 - Синтаксис API, Bot и пяти восстановленных Training модулей проверен; git diff --check PASS.
 - Тесты работают с изолированными фикстурами, без network, production writes или Telegram channel publication. Python-зависимости использованы только для тестов.

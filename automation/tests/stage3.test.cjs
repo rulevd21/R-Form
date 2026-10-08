@@ -70,3 +70,11 @@ test('one flow: training draft -> ChatGPT proposal -> phone photo -> review -> v
  assert.equal(x.api.rformContentApiV04WorkspaceMeta_()[q.Content_ID].versions.length,1);
  assert(x.messages.every(m=>m.method==='answerCallbackQuery' || String(m.payload.chat_id)==='42'));
 });
+
+test('missing or corrupt baseline cannot cause a historical automatic import',()=>{
+ for(const baseline of [undefined,'{}','[42]']){
+  const x=harness();x.props.RFORM_AUTO_DRAFT_ENABLED='YES';x.addSession();
+  if(baseline===undefined)delete x.props.RFORM_AUTO_DRAFT_BASELINE;else x.props.RFORM_AUTO_DRAFT_BASELINE=baseline;
+  const before=JSON.stringify([x.queue.rows,x.log.rows]);assert.throws(()=>sync(x),/Baseline/);assert.equal(JSON.stringify([x.queue.rows,x.log.rows]),before);
+ }
+});
