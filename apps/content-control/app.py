@@ -20,6 +20,7 @@ from rform_content.repository import (
     DataSourceError,
     diagnostics,
     execute_content_action,
+    execute_owner_workspace,
     load_bundle,
 )
 from rform_content.daily_review import render_daily_publication_review
@@ -43,6 +44,7 @@ STATE_LABELS = {
     "HOLD": "Пауза",
     "CANCELLED": "Отменено",
     "SUPERSEDED": "Заменено",
+    "ARCHIVED": "Архив",
 }
 
 ACTION_LABELS = {
@@ -428,7 +430,7 @@ def _source_label(source: str) -> str:
 
 
 def render_header(source: str, capabilities: tuple[str, ...]) -> None:
-    badge = "АВТОМАТИЧЕСКИЙ РЕЖИМ · v0.5.6"
+    badge = "КОНТЕНТ-КОНТРОЛЬ · v0.5.8"
     st.markdown('<div class="rf-kicker">R/Form · Контент-операции</div>', unsafe_allow_html=True)
     st.markdown('<div class="rf-title">Управление контентом</div>', unsafe_allow_html=True)
     st.markdown(
@@ -514,6 +516,60 @@ def render_control(queue: pd.DataFrame, events: pd.DataFrame) -> None:
             )
 
 
+def _render_reconciliation_actions(row, bundle, app_config, api_secrets) -> None:
+    if "publication.channel_reconcile" not in bundle.capabilities:
+        return
+    cid = _value(row, "Content_ID", "")
+    state = _value(row, "Lifecycle_State", "")
+    if state == "PUBLISHED":
+        meta = (bundle.workspace_meta or {}).get(cid, {}).get("publication")
+        if meta:
+            with st.expander("Фактически опубликованная редакция"):
+                st.write(meta.get("published_text", ""))
+                st.write(meta.get("post_url", ""))
+        return
+    if _value(row, "Publication_Status", "") in {"SCHEDULED", "PUBLISHING"}:
+        return
+    payload = None
+    if state in TERMINAL_PUBLICATION_STATES:
+        if cid.startswith("TEST-"):
+            return
+        if st.button("Вернуть из архива на доработку", key=f"restore::{cid}"):
+            payload = {"action": "restore"}
+    else:
+        with st.expander("Архив и ручная публикация"):
+            reason = st.selectbox("Причина архива", ["CANCELLED_BY_OWNER", "STALE"],
+                format_func=lambda x: {"CANCELLED_BY_OWNER": "Не буду публиковать", "STALE": "Потерял актуальность"}[x],
+                key=f"archive_reason::{cid}")
+            if st.button("В архив", key=f"archive::{cid}"):
+                payload = {"action": "archive", "reason": reason}
+            posts = list(bundle.channel_review)
+            if posts:
+                selected = st.selectbox("Публикация канала", range(len(posts)),
+                    format_func=lambda i: posts[i]["event"]["text"].split("\n")[0][:100], key=f"manual_post::{cid}")
+                event = posts[selected]["event"]
+                st.write("Черновик:", _value(row, "Telegram_Text", ""))
+                st.write("Опубликовано:", event["text"])
+                st.write(event["post_url"])
+                relation = st.radio("Связь с черновиком", ["Опубликованная редакция", "Заменяет черновик"], key=f"relation::{cid}")
+                if st.button("Подтвердить связь", key=f"link::{cid}"):
+                    payload = {"action": "link_publication" if relation == "Опубликованная редакция" else "archive",
+                               "message_id": event["message_id"], "event_hash": event["hash"]}
+                    if payload["action"] == "archive":
+                        payload["reason"] = "REPLACED_BY_POST"
+            st.caption("История сохраняется. Эти действия не запускают публикацию.")
+    if payload:
+        try:
+            execute_owner_workspace(str(app_config.get("apps_script_url", "")),
+                str(api_secrets.get("secret", "")), row, payload,
+                timeout_seconds=max(30, int(app_config.get("request_timeout_seconds", 30))))
+        except (DataSourceError, ValueError) as exc:
+            st.error(str(exc))
+        else:
+            st.cache_data.clear()
+            st.rerun()
+
+
 def _render_content_actions(
     row: pd.Series,
     bundle,
@@ -523,6 +579,7 @@ def _render_content_actions(
     st.markdown("#### Управление материалом")
     state = _value(row, "Lifecycle_State", "")
     content_id = _value(row, "Content_ID", "")
+    _render_reconciliation_actions(row, bundle, app_config, api_secrets)
     if state in TERMINAL_PUBLICATION_STATES:
         st.info("Материал закрыт. Изменение финального статуса из приложения запрещено.")
         return
@@ -577,6 +634,15 @@ def _render_content_actions(
 
 
 def render_queue(bundle, app_config: dict[str, Any], api_secrets: dict[str, Any]) -> None:
+    if bundle.channel_posts:
+        with st.expander("Фактическая история канала"):
+            posts = [p for p in bundle.channel_posts if p.get("text")]
+            history = pd.DataFrame([{
+                "Дата": pd.to_datetime(p["date"], unit="s", utc=True).tz_convert("Europe/Moscow").strftime("%d.%m.%Y"),
+                "Публикация": p["text"].split("\n")[0], "Ссылка": p["post_url"],
+            } for p in sorted(posts, key=lambda p: p["date"], reverse=True)])
+            st.dataframe(history, hide_index=True, width="stretch")
+            st.caption("История канала не создаёт новые черновики. Связанные и неподтверждённые редакции учитываются отдельно.")
     queue = _queue_with_material_names(bundle.queue, bundle.events)
     st.subheader("Очередь контента")
     success_message = st.session_state.pop("content_action_success", "")
@@ -849,17 +915,19 @@ with st.sidebar:
     st.markdown('<div class="rf-kicker">Навигация</div>', unsafe_allow_html=True)
     page = st.radio(
         "Раздел",
-        ["Сегодня", "План", "Система"],
+        ["Сегодня", "Материалы", "План", "Система"],
         label_visibility="collapsed",
     )
     st.markdown("---")
-    st.caption("R/Form · Управление контентом v0.5.6")
+    st.caption("R/Form · Управление контентом v0.5.8")
     st.caption("Источник истины остаётся в Google Таблицах.")
 
 if page == "Сегодня":
     proposal_shown = render_daily_publication_review(bundle, app_config, api_secrets)
     if not proposal_shown:
         render_today_clear(bundle)
+elif page == "Материалы":
+    render_queue(bundle, app_config, api_secrets)
 elif page == "План":
     render_plan(bundle)
 else:

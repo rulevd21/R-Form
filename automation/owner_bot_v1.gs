@@ -1,4 +1,4 @@
-// R/Form Owner Bot v1.1.0 · P0 Owner Inbox
+// R/Form Owner Bot v1.2.0 · P0 Owner Inbox
 // Standalone Google Apps Script project.
 // Purpose: private Telegram owner interface for OWNER_FINAL_PREVIEW materials.
 // Read/write contract:
@@ -24,7 +24,7 @@
 //   RFORM_OWNER_TELEGRAM_CHAT_ID
 
 const RFORM_OWNER_BOT_V1 = Object.freeze({
-  version: '1.1.0',
+  version: '1.2.0',
   spreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
   actionLogSheet: 'CONTENT_ACTION_LOG',
   pollMinutes: 5,
@@ -367,7 +367,8 @@ function doPost(e) {
   try {
     return rformOwnerBotV1Webhook_(e);
   } catch (error) {
-    console.error(error && error.stack ? error.stack : String(error));
+    if(String(error.message || '').indexOf('CHANNEL_CAPTURE_FAILED')===0) throw error;
+    console.error('Owner Bot webhook failed.');
     return rformOwnerBotV1WebResponse_('OK');
   }
 }
@@ -392,7 +393,9 @@ function rformOwnerBotV1Webhook_(e) {
     return rformOwnerBotV1WebResponse_('OK');
   }
 
-  if (update.callback_query) {
+  if(update.channel_post || update.edited_channel_post) {
+    rformOwnerBotV1ChannelCapture_(update.channel_post || update.edited_channel_post);
+  } else if (update.callback_query) {
     rformOwnerBotV1HandleCallback_(update.callback_query);
   } else if (update.message) {
     rformOwnerBotV1HandleMessage_(update.message);
@@ -499,6 +502,10 @@ function rformOwnerBotV1Poll() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) return;
   try {
+    if(props.getProperty('RFORM_OWNER_CHANNEL_SYNC_ENABLED')==='YES') {
+      try {rformOwnerBotV1ChannelDrain_();props.deleteProperty('RFORM_OWNER_CHANNEL_SYNC_ERROR');}
+      catch(_) {props.setProperty('RFORM_OWNER_CHANNEL_SYNC_ERROR','NEEDS_CHECK');console.warn('Channel reconciliation needs checking; captured observations retained.');}
+    }
     if (props.getProperty('RFORM_OWNER_AUTO_DRAFTS_ENABLED') === 'YES') rformOwnerBotV1WorkspaceApi_('', '', {action:'sync_training'});
     const bundle = rformOwnerBotV1ApiRead_();
     const previews = rformOwnerBotV1BuildReadyPreviews_(
@@ -508,6 +515,7 @@ function rformOwnerBotV1Poll() {
     );
     rformOwnerBotV1WorkspaceReminders_(bundle);
     rformOwnerBotV1WorkspaceProposals_(bundle);
+    if(props.getProperty('RFORM_OWNER_CHANNEL_SYNC_ENABLED')==='YES') rformOwnerBotV1ChannelNotify_(bundle);
     const sentState = rformOwnerBotV1SentState_();
 
     previews.forEach(function (preview) {
@@ -571,7 +579,7 @@ function rformOwnerBotV1ReadyItems_(queue) {
     const mode = String(item.Telegram_Post_Mode || 'TEXT_ONLY').trim().toUpperCase() || 'TEXT_ONLY';
     const text = String(item.Telegram_Text || '').trim();
 
-    if (stage !== RFORM_OWNER_BOT_V1.readyStage) return false;
+    if (stage !== RFORM_OWNER_BOT_V1.readyStage || rformOwnerBotV1WorkspaceArchived_(item)) return false;
     if (['YES', 'ДА', 'TRUE', '1'].indexOf(publicAllowed) === -1) return false;
     if (['SCHEDULED', 'PUBLISHING', 'PUBLISHED', 'HOLD', 'CANCELLED', 'SUPERSEDED', 'ARCHIVED'].indexOf(publication) !== -1) return false;
     if (['YES', 'ДА', 'TRUE', '1', 'DUPLICATE'].indexOf(duplicate) !== -1) return false;
@@ -1250,9 +1258,10 @@ function rformOwnerBotV1WorkspaceRows_(queue,section,query) {
   const s=String(query || '').toLocaleLowerCase('ru');
   return (queue || []).filter(function(q) {
     const pub=String(q.Publication_Status || '');
-    const match=section==='published'?pub==='PUBLISHED':section==='held'?pub==='HOLD':
-      ['PLANNED','NOT_READY','SCHEDULED','PUBLISHING'].indexOf(pub)!==-1 &&
-      !/SUPERSEDED|ARCHIV|CANCELLED/.test(q.Pipeline_Status || '');
+    const archived=rformOwnerBotV1WorkspaceArchived_(q);
+    const match=section==='published'?pub==='PUBLISHED':section==='archived'?archived && pub!=='PUBLISHED':
+      section==='held'?pub==='HOLD' && !archived:
+      ['PLANNED','NOT_READY','SCHEDULED','PUBLISHING'].indexOf(pub)!==-1 && !archived;
     if(!match) return false;
     return !s || [q.Content_ID,q.Date,q.Session_ID,q.Rubric,String(q.Telegram_Text || '').split('\n')[0]]
       .join(' ').toLocaleLowerCase('ru').indexOf(s)!==-1;
@@ -1260,19 +1269,23 @@ function rformOwnerBotV1WorkspaceRows_(queue,section,query) {
 }
 
 function rformOwnerBotV1WorkspaceMenu_() {
-  rformOwnerBotV1SendOwnerText_('R/Form · Материалы\n\nВыберите раздел. Для поиска: /search слово или дата.',{
+  const warning=PropertiesService.getScriptProperties().getProperty('RFORM_OWNER_CHANNEL_SYNC_ERROR')?'\nСверка с каналом требует проверки; сохранённые наблюдения не потеряны.':'';
+  rformOwnerBotV1SendOwnerText_('R/Form · Материалы\n\nВыберите раздел. Для поиска: /search слово или дата.'+warning,{
     reply_markup:JSON.stringify({inline_keyboard:[
       [{text:'В работе',callback_data:'ow:list:work:0'}],
       [{text:'Отложено',callback_data:'ow:list:held:0'}],
-      [{text:'Опубликовано',callback_data:'ow:list:published:0'}]
+      [{text:'Опубликовано',callback_data:'ow:list:published:0'}],
+      [{text:'Архив',callback_data:'ow:list:archived:0'}],
+      [{text:'Сверка с каналом',callback_data:'ow:sync:0'}]
     ]})
   });
 }
 
 function rformOwnerBotV1WorkspaceList_(bundle,section,page,query) {
-  const rows=rformOwnerBotV1WorkspaceRows_(bundle.queue,section,query);
+  if(section==='published' && !query && bundle.channel_posts) {rformOwnerBotV1ChannelPublished_(bundle,page);return;}
+  const rows=query?(bundle.queue || []):rformOwnerBotV1WorkspaceRows_(bundle.queue,section,query);
   const offset=Math.max(0,Math.min(Number(page)||0,Math.max(0,Math.ceil(rows.length/5)-1)));
-  const names={work:'В работе',held:'Отложено',published:'Опубликовано'};
+  const names={work:'В работе',held:'Отложено',published:'Опубликовано',archived:'Архив'};
   const buttons=rows.slice(offset*5,offset*5+5).map(function(q) {
     const title=String(q.Telegram_Text || q.Content_ID).split('\n')[0];
     return [{text:(q.Date+' · '+title).slice(0,60),callback_data:'ow:open:'+rformOwnerBotV1ItemToken_(q)}];
@@ -1311,8 +1324,22 @@ function rformOwnerBotV1WorkspaceOpen_(bundle,token) {
     'Сохранённых правок: '+(meta.versions || []).length];
   if(meta.reminder && meta.reminder.review_at) info.push('Рассмотреть: '+meta.reminder.review_at+' · напоминание '+(meta.reminder.notify?'включено':'выключено'));
   if(item.Publication_Status==='PUBLISHED') {
+    CacheService.getScriptCache().remove('ow_active');
     if(item.Telegram_Post_URL) info.push(item.Telegram_Post_URL);
-    rformOwnerBotV1SendOwnerText_(info.join('\n'),{reply_markup:JSON.stringify({inline_keyboard:[[{text:'Разделы',callback_data:'ow:menu'}]]})});return;
+    const keys=[[{text:'Разделы',callback_data:'ow:menu'}]];
+    if(meta.publication) {info.push('Учтена фактическая публикация; подготовленный черновик сохранён в истории.');keys.unshift([{text:'Опубликованный текст',callback_data:'ow:actual:'+token}]);}
+    rformOwnerBotV1SendOwnerText_(info.join('\n'),{reply_markup:JSON.stringify({inline_keyboard:keys})});return;
+  }
+  if(rformOwnerBotV1WorkspaceArchived_(item)) {
+    CacheService.getScriptCache().remove('ow_active');
+    const reasons={CANCELLED_BY_OWNER:'Не публиковать',REPLACED_BY_POST:'Заменён публикацией',STALE:'Потерял актуальность',TECHNICAL_TEST:'Техническая проверка'};
+    if(meta.archive) {info.push('Причина: '+(reasons[meta.archive.reason] || meta.archive.reason));if(meta.archive.post_url) info.push(meta.archive.post_url);}
+    const keys=[[{text:'Разделы',callback_data:'ow:menu'}]];
+    if(!/^TEST-/.test(item.Content_ID)) {
+      CacheService.getScriptCache().put('ow_restore_'+token,rformOwnerBotV1WorkspaceHash_(item),21600);
+      keys.unshift([{text:'Вернуть на доработку',callback_data:'ow:restore:'+token}]);
+    }
+    rformOwnerBotV1SendOwnerText_(info.join('\n'),{reply_markup:JSON.stringify({inline_keyboard:keys})});return;
   }
   if(['SCHEDULED','PUBLISHING'].indexOf(item.Publication_Status)!==-1) {
     rformOwnerBotV1SendOwnerText_(info.join('\n')+'\nМатериал уже передан в Autopost.');return;
@@ -1340,6 +1367,7 @@ function rformOwnerBotV1WorkspaceOpen_(bundle,token) {
     keys.push([{text:'Финальный предпросмотр',callback_data:'ow:preview:'+token},{text:'Отложить',callback_data:'ow:hold:'+token}]);
   }
   if(meta.ai && meta.ai.status==='PROPOSED') keys.push([{text:'Посмотреть предложение ИИ',callback_data:'ow:proposal:'+token}]);
+  keys.push([{text:'Уже опубликовано',callback_data:'ow:published:'+token},{text:'В архив',callback_data:'ow:archive:'+token}]);
   keys.push([{text:'Разделы',callback_data:'ow:menu'}]);
   rformOwnerBotV1SendOwnerText_(info.join('\n')+'\n\nФото можно отправить сюда. Правки сохраняются после просмотра изменений.'+
     (d.dirty?'\nЕсть несохранённые изменения.':''),{reply_markup:JSON.stringify({inline_keyboard:keys})});
@@ -1416,6 +1444,24 @@ function rformOwnerBotV1WorkspaceMessage_(message) {
     const d=rformOwnerBotV1WorkspaceDraft_(active.token);
     const item=rformOwnerBotV1WorkspaceItem_(rformOwnerBotV1ApiRead_(),active.token);
     if(rformOwnerBotV1WorkspaceHash_(item)!==d.source_hash) throw new Error('Материал изменился; откройте карточку заново.');
+    if(active.await==='published') {
+      if(d.dirty) throw new Error('Есть несохранённые изменения.');
+      let event;
+      if(message.forward_origin && message.forward_origin.type==='channel') {
+        const payload=rformOwnerBotV1ChannelPayload_(message,message.forward_origin);
+        rformOwnerBotV1WorkspaceApi_('','',payload,rformOwnerBotV1Sha256Hex_(JSON.stringify(payload)).slice(0,32));
+        // Use the canonical observation, including later edits known to the API.
+        const fresh=rformOwnerBotV1ApiRead_();
+        event=(fresh.channel_review || []).map(function(r){return r.event;}).find(function(p){return p.message_id===payload.message_id;});
+      } else {
+        const m=text.match(/^https:\/\/t\.me\/r_form\/(\d+)$/);
+        if(!m) {rformOwnerBotV1SendOwnerText_('Отправьте ссылку https://t.me/r_form/номер или перешлите исходный пост из канала.');return true;}
+        const fresh=rformOwnerBotV1ApiRead_();
+        event=(fresh.channel_review || []).map(function(r){return r.event;}).find(function(p){return String(p.message_id)===m[1];});
+      }
+      if(!event) {rformOwnerBotV1SendOwnerText_('Пост ещё не наблюдался ботом или уже связан. Перешлите исходный пост из канала либо проверьте «Сверка с каналом».');return true;}
+      rformOwnerBotV1ChannelCompare_(item,event);return true;
+    }
     if(message.photo && message.photo.length) {
       if(['photo','replace'].indexOf(active.await)===-1) throw new Error('Сначала выберите «Фото и порядок».');
       if(d.asset_ids.length>=10 && active.await!=='replace') throw new Error('В комплекте уже 10 фотографий.');
@@ -1488,14 +1534,15 @@ function rformOwnerBotV1WorkspaceCallback_(callback) {
     const action=parts[1];
     if(action==='menu') {rformOwnerBotV1WorkspaceMenu_();return;}
     const bundle=rformOwnerBotV1ApiRead_();
+    if(rformOwnerBotV1ChannelCallback_(bundle,parts)) return;
     if(action==='list') {
       const section=parts[2];
-      if(['work','held','published','search'].indexOf(section)===-1) return;
+      if(['work','held','published','archived','search'].indexOf(section)===-1) return;
       const query=section==='search'?CacheService.getScriptCache().get('ow_search'):null;
       if(section==='search'&&!query) throw new Error('Поиск истёк.');
       if(query) {
         // Search across all three sections, retaining the same canonical rows.
-        bundle.queue=(bundle.queue || []).filter(function(q) {return ['PLANNED','NOT_READY','SCHEDULED','PUBLISHING','HOLD','PUBLISHED'].indexOf(q.Publication_Status)!==-1;});
+        // Search includes archived records as well.
         rformOwnerBotV1WorkspaceSearch_(bundle,Number(parts[3]),query);
       } else rformOwnerBotV1WorkspaceList_(bundle,section,Number(parts[3]));
       return;
@@ -1504,6 +1551,11 @@ function rformOwnerBotV1WorkspaceCallback_(callback) {
     if(!/^[a-f0-9]{16}$/.test(itemToken)) return;
     const item=rformOwnerBotV1WorkspaceItem_(bundle,itemToken);
     if(action==='open') {rformOwnerBotV1WorkspaceOpen_(bundle,itemToken);return;}
+    if(action==='actual') {
+      const published=((bundle.workspace_meta || {})[item.Content_ID] || {}).publication;
+      if(item.Publication_Status!=='PUBLISHED' || !published) throw new Error('Нет подтверждённой редакции.');
+      rformOwnerBotV1WorkspaceChunk_(published.published_text+'\n\n'+published.post_url);return;
+    }
     if(action==='history') {
       const versions=((bundle.workspace_meta || {})[item.Content_ID] || {}).versions || [];
       rformOwnerBotV1SendOwnerText_('История сохранений:\n'+(versions.map(function(v) {return v.at+' · '+v.action_id.slice(0,8);}).join('\n') || 'Сохранений через бот пока нет.'),{
@@ -1513,8 +1565,37 @@ function rformOwnerBotV1WorkspaceCallback_(callback) {
       });return;
     }
     if(!rformOwnerBotV1ActionsEnabled_()) throw new Error('Действия отключены.');
+    if(action==='restore') {
+      const hash=CacheService.getScriptCache().get('ow_restore_'+itemToken);
+      if(!hash || hash!==rformOwnerBotV1WorkspaceHash_(item)) throw new Error('Карточка устарела.');
+      rformOwnerBotV1WorkspaceApi_(item.Content_ID,hash,{action:'restore'});
+      CacheService.getScriptCache().remove('ow_draft_'+itemToken);
+      rformOwnerBotV1WorkspaceOpen_(rformOwnerBotV1ApiRead_(),itemToken);return;
+    }
     const d=rformOwnerBotV1WorkspaceDraft_(itemToken);
     if(d.source_hash!==rformOwnerBotV1WorkspaceHash_(item)) throw new Error('Версия изменилась.');
+    if(action==='published') {
+      if(d.dirty) throw new Error('Сначала сохраните или отмените правки.');
+      CacheService.getScriptCache().put('ow_active',JSON.stringify({token:itemToken,await:'published'}),21600);
+      rformOwnerBotV1SendOwnerText_('Отправьте ссылку на пост R/Form или перешлите его из канала. Затем покажу сравнение.');return;
+    }
+    if(action==='archive') {
+      if(d.dirty) throw new Error('Сначала сохраните или отмените правки.');
+      rformOwnerBotV1SendOwnerText_('Причина архива? Материал сохранится и его можно будет восстановить.',{
+        reply_markup:JSON.stringify({inline_keyboard:[
+          [{text:'Не буду публиковать',callback_data:'ow:archivedo:'+itemToken+':C:'+d.revision}],
+          [{text:'Потерял актуальность',callback_data:'ow:archivedo:'+itemToken+':S:'+d.revision}],
+          [{text:'Заменён опубликованным постом',callback_data:'ow:published:'+itemToken}],
+          [{text:'Назад',callback_data:'ow:open:'+itemToken}]
+        ]})});return;
+    }
+    if(action==='archivedo') {
+      if(d.dirty || parts[4]!==d.revision) throw new Error('Карточка изменилась.');
+      rformOwnerBotV1WorkspaceApi_(d.content_id,d.source_hash,{action:'archive',reason:{C:'CANCELLED_BY_OWNER',S:'STALE'}[parts[3]]},
+        rformOwnerBotV1Sha256Hex_('ARCHIVE\n'+d.content_id+'\n'+d.source_hash+'\n'+parts[3]).slice(0,32));
+      CacheService.getScriptCache().remove('ow_draft_'+itemToken);CacheService.getScriptCache().remove('ow_active');
+      rformOwnerBotV1WorkspaceOpen_(rformOwnerBotV1ApiRead_(),itemToken);return;
+    }
     if(action==='edit' || action==='ai' || action==='date') {
       if(action==='date' && item.Publication_Status!=='HOLD') throw new Error('Сначала отложите материал.');
       CacheService.getScriptCache().put('ow_active',JSON.stringify({token:itemToken,await:action==='edit'?'text':action}),21600);
@@ -1595,12 +1676,11 @@ function rformOwnerBotV1WorkspaceCallback_(callback) {
 function rformOwnerBotV1WorkspaceSearch_(bundle,page,query) {
   // Reuse pagination over the union, without relabelling production states.
   const matched=(bundle.queue || []).filter(function(q) {
-    if(['PLANNED','NOT_READY','SCHEDULED','PUBLISHING','HOLD','PUBLISHED'].indexOf(q.Publication_Status)===-1) return false;
-    if(/SUPERSEDED|ARCHIV|CANCELLED/.test(q.Pipeline_Status || '')) return false;
+    if(!q.Content_ID) return false;
     return [q.Content_ID,q.Date,q.Session_ID,q.Rubric,String(q.Telegram_Text || '').split('\n')[0]]
       .join(' ').toLocaleLowerCase('ru').indexOf(query.toLocaleLowerCase('ru'))!==-1;
   });
-  const synthetic=matched.map(function(q) {return Object.assign({},q,{Publication_Status:'PLANNED'});});
+  const synthetic=matched.map(function(q) {return Object.assign({},q,{Publication_Status:'PLANNED',Pipeline_Status:'',Current_Stage:'',Text_Status:'',Content_ID:q.Content_ID});});
   rformOwnerBotV1WorkspaceList_({queue:synthetic},'work',page,query);
 }
 
@@ -1642,4 +1722,194 @@ function rformOwnerBotV1WorkspaceProposals_(bundle) {
     });
     props.setProperty(key,'SENT');
   });
+}
+
+function rformOwnerBotV1WorkspaceArchived_(q) {
+  return ['ARCHIVED','CANCELLED','SUPERSEDED'].indexOf(q.Publication_Status)!==-1 ||
+    /ARCHIV|SUPERSEDED|CANCELLED|ЗАКРЫТО|ЗАМЕНЕНО/i.test([q.Pipeline_Status,q.Current_Stage,q.Text_Status].join(' ')) ||
+    q.Current_Stage==='EDITORIAL_GATE_CLOSED' || /^TEST-/.test(q.Content_ID);
+}
+
+function rformOwnerBotV1ChannelPayload_(m,origin) {
+  const chat=origin?origin.chat:m.chat,id=origin?origin.message_id:m.message_id,date=origin?origin.date:m.date;
+  if(!chat || chat.type!=='channel' || String(chat.id)!=='-1004309818003') throw new Error('Это другой канал.');
+  const media=[];
+  if(m.photo && m.photo.length) media.push({type:'photo',file_id:m.photo[m.photo.length-1].file_id});
+  if(m.video) media.push({type:'video',file_id:m.video.file_id});
+  if(m.document) media.push({type:'document',file_id:m.document.file_id});
+  return {action:'channel_record',channel_id:String(chat.id),message_id:id,date:date,
+    revision:origin?date:(m.edit_date || date),text:String(m.text || m.caption || ''),
+    media_group_id:String(m.media_group_id || ''),media:media};
+}
+
+function rformOwnerBotV1ChannelCapture_(m) {
+  const props=PropertiesService.getScriptProperties();
+  if(props.getProperty('RFORM_OWNER_CHANNEL_SYNC_ENABLED')!=='YES') return;
+  if(!m.chat || String(m.chat.id)!=='-1004309818003' || m.chat.type!=='channel') return;
+  // Transport spool only. Canonical observations and queue changes belong to Content API.
+  const p=rformOwnerBotV1ChannelPayload_(m),json=JSON.stringify(p);
+  const id=rformOwnerBotV1Sha256Hex_(json).slice(0,32),lock=LockService.getScriptLock();
+  if(!lock.tryLock(5000)) throw new Error('CHANNEL_CAPTURE_FAILED: lock');
+  try {
+    const keys=JSON.parse(props.getProperty('ow_channel_spool') || '[]');
+    if(keys.indexOf(id)!==-1) return;
+    if(keys.length>=20 || Utilities.newBlob(json).getBytes().length>12000) throw new Error('CHANNEL_CAPTURE_FAILED: mailbox full');
+    const chunks=[];for(let i=0;i<json.length;i+=1800) chunks.push(json.slice(i,i+1800));
+    chunks.forEach(function(s,i){props.setProperty('ow_channel_'+id+'_'+i,s);});
+    props.setProperty('ow_channel_'+id+'_n',String(chunks.length));
+    if(chunks.map(function(_,i){return props.getProperty('ow_channel_'+id+'_'+i);}).join('')!==json) throw new Error('CHANNEL_CAPTURE_FAILED: readback');
+    keys.push(id);props.setProperty('ow_channel_spool',JSON.stringify(keys));
+    if(JSON.parse(props.getProperty('ow_channel_spool')).indexOf(id)===-1) throw new Error('CHANNEL_CAPTURE_FAILED: index readback');
+  } finally {lock.releaseLock();}
+}
+
+function rformOwnerBotV1ChannelDrain_() {
+  const props=PropertiesService.getScriptProperties(),keys=JSON.parse(props.getProperty('ow_channel_spool') || '[]');
+  keys.slice(0,3).forEach(function(id) {
+    const n=Number(props.getProperty('ow_channel_'+id+'_n'));
+    if(!n || n>7) throw new Error('Channel spool corrupted.');
+    let raw='';for(let i=0;i<n;i++) {const chunk=props.getProperty('ow_channel_'+id+'_'+i);if(chunk===null) throw new Error('Channel spool missing chunk.');raw+=chunk;}
+    const result=rformOwnerBotV1WorkspaceApi_('','',JSON.parse(raw),id);
+    if(!result.ok || ['APPLIED','ALREADY_APPLIED','ALREADY_OBSERVED','STALE_OBSERVATION'].indexOf(result.status)===-1) throw new Error('Observation not confirmed.');
+    const current=JSON.parse(props.getProperty('ow_channel_spool') || '[]').filter(function(k){return k!==id;});
+    props.setProperty('ow_channel_spool',JSON.stringify(current));
+    for(let i=0;i<n;i++) props.deleteProperty('ow_channel_'+id+'_'+i);
+    props.deleteProperty('ow_channel_'+id+'_n');
+  });
+  const sync=rformOwnerBotV1WorkspaceApi_('','',{action:'reconcile_channel'});
+  if(!sync.ok || (sync.blocked || []).length) throw new Error('Unconfirmed reconciliation requires operator check.');
+}
+
+function rformOwnerBotV1EnableChannelSync() {
+  const props=PropertiesService.getScriptProperties(),token=rformOwnerBotV1RequireProperty_(props,RFORM_OWNER_BOT_V1.props.token);
+  const me=rformOwnerBotV1Telegram_(token,'getMe',{});
+  const chat=rformOwnerBotV1Telegram_(token,'getChat',{chat_id:'-1004309818003'});
+  const member=rformOwnerBotV1Telegram_(token,'getChatMember',{chat_id:'-1004309818003',user_id:me.id});
+  if(String(chat.id)!=='-1004309818003' || ['member','administrator','creator'].indexOf(member.status)===-1) throw new Error('Добавьте существующий Owner Bot в канал R/Form для чтения сообщений.');
+  // Existing webhook, pairing and backlog retained. No Install/Enable rerun.
+  const url=rformOwnerBotV1RequireProperty_(props,RFORM_OWNER_BOT_V1.props.webAppUrl);
+  if(!/^https:\/\/script\.google\.com\/macros\/s\/[^/?]+\/exec$/.test(url)) throw new Error('Invalid existing deployment URL.');
+  const hook=rformOwnerBotV1RequireProperty_(props,RFORM_OWNER_BOT_V1.props.webhookSecret);
+  rformOwnerBotV1Telegram_(token,'setWebhook',{url:url+'?hook='+encodeURIComponent(hook),
+    allowed_updates:JSON.stringify(['message','callback_query','channel_post','edited_channel_post']),drop_pending_updates:false,max_connections:1});
+  const info=rformOwnerBotV1Telegram_(token,'getWebhookInfo',{});
+  if(info.url!==url+'?hook='+encodeURIComponent(hook) || ['channel_post','edited_channel_post'].some(function(k){return (info.allowed_updates || []).indexOf(k)===-1;})) throw new Error('Webhook readback failed.');
+  props.setProperty('RFORM_OWNER_CHANNEL_SYNC_ENABLED','YES');
+  return {ok:true,version:RFORM_OWNER_BOT_V1.version,channelId:chat.id,memberStatus:member.status,channelSyncEnabled:true};
+}
+
+function rformOwnerBotV1ChannelList_(bundle,page) {
+  const rows=bundle.channel_review || [],index=Math.max(0,Math.min(Number(page)||0,Math.max(0,Math.ceil(rows.length/5)-1)));
+  const keys=rows.slice(index*5,index*5+5).map(function(r){return [{text:r.event.text.split('\n')[0].slice(0,60),callback_data:'ow:channel:'+r.event.message_id}];});
+  const nav=[];if(index)nav.push({text:'Назад',callback_data:'ow:sync:'+(index-1)});
+  if((index+1)*5<rows.length)nav.push({text:'Далее',callback_data:'ow:sync:'+(index+1)});
+  if(nav.length)keys.push(nav);keys.push([{text:'Разделы',callback_data:'ow:menu'}]);
+  rformOwnerBotV1SendOwnerText_('Сверка с каналом · '+rows.length+'\nНовые и исторические посты без связи с материалом.',{reply_markup:JSON.stringify({inline_keyboard:keys})});
+}
+
+function rformOwnerBotV1ChannelOpen_(bundle,id) {
+  const review=(bundle.channel_review || []).find(function(r){return String(r.event.message_id)===String(id);});
+  if(!review) throw new Error('Сверка уже выполнена или изменилась.');
+  const keys=review.candidates.map(function(c){const q=bundle.queue.find(function(q){return q.Content_ID===c.content_id;});
+    return [{text:('Сравнить: '+c.title).slice(0,60),callback_data:'ow:compare:'+rformOwnerBotV1ItemToken_(q)+':'+id+':'+review.event.hash.slice(0,12)}];});
+  keys.push([{text:'Не связывать',callback_data:'ow:dismiss:'+id+':'+review.event.hash.slice(0,12)}]);
+  keys.push([{text:'Сверка',callback_data:'ow:sync:0'}]);
+  rformOwnerBotV1WorkspaceChunk_(review.event.text);
+  rformOwnerBotV1SendOwnerText_(review.event.post_url+'\nВыберите материал для сравнения.',{reply_markup:JSON.stringify({inline_keyboard:keys})});
+}
+
+function rformOwnerBotV1ChannelCompare_(item,event) {
+  const token=rformOwnerBotV1ItemToken_(item);
+  CacheService.getScriptCache().put('ow_link_'+token,JSON.stringify({message_id:event.message_id,event_hash:event.hash,
+    source_hash:rformOwnerBotV1WorkspaceHash_(item)}),21600);
+  const dirty=CacheService.getScriptCache().get('ow_draft_'+token);
+  if(dirty && JSON.parse(dirty).dirty) throw new Error('Сначала сохраните или отмените правки материала.');
+  rformOwnerBotV1WorkspaceChunk_('Черновик в приложении:\n\n'+item.Telegram_Text);
+  rformOwnerBotV1WorkspaceChunk_('Фактически опубликовано:\n\n'+event.text+'\n\n'+event.post_url);
+  rformOwnerBotV1SendOwnerText_('Выберите связь. Черновик и история сохранятся. Публикация не запускается.',{
+    reply_markup:JSON.stringify({inline_keyboard:[
+      [{text:'Это опубликованная редакция',callback_data:'ow:link:'+token+':'+event.hash.slice(0,12)}],
+      [{text:'Черновик заменён этим постом',callback_data:'ow:replaced:'+token+':'+event.hash.slice(0,12)}],
+      [{text:'Оставить в работе',callback_data:'ow:open:'+token}]
+    ]})});
+}
+
+function rformOwnerBotV1ChannelCallback_(bundle,parts) {
+  const action=parts[1];
+  if(action==='post') {
+    const post=(bundle.channel_posts || []).find(function(p){return String(p.message_id)===parts[2];});
+    if(!post) throw new Error('Нет наблюдения публикации.');
+    rformOwnerBotV1WorkspaceChunk_(post.text || 'Публикация с медиа без подписи.');
+    rformOwnerBotV1SendOwnerText_(post.post_url+'\nФакт канала; это просмотр опубликованного сообщения.',{
+      reply_markup:JSON.stringify({inline_keyboard:[[{text:'Опубликовано',callback_data:'ow:list:published:0'},{text:'Разделы',callback_data:'ow:menu'}]]})});return true;
+  }
+  if(action==='sync'){rformOwnerBotV1ChannelList_(bundle,parts[2]);return true;}
+  if(action==='channel'){rformOwnerBotV1ChannelOpen_(bundle,parts[2]);return true;}
+  if(action==='dismiss') {
+    if(!rformOwnerBotV1ActionsEnabled_()) throw new Error('Действия отключены.');
+    const r=(bundle.channel_review || []).find(function(r){return String(r.event.message_id)===parts[2] && r.event.hash.slice(0,12)===parts[3];});
+    if(!r) throw new Error('Сверка изменилась.');
+    rformOwnerBotV1WorkspaceApi_('','',{action:'channel_dismiss',message_id:r.event.message_id,event_hash:r.event.hash});
+    rformOwnerBotV1ChannelList_(rformOwnerBotV1ApiRead_(),0);return true;
+  }
+  if(action==='compare') {
+    const item=rformOwnerBotV1WorkspaceItem_(bundle,parts[2]);
+    const r=(bundle.channel_review || []).find(function(r){return String(r.event.message_id)===parts[3] && r.event.hash.slice(0,12)===parts[4];});
+    if(!r) throw new Error('Сверка изменилась.');
+    rformOwnerBotV1ChannelCompare_(item,r.event);return true;
+  }
+  if(['link','replaced'].indexOf(action)!==-1) {
+    if(!rformOwnerBotV1ActionsEnabled_()) throw new Error('Действия отключены.');
+    const item=rformOwnerBotV1WorkspaceItem_(bundle,parts[2]);
+    const link=JSON.parse(CacheService.getScriptCache().get('ow_link_'+parts[2]) || 'null');
+    if(!link || link.event_hash.slice(0,12)!==parts[3] || link.source_hash!==rformOwnerBotV1WorkspaceHash_(item)) throw new Error('Сравнение устарело.');
+    const dirty=CacheService.getScriptCache().get('ow_draft_'+parts[2]);
+    if(dirty && JSON.parse(dirty).dirty) throw new Error('Есть несохранённые изменения.');
+    const payload={action:action==='link'?'link_publication':'archive',message_id:link.message_id,event_hash:link.event_hash};
+    if(action==='replaced')payload.reason='REPLACED_BY_POST';
+    const aid=rformOwnerBotV1Sha256Hex_('LINK\n'+item.Content_ID+'\n'+link.source_hash+'\n'+JSON.stringify(payload)).slice(0,32);
+    rformOwnerBotV1WorkspaceApi_(item.Content_ID,link.source_hash,payload,aid);
+    CacheService.getScriptCache().remove('ow_draft_'+parts[2]);CacheService.getScriptCache().remove('ow_active');
+    rformOwnerBotV1SendOwnerText_(action==='link'?'Факт ручной публикации учтён.':'Черновик в архиве со ссылкой на заменивший его пост.');
+    rformOwnerBotV1WorkspaceOpen_(rformOwnerBotV1ApiRead_(),parts[2]);return true;
+  }
+  return false;
+}
+
+function rformOwnerBotV1ChannelPublished_(bundle,page) {
+  const queue=(bundle.queue || []).filter(function(q){return q.Publication_Status==='PUBLISHED';});
+  const known=new Set(queue.map(function(q){return String(q.Telegram_Message_ID || '');}));
+  const posts=bundle.channel_posts || [],groups=new Set(posts.filter(function(p){return p.text && p.media_group_id;}).map(function(p){return p.media_group_id;}));
+  const seenGroups=new Set();
+  const observed=posts.filter(function(p) {
+    if(known.has(String(p.message_id)))return false;
+    if(p.text)return true;
+    if(!p.media || !p.media.length)return false;
+    if(p.media_group_id) {if(groups.has(p.media_group_id) || seenGroups.has(p.media_group_id))return false;seenGroups.add(p.media_group_id);}
+    return true;
+  }).map(function(p){return {text:p.text || 'Медиа без подписи',date:p.date,callback:'ow:post:'+p.message_id};});
+  const rows=queue.map(function(q){const p=posts.find(function(p){return String(p.message_id)===String(q.Telegram_Message_ID);});
+    return {text:(p?p.text:q.Telegram_Text) || q.Content_ID,date:p?p.date:rformOwnerBotV1DateSort_(q)/1000,callback:'ow:open:'+rformOwnerBotV1ItemToken_(q)};
+  }).concat(observed).sort(function(a,b){return b.date-a.date;});
+  const offset=Math.max(0,Math.min(Number(page)||0,Math.max(0,Math.ceil(rows.length/5)-1)));
+  const keys=rows.slice(offset*5,offset*5+5).map(function(r){return [{text:r.text.split('\n')[0].slice(0,60),callback_data:r.callback}];});
+  const nav=[];if(offset)nav.push({text:'Назад',callback_data:'ow:list:published:'+(offset-1)});
+  if((offset+1)*5<rows.length)nav.push({text:'Далее',callback_data:'ow:list:published:'+(offset+1)});
+  if(nav.length)keys.push(nav);keys.push([{text:'Разделы',callback_data:'ow:menu'}]);
+  rformOwnerBotV1SendOwnerText_('Опубликовано · '+rows.length+'\nОчередь и фактическая история канала.\nСтраница '+(offset+1)+'/'+Math.max(1,Math.ceil(rows.length/5)),{
+    reply_markup:JSON.stringify({inline_keyboard:keys})});
+}
+
+function rformOwnerBotV1ChannelNotify_(bundle) {
+  const pending=(bundle.channel_review || []).filter(function(r){return r.candidates.length;});
+  const props=PropertiesService.getScriptProperties();
+  for(let i=0;i<pending.length;i++) {
+    const event=pending[i].event,key='ow_channel_notice_'+event.hash.slice(0,24);
+    if(props.getProperty(key))continue;
+    // At-most-once private notification. A send with unknown outcome is not repeated.
+    props.setProperty(key,'SENDING');
+    rformOwnerBotV1SendOwnerText_('В канале опубликован материал, похожий на черновик в приложении. Проверьте связь один раз.',{
+      reply_markup:JSON.stringify({inline_keyboard:[[{text:'Сравнить с черновиком',callback_data:'ow:channel:'+event.message_id}]]})});
+    props.setProperty(key,'SENT');break;
+  }
 }

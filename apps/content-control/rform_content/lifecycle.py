@@ -13,7 +13,7 @@ ACTIVE_PUBLICATION_STATES = (
     "REVIEW",
     "PLANNED",
 )
-TERMINAL_PUBLICATION_STATES = ("PUBLISHED", "SUPERSEDED", "CANCELLED")
+TERMINAL_PUBLICATION_STATES = ("PUBLISHED", "SUPERSEDED", "CANCELLED", "ARCHIVED")
 OPERATIONAL_PRIORITY = {
     "ERROR": 0,
     "SCHEDULED": 1,
@@ -28,6 +28,7 @@ OPERATIONAL_PRIORITY = {
     "PUBLISHED": 90,
     "SUPERSEDED": 91,
     "CANCELLED": 92,
+    "ARCHIVED": 93,
 }
 
 
@@ -56,6 +57,14 @@ def derive_lifecycle_state(row: Mapping[str, Any]) -> str:
     pipeline = normalize(row.get("Pipeline_Status"))
     publish_error = normalize(row.get("Publish_Error"))
     blocking_issue = normalize(row.get("Blocking_Issue"))
+
+    if publication == "PUBLISHED":
+        return "PUBLISHED"
+    if (publication == "ARCHIVED"
+            or _contains_any(pipeline, ("ARCHIV", "ЗАКРЫТО"))
+            or _contains_any(row.get("Current_Stage"), ("ARCHIV", "EDITORIAL_GATE_CLOSED"))
+            or normalize(row.get("Content_ID")).startswith("TEST-")):
+        return "ARCHIVED"
 
     # Финальные статусы важнее устаревших блокировок, которые могли остаться
     # в исторической строке после успешной публикации или закрытия материала.

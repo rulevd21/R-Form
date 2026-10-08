@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 
-TERMINAL_STATUSES = {"PUBLISHED", "CANCELLED", "SUPERSEDED"}
+TERMINAL_STATUSES = {"PUBLISHED", "CANCELLED", "SUPERSEDED", "ARCHIVED"}
 ARCHIVE_MARKERS = ("ARCHIVED", "SUPERSEDED", "ЗАКРЫТО", "ЗАМЕНЕНО")
 
 
@@ -66,7 +66,7 @@ def classify_materials(queue: pd.DataFrame, today: date | None = None) -> Materi
         empty = working.copy()
         return MaterialPlan(empty, empty, empty, empty, empty, empty)
 
-    current_date = today or datetime.now(ZoneInfo("Europe/Riga")).date()
+    current_date = today or datetime.now(ZoneInfo("Europe/Moscow")).date()
     effective_dates = _effective_dates(working)
     publication = _text(working, "Publication_Status").str.upper()
     rubric = _text(working, "Rubric").str.upper()
@@ -81,6 +81,7 @@ def classify_materials(queue: pd.DataFrame, today: date | None = None) -> Materi
     published_mask = publication.eq("PUBLISHED") & ~technical_mask
     archived_mask = (
         publication.isin(TERMINAL_STATUSES - {"PUBLISHED"}) | _contains_marker(working)
+        | _text(working, "Current_Stage").eq("EDITORIAL_GATE_CLOSED")
     ) & ~published_mask & ~technical_mask
     remaining = ~(technical_mask | published_mask | archived_mask)
     dated = effective_dates.notna()
