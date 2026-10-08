@@ -145,3 +145,18 @@ def is_action_required(row: Mapping[str, Any]) -> bool:
     if state == "SCHEDULED" and readiness_issues(row):
         return True
     return False
+
+
+def material_section(row: Mapping[str, Any]) -> str:
+    """The same four navigation sections as Owner Bot; no datastore mutation."""
+    if normalize(row.get("Publication_Status")) == "PUBLISHED":
+        return "published"
+    values = " ".join(normalize(row.get(f)) for f in ("Pipeline_Status", "Current_Stage", "Text_Status"))
+    if (normalize(row.get("Publication_Status")) in {"ARCHIVED", "CANCELLED", "SUPERSEDED"}
+            or any(marker in values for marker in ("ARCHIV", "SUPERSEDED", "CANCELLED", "ЗАКРЫТО", "ЗАМЕНЕНО"))
+            or normalize(row.get("Current_Stage")) == "EDITORIAL_GATE_CLOSED"
+            or normalize(row.get("Content_ID")).startswith("TEST-")):
+        return "archived"
+    if normalize(row.get("Publication_Status")) == "HOLD" or _contains_any(row.get("Pipeline_Status"), ("HOLD", "ПАУЗА")):
+        return "held"
+    return "work"

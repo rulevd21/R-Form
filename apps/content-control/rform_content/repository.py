@@ -687,6 +687,10 @@ def _parse_generated_at(value: Any) -> datetime:
         return datetime.now(timezone.utc)
 
 
+class ApiRequestRejected(DataSourceError):
+    pass
+
+
 def _post_signed(endpoint_url: str, request: dict[str, Any], timeout_seconds: int, label: str) -> dict[str, Any]:
     _validate_apps_script_url(endpoint_url)
     try:
@@ -702,7 +706,7 @@ def _post_signed(endpoint_url: str, request: dict[str, Any], timeout_seconds: in
         raise DataSourceError(f"Не удалось выполнить {label}: {exc}") from exc
     if not isinstance(payload, dict) or payload.get("ok") is not True:
         message = payload.get("message", "API отклонил запрос") if isinstance(payload, dict) else "Некорректный ответ API"
-        raise DataSourceError(f"{label.capitalize()} отклонено: {message}")
+        raise ApiRequestRejected(f"{label.capitalize()} отклонено: {message}")
     return payload
 
 
@@ -1089,8 +1093,36 @@ def build_owner_workspace_request(secret: str, row, payload: dict, *, timestamp=
 def execute_owner_workspace(endpoint_url: str, secret: str, row, payload: dict, *,
                             action_id=None, timeout_seconds=30):
     request = build_owner_workspace_request(secret, row, payload, action_id=action_id)
-    result = _post_signed(endpoint_url, request, timeout_seconds, "изменение карточки материала")
+    try:
+        result = _post_signed(endpoint_url, request, timeout_seconds, "изменение карточки материала")
+    except ApiRequestRejected:
+        raise
+    except DataSourceError:
+        try:
+            receipt = read_action_status(endpoint_url, secret, request["action_id"], request["content_id"], timeout_seconds=timeout_seconds)
+        except DataSourceError:
+            receipt = {"status": "OUTCOME_UNKNOWN"}
+        if receipt.get("status") != "APPLIED":
+            raise OperationOutcomeUnknown(request["action_id"], request["content_id"], receipt.get("status")) from None
+        result = {"status": "APPLIED", "action_id": request["action_id"], "recovered": True}
     if (result.get("status") not in {"APPLIED", "ALREADY_APPLIED"}
             or result.get("action_id") != request["action_id"]):
         raise DataSourceError("Изменение не подтверждено. Обновите карточку перед новым действием.")
+    return result
+
+
+class OperationOutcomeUnknown(DataSourceError):
+    def __init__(self, action_id, content_id, status="OUTCOME_UNKNOWN"):
+        self.action_id, self.content_id, self.status = action_id, content_id, status
+        super().__init__(f"Результат операции {action_id}: {status}. Проверьте результат по ID перед новым действием; автоматического повтора нет.")
+
+
+def read_action_status(endpoint_url, secret, action_id, content_id, *, timeout_seconds=30):
+    ts, nonce, _ = _request_identity()
+    request = {"timestamp": ts, "nonce": nonce, "operation": "action_status",
+               "action_id": action_id, "content_id": content_id}
+    request["signature"] = _sign_message(secret, [str(ts), nonce, "action_status", action_id, content_id])
+    result = _post_signed(endpoint_url, request, timeout_seconds, "проверку результата операции")
+    if result.get("action_id") != action_id:
+        raise DataSourceError("Получен результат другого действия.")
     return result

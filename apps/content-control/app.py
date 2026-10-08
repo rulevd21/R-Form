@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from rform_content.lifecycle import (
+    material_section,
     ACTIVE_PUBLICATION_STATES,
     OPERATIONAL_PRIORITY,
     TERMINAL_PUBLICATION_STATES,
@@ -21,6 +23,8 @@ from rform_content.repository import (
     diagnostics,
     execute_content_action,
     execute_owner_workspace,
+    OperationOutcomeUnknown,
+    read_action_status,
     load_bundle,
 )
 from rform_content.daily_review import render_daily_publication_review
@@ -392,7 +396,10 @@ def _display_table(frame: pd.DataFrame, fields: list[str]) -> pd.DataFrame:
 def _planned_dates(frame: pd.DataFrame) -> pd.Series:
     publish = frame.get("Publish_At", pd.Series("", index=frame.index)).fillna("").astype(str).str.strip()
     dates = frame.get("Date", pd.Series("", index=frame.index)).fillna("").astype(str).str.strip()
-    return publish.where(publish.ne(""), dates)
+    planned = publish.where(publish.ne(""), dates)
+    posted = frame.get("Posted_At", pd.Series("", index=frame.index)).fillna("").astype(str).str.strip()
+    published = frame.get("Publication_Status", pd.Series("", index=frame.index)).eq("PUBLISHED")
+    return planned.where(~(published & posted.ne("")), posted)
 
 
 def _sort_queue(frame: pd.DataFrame) -> pd.DataFrame:
@@ -430,12 +437,12 @@ def _source_label(source: str) -> str:
 
 
 def render_header(source: str, capabilities: tuple[str, ...]) -> None:
-    badge = "КОНТЕНТ-КОНТРОЛЬ · v0.5.8"
+    badge = "КОНТЕНТ-КОНТРОЛЬ · v0.5.9"
     st.markdown('<div class="rf-kicker">R/Form · Контент-операции</div>', unsafe_allow_html=True)
     st.markdown('<div class="rf-title">Управление контентом</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="rf-subtitle">Приложение само находит новые данные, готовит варианты публикации '
-        'и оставляет вам только выбор готового текста и визуала.</div>',
+        '<div class="rf-subtitle">Материалы, предпросмотр и фактическая история канала. '
+        'Основные действия с текстом и фотографиями доступны в Telegram Owner Bot.</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -559,10 +566,16 @@ def _render_reconciliation_actions(row, bundle, app_config, api_secrets) -> None
                         payload["reason"] = "REPLACED_BY_POST"
             st.caption("История сохраняется. Эти действия не запускают публикацию.")
     if payload:
+        if st.session_state.get("pending_workspace_action"):
+            st.warning("Сначала проверьте результат предыдущего действия по ID.")
+            return
         try:
             execute_owner_workspace(str(app_config.get("apps_script_url", "")),
                 str(api_secrets.get("secret", "")), row, payload,
                 timeout_seconds=max(30, int(app_config.get("request_timeout_seconds", 30))))
+        except OperationOutcomeUnknown as exc:
+            st.session_state["pending_workspace_action"] = {"action_id": exc.action_id, "content_id": exc.content_id}
+            st.error(str(exc))
         except (DataSourceError, ValueError) as exc:
             st.error(str(exc))
         else:
@@ -636,13 +649,39 @@ def _render_content_actions(
 def render_queue(bundle, app_config: dict[str, Any], api_secrets: dict[str, Any]) -> None:
     if bundle.channel_posts:
         with st.expander("Фактическая история канала"):
+            history_query = st.text_input("Поиск в истории канала", placeholder="Текст, номер, дата или ссылка")
             posts = [p for p in bundle.channel_posts if p.get("text")]
+            if history_query:
+                needle = history_query.casefold()
+                posts = [p for p in posts if needle in " ".join(str(p.get(k, "")) for k in ("text", "message_id", "post_url")).casefold()
+                         or needle in pd.to_datetime(p["date"], unit="s", utc=True).tz_convert("Europe/Moscow").strftime("%d.%m.%Y")]
             history = pd.DataFrame([{
                 "Дата": pd.to_datetime(p["date"], unit="s", utc=True).tz_convert("Europe/Moscow").strftime("%d.%m.%Y"),
                 "Публикация": p["text"].split("\n")[0], "Ссылка": p["post_url"],
             } for p in sorted(posts, key=lambda p: p["date"], reverse=True)])
             st.dataframe(history, hide_index=True, width="stretch")
             st.caption("История канала не создаёт новые черновики. Связанные и неподтверждённые редакции учитываются отдельно.")
+    pending = st.session_state.get("pending_workspace_action")
+    if pending:
+        st.warning("Требует проверки операция " + pending["action_id"])
+        if st.button("Проверить результат по ID"):
+            try:
+                receipt = read_action_status(str(app_config.get("apps_script_url", "")), str(api_secrets.get("secret", "")), **pending)
+                st.info("Результат: " + str(receipt.get("status")))
+                if receipt.get("status") in {"APPLIED", "FAILED_ROLLED_BACK", "REJECTED"}:
+                    st.session_state.pop("pending_workspace_action", None)
+                    st.cache_data.clear()
+                    st.rerun()
+            except DataSourceError as exc:
+                st.error(str(exc))
+    tasks = [r for r in bundle.channel_review if r.get("candidates")]
+    st.caption(f"Сверка: {len(tasks)} задач. Исторические посты без кандидатов не требуют действия.")
+    if tasks:
+        with st.expander("Задачи сверки"):
+            for review in tasks:
+                event = review["event"]
+                st.write(f"Пост {event['message_id']}: {event['post_url']}")
+                st.write("Открыть карточку кандидата: " + ", ".join(c["content_id"] for c in review["candidates"]))
     queue = _queue_with_material_names(bundle.queue, bundle.events)
     st.subheader("Очередь контента")
     success_message = st.session_state.pop("content_action_success", "")
@@ -652,12 +691,10 @@ def render_queue(bundle, app_config: dict[str, Any], api_secrets: dict[str, Any]
         st.info("Очередь контента пока пуста.")
         return
 
-    show_archive = st.toggle(
-        "Показать опубликованные и закрытые материалы",
-        value=False,
-        help="По умолчанию архив скрыт, чтобы в очереди оставалась только текущая работа.",
-    )
-    queue_scope = queue.copy() if show_archive else queue[~queue["Lifecycle_State"].isin(TERMINAL_PUBLICATION_STATES)].copy()
+    section = st.radio("Материалы", ["В работе", "Отложено", "Опубликовано", "Архив", "Все"], horizontal=True)
+    section_keys = {"В работе": "work", "Отложено": "held", "Опубликовано": "published", "Архив": "archived"}
+    queue["Material_Section"] = queue.apply(material_section, axis=1)
+    queue_scope = queue.copy() if section == "Все" else queue[queue["Material_Section"].eq(section_keys[section])].copy()
 
     f1, f2, f3 = st.columns([1, 1, 1.4])
     states = sorted(
@@ -674,14 +711,14 @@ def render_queue(bundle, app_config: dict[str, Any], api_secrets: dict[str, Any]
         format_func=lambda rubric: _display_value("Rubric", rubric),
         placeholder="Выберите рубрику",
     )
-    query = f3.text_input("Поиск", placeholder="Название, код или текст")
+    query = f3.text_input("Поиск", placeholder="Текст, дата, код, номер поста или ссылка")
 
     filtered = queue_scope[queue_scope["Lifecycle_State"].isin(selected_states)].copy()
     if selected_rubrics and "Rubric" in filtered:
         filtered = filtered[filtered["Rubric"].astype(str).isin(selected_rubrics)]
     if query:
         searchable = filtered[
-            _columns(filtered, ["Display_Name", "Content_ID", "Rubric", "Telegram_Text", "Decision"])
+            _columns(filtered, ["Display_Name", "Content_ID", "Rubric", "Telegram_Text", "Decision", "Date", "Posted_At", "Updated_At", "Session_ID", "Telegram_Message_ID", "Telegram_Post_URL"])
         ].fillna("").astype(str)
         mask = searchable.apply(lambda column: column.str.contains(query, case=False, regex=False)).any(axis=1)
         filtered = filtered[mask]
@@ -689,7 +726,7 @@ def render_queue(bundle, app_config: dict[str, Any], api_secrets: dict[str, Any]
     filtered = _sort_queue(filtered)
     st.caption(
         f"Показано: {len(filtered)} из {len(queue)}. "
-        + ("Архив включён." if show_archive else "Опубликованные и закрытые материалы скрыты.")
+        + f"Раздел: {section}."
     )
     table = filtered.assign(Display_Date=_planned_dates(filtered))
     st.dataframe(
@@ -711,6 +748,14 @@ def render_queue(bundle, app_config: dict[str, Any], api_secrets: dict[str, Any]
     st.markdown(f"### {_value(row, 'Display_Name')}")
     st.caption(f"Технический код: {_value(row, 'Content_ID')}")
     st.markdown(_state_badge(_value(row, "Lifecycle_State")), unsafe_allow_html=True)
+    section_key = material_section(row)
+    next_action = {"held": "Верните материал в работу в Owner Bot, когда будете готовы.",
+                   "published": "Проверьте фактически опубликованную редакцию и ссылку.",
+                   "archived": "При необходимости верните материал на доработку."}.get(section_key,
+                   "Проверьте текст и фотографии в Owner Bot, затем откройте финальный предпросмотр.")
+    if section_key == "work" and _value(row, "Blocking_Issue", ""):
+        next_action = "Устраните блокировку: " + _value(row, "Blocking_Issue", "")
+    st.info("Следующий шаг: " + next_action)
 
     tab_content, tab_readiness, tab_links = st.tabs(["Материал", "Готовность", "Ссылки"])
     with tab_content:
@@ -856,6 +901,10 @@ def render_diagnostics(bundle) -> None:
     st.caption("Возможности: " + (", ".join(sorted(capabilities)) if capabilities else "только просмотр"))
     loaded_at = bundle.loaded_at.astimezone(ZoneInfo("Europe/Riga"))
     st.caption(f"Время загрузки: {loaded_at.strftime('%d.%m.%Y %H:%M:%S')} (Рига)")
+    age_seconds = max(0, (datetime.now(bundle.loaded_at.tzinfo) - bundle.loaded_at).total_seconds())
+    st.caption(f"Возраст данных: {int(age_seconds)} с. Состояние фоновых этапов бота: /status в Telegram.")
+    if age_seconds > 600:
+        st.warning("Данные старше 10 минут. Обновите их перед изменением материала.")
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Материалов в очереди", report["queue_rows"])
@@ -919,7 +968,7 @@ with st.sidebar:
         label_visibility="collapsed",
     )
     st.markdown("---")
-    st.caption("R/Form · Управление контентом v0.5.8")
+    st.caption("R/Form · Управление контентом v0.5.9")
     st.caption("Источник истины остаётся в Google Таблицах.")
 
 if page == "Сегодня":
