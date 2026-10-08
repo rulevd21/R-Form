@@ -1,6 +1,6 @@
 # R/Form — этап 3: тренировка → черновик → правки → предпросмотр
 
-Статус: кандидат к установке, production не изменён. Дата: 08.10.2026.
+Статус: установлено 08.10.2026; эксплуатационные проверки пройдены. Живой путь новой настоящей тренировки и физический телефон ещё ожидают приёмки.
 База контента: установленный commit f1a1bbe1032550899f7452045701fccd62cc7b16.
 
 | Компонент | Подтверждённое production | Кандидат |
@@ -82,3 +82,32 @@ https://script.google.com/macros/s/AKfycbwAPl_CXbaCPj1Ps9fOGMNdsIU3nwfJJDqkmhcEb
 | SessionService.gs | `427ff035f6799ce43ed2c421657091336e5c09621768c2ec16cd7bd1c51b0b0f` | `b0356228da7d5a08b64cc3dcc795894599d13c79e70e0ff3320ef0d576b5931b` |
 | SchemaService.gs | `bfcaac244af31c919457dc3255934f53354d97e05620e92532775b48e66a1ade` | `2809baf266c291f3069f73bc5866e928c7d100c24106241daf5fbb19e7dc6a19` |
 | LoggingService.gs | `f06f1df02c6d227d17c4ad6bc38dd12edca76722389ff798afd948b7ef69b34e` | `da856657b5ee4fe0bdf4b9344dff6f516f6832bd20ce52fee16440597631417b` |
+
+## Установка и проверка 08.10.2026, 21:49–21:56 МСК
+
+Владелец разрешил установку этапа 3. PR20 head `93ce82fdafbeb471c82aa21cb202485a75266bcd`: CI run 37825627651 — success. PR объединён в существующую content production branch; merge `80b2476ddcc679a4df61418fdfdef18a74648aaa`.
+
+| Компонент | Подтверждённая установленная версия | Развёртывание для отката |
+|---|---|---|
+| Training core | 2.1.9, существующий Web App version 5 | version 4 |
+| Content API | 0.6.3, существующий Web App version 17 | version 16 |
+| Owner Bot | 1.2.2, существующий Web App version 9 | version 8 |
+| Training UI | 2.2.2 фактически виден в текущем приложении; HTML не менялся | без изменения |
+| Content Control | 0.5.9; код приложения не менялся | без изменения |
+| Autopost | без изменения | без изменения |
+
+- Полные текущие Config / SessionService / SchemaService / LoggingService скопированы через редактор; все четыре совпали с baseline SHA256. Затем кандидаты совпали побайтно после вставки; код сохранён и развёрнут.
+- API baseline SHA256 `3bef5ad36c6edd2b1244bd995eb7ec0c18d17fb5ffdd9edf93922caf820a8bb4`; Bot baseline `5d94c85afaa2e4d3fda0a895a8ccb34612e97913ebbfc1a3e3de668e254140ed`.
+- Установленный API SHA256 `a2acca4433f3685721f6af81f779af9bf10586db35ac94bb3e653709bc37726c`; Bot `f00619ed148131c577e3f427245265ea003dc2235f70f4ae8a355933a672ea65`.
+- Preflight API 21:54:29: ok=true, обязательные поля сохранены, assetsRootAccessible=true, secretConfigured=true. Секреты не читались; URL, права и настройки не менялись.
+- API readback 21:53:04: baseline 49 / CLOSED 49, queue 31, AUTO drafts 0, enabled YES. Исторический импорт / repair / Enable не запускались.
+- Подписанное компактное чтение 21:53:12 — 3787 мс, полное 21:53:24 — 7798 мс; 49 сессий и 43 события. Это отдельные замеры, не гарантия сетевой стабильности.
+- Bot readback 21:53:25: work 3 / held 5 / published 16 / archived 7; reconciliation tasks 0, history unlinked 15, scheduled 0, pendingAction false, один Poll trigger, channelEnabled YES, channelError null.
+- Автоматический Poll 21:51:55–21:52:15 на source 1.2.2: channel / training / read / reminders / proposals / reconciliation OK; outcome OK, created 0, blocked 0. Триггеры запускают сохранённый source, а не Web App version.
+- Мост 21:55:32: NO_PACKET / publication_enabled=false / canonicalWrite=false. Read-only helper сначала проверяет отсутствие пакета; при наличии не выполняет его.
+- Личные экраны /ai и /status доставлены 21:56:28 штатными функциями; aiMaterials 0. Тест отправлял только личные экраны владельцу, без контентных записей.
+- «Дневник без перегруза» HOLD / NO; SERIES-07 PUBLISHED / NO сохранены. Публикации, согласования и расписания не запускались.
+- Живое приложение загрузило следующий план 09.10.2026 C и footer UI V2.2.2 / CORE V2.1.9. Отметка UI 2.2.1 в исходном паспорте была исторической: HTML/FREE модули этим выпуском не заменялись.
+- Две небольшие функции проверки добавлены в существующие Release060_ReadOnly / Release110_Check после Web App versions 17 / 9. Они не входят в эти версии и не создают отдельный сервис или триггер. Их воспроизводимые исходники сохранены в automation/release060_readonly.gs и automation/release110_check.gs.
+
+Полный путь CLOSED + Completed_At + TRAINING_CLOSE → один черновик → личный предпросмотр, фото, ИИ-предложение и сохранение новой версии остаётся для следующей настоящей тренировки и нужного владельцу материала. Искусственная тренировка в production не создавалась. Физический телефон не проверен.
