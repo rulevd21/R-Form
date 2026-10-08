@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>R/Form · Макет Owner Bot</title>
+<style>
+:root{color-scheme:light;--ink:#202222;--brass:#987849}
+*{box-sizing:border-box}body{margin:0;background:#eceeeb;font:16px/1.5 system-ui;color:var(--ink)}
+main{max-width:520px;min-height:100vh;margin:auto;background:#f7f8f4;padding:20px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+h1{font-size:21px;margin:0}small{color:#646864}label{display:block;font-weight:600;margin:14px 0 6px}
+input,textarea{width:100%;padding:13px;border:1px solid #b9c0b8;border-radius:12px;font:inherit;background:white}
+textarea{min-height:160px}button{padding:12px;border:1px solid #b9c0b8;background:white;border-radius:12px;font:inherit;cursor:pointer}
+button:hover,button:focus-visible{outline:2px solid var(--brass)}nav,.buttons{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+nav button{flex:1}button[aria-selected=true],.primary{background:var(--ink);color:white;border-color:var(--ink)}
+article,.bubble{background:white;padding:18px;border-radius:16px;margin:12px 0;box-shadow:0 3px 12px #20222209}
+h2{font-size:18px;margin:0 0 8px}.status{font-size:14px;color:var(--brass)}.photos{display:flex;gap:10px;overflow-x:auto;padding:8px 0}
+figure{margin:0;min-width:130px}figure img{width:130px;height:145px;object-fit:cover;border-radius:10px}figcaption{font-size:13px}
+dialog{border:none;border-radius:16px;max-width:500px;width:94%;padding:24px}dialog::backdrop{background:#20222288}
+pre{white-space:pre-wrap;font:inherit}#notice{padding:10px;background:#f0eadf;border-radius:10px}p{margin:8px 0 12px}
+</style>
+<main><header><div><h1>R/Form · Собственник</h1><small>Макет · данные вымышлены</small></div><span>Owner Bot</span></header>
+<div id="notice">Интерактивный макет. Сохранение действует только в этой вкладке; публикация отключена.</div>
+<nav aria-label="Разделы"><button data-tab="work" aria-selected="true">В работе</button><button data-tab="held">Отложено</button><button data-tab="published">Опубликовано</button></nav>
+<label for="search">Найти материал</label><input id="search" placeholder="Название, дата или тренировка"><section id="list"></section><section id="card" hidden></section>
+</main>
+<dialog id="review"><h2>Проверить изменения</h2><p>Сейчас сохранено</p><pre id="before"></pre><hr><p>Новая версия</p><pre id="after"></pre><div id="reviewPhotos" class="photos"></div><p>После сохранения прежнее согласование сбрасывается.</p><div class="buttons"><button id="commit" class="primary">Сохранить версию</button><button id="closeReview">Продолжить правки</button></div></dialog>
+<script>
+const rows=[{id:1,title:'Тренировка B · Итоги',date:'08.10.2026',status:'work',text:'Здесь появится короткий фактический итог завершённой тренировки.',photos:[],versions:[]},
+{id:2,title:'Материал о дневнике',date:'07.10.2026',status:'held',text:'Пример отложенного материала.',photos:[],versions:[]},
+{id:3,title:'Недельный разбор',date:'06.10.2026',status:'published',text:'Пример опубликованного материала.',photos:[],versions:[]}];
+let tab='work',selected=null,draft=null;const el=id=>document.getElementById(id);
+function notice(s){el('notice').textContent=s}
+function button(text,fn){const b=document.createElement('button');b.textContent=text;b.onclick=fn;return b}
+function renderList(){el('list').replaceChildren();const query=el('search').value.toLowerCase();rows.filter(r=>r.status===tab&&[r.title,r.date].join(' ').toLowerCase().includes(query)).forEach(r=>{
+const a=document.createElement('article'),h=document.createElement('h2'),s=document.createElement('p');h.textContent=r.title;s.textContent=r.date+' · '+({work:'В работе',held:'Отложено',published:'Опубликовано'}[r.status]);a.append(h,s,button('Открыть',()=>open(r)));el('list').append(a)})}
+function photos(container,items,editable){container.replaceChildren();items.forEach((url,i)=>{const f=document.createElement('figure'),img=document.createElement('img'),cap=document.createElement('figcaption');img.src=url;img.alt='Фото '+(i+1);cap.textContent='Позиция '+(i+1);f.append(img,cap);if(editable){f.append(button('Удалить',()=>{draft.photos.splice(i,1);photos(container,draft.photos,true)}));if(i>0)f.append(button('Раньше',()=>{[draft.photos[i-1],draft.photos[i]]=[draft.photos[i],draft.photos[i-1]];photos(container,draft.photos,true)}))}container.append(f)})}
+function open(row){selected=row;draft={text:row.text,photos:[...row.photos]};el('card').hidden=false;el('card').replaceChildren();const a=document.createElement('article'),h=document.createElement('h2'),p=document.createElement('p');h.textContent=row.title;p.textContent='Версий сохранено: '+row.versions.length;a.append(h,p);
+if(row.status==='published'){const body=document.createElement('p');body.textContent=row.text;a.append(body);el('card').append(a);return}
+const label=document.createElement('label');label.textContent='Текст материала';const text=document.createElement('textarea');text.value=draft.text;text.oninput=()=>draft.text=text.value;const photoBox=document.createElement('div');photoBox.className='photos';const upload=document.createElement('input');upload.type='file';upload.accept='image/jpeg,image/png';upload.multiple=true;upload.setAttribute('aria-label','Добавить фотографии');upload.onchange=()=>{for(const file of upload.files){if(draft.photos.length>=10)break;draft.photos.push(URL.createObjectURL(file))}photos(photoBox,draft.photos,true)};a.append(label,text,photoBox,upload);photos(photoBox,draft.photos,true);
+const actions=document.createElement('div');actions.className='buttons';actions.append(button('Просмотр правок',()=>{el('before').textContent=row.text;el('after').textContent=draft.text;photos(el('reviewPhotos'),draft.photos,false);el('review').showModal()}));
+actions.append(button(row.status==='held'?'Вернуть в работу':'Отложить',()=>{row.status=row.status==='held'?'work':'held';tab=row.status;renderTabs();renderList();open(row);notice('Статус изменён в макете. Публикация не запланирована.')}));
+if(row.status==='held'){const due=document.createElement('input');due.type='datetime-local';due.setAttribute('aria-label','Дата рассмотрения');a.append(due,button('Сохранить дату рассмотрения',()=>notice('Дата рассмотрения: '+due.value+'. Это не дата публикации.')))}
+actions.append(button('Поручение ИИ',()=>notice('В рабочем боте поручение сохраняется для исполнителя. Автоматический ИИ-сервис пока не подключён.')));
+actions.append(button('Финальный предпросмотр',()=>notice('В рабочем боте показывается сохранённая версия. Отправка в Autopost в макете отключена.')));a.append(actions);el('card').append(a);el('card').scrollIntoView({behavior:'smooth',block:'start'})}
+function renderTabs(){document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.tab===tab)))}
+document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;el('card').hidden=true;renderTabs();renderList()});el('search').oninput=renderList;el('closeReview').onclick=()=>el('review').close();el('commit').onclick=()=>{selected.versions.push({text:selected.text,photos:[...selected.photos]});selected.text=draft.text;selected.photos=[...draft.photos];el('review').close();open(selected);notice('Версия сохранена только в макете. Публикация не запланирована.')};renderList();
+</script></html>

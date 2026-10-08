@@ -1,4 +1,4 @@
-// R/Form Content Control API v0.5.7
+// R/Form Content Control API v0.6.0
 // Standalone Apps Script web app for Channel Control.
 // Reads CONTENT_QUEUE + DATA_EVENTS, applies allowlisted content actions,
 // saves owner-facing event edits, stores private photo/video assets in Drive,
@@ -7,7 +7,7 @@
 // the separate Telegram Autopost project remains the only publishing transport.
 
 const RFORM_CONTENT_API_V04 = Object.freeze({
-  version: '0.5.7',
+  version: '0.6.0',
   spreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
   queueSheet: 'CONTENT_QUEUE',
   eventsSheet: 'DATA_EVENTS',
@@ -24,7 +24,7 @@ const RFORM_CONTENT_API_V04 = Object.freeze({
   maxNoteChars: 2000,
   maxMediaBytes: 30 * 1024 * 1024,
   maxPublicationVisualBytes: 5 * 1024 * 1024,
-  maxQueuePreviewAssets: 3,
+  maxQueuePreviewAssets: 10,
   maxQueuePreviewBytes: 15 * 1024 * 1024,
   maxTelegramChars: 4096,
   allowedMediaTypes: Object.freeze([
@@ -171,7 +171,7 @@ function rformContentApiV04Preflight() {
       'content.read', 'content.action', 'event.review', 'event.decision', 'event.media',
       'training.read', 'publication.propose', 'publication.visual',
       'publication.approve_schedule', 'publication.queue_approve_schedule',
-      'publication.queue_assets', 'publication.owner_preview_prepare'
+      'publication.queue_assets', 'publication.owner_workspace', 'publication.owner_preview_prepare'
     ],
     spreadsheet: spreadsheet.getName(),
     queueRows: Math.max(queue.getLastRow() - 1, 0),
@@ -207,6 +207,7 @@ function doPost(e) {
     const request = rformContentApiV04ParseRequest_(e);
     rformContentApiV04Authorize_(request);
     const operation = String(request.operation || 'read');
+    if (operation === 'owner_workspace') return rformContentApiV04Json_(rformContentApiV04Workspace_(request));
     if (operation === 'queue_owner_preview_prepare') {
       return rformContentApiV04Json_(rformContentApiV04PrepareOwnerPreview_(request));
     }
@@ -270,7 +271,7 @@ function rformContentApiV04Payload_() {
       'content.read', 'content.action', 'event.review', 'event.decision', 'event.media',
       'training.read', 'publication.propose', 'publication.visual',
       'publication.approve_schedule', 'publication.queue_approve_schedule',
-      'publication.queue_assets', 'publication.owner_preview_prepare', 'publication.queue_text_draft_save'
+      'publication.queue_assets', 'publication.owner_workspace', 'publication.owner_preview_prepare', 'publication.queue_text_draft_save'
     ],
     generated_at: new Date().toISOString(),
     queue_fields: RFORM_CONTENT_API_V04.queueFields,
@@ -279,6 +280,7 @@ function rformContentApiV04Payload_() {
     queue: queue,
     events: events,
     training_sessions: trainingSessions,
+    workspace_meta: rformContentApiV04WorkspaceMeta_(),
     row_counts: {queue: queue.length, events: events.length, training_sessions: trainingSessions.length}
   };
 }
@@ -314,7 +316,7 @@ function rformContentApiV04Authorize_(request) {
   if ([
     'read', 'content_action', 'event_review', 'event_decision', 'event_media',
     'publication_approval', 'queue_publication_approval', 'queue_publication_assets',
-    'queue_owner_preview_prepare', 'queue_text_draft_save'
+    'queue_owner_preview_prepare', 'queue_text_draft_save', 'owner_workspace'
   ].indexOf(operation) === -1) {
     throw new Error('Операция не поддерживается.');
   }
@@ -339,6 +341,7 @@ function rformContentApiV04SignedMessage_(request) {
   const nonce = String(request.nonce || '');
   const operation = String(request.operation || 'read');
   if (operation === 'read') return timestamp + '.' + nonce;
+  if (operation === 'owner_workspace') return [timestamp, nonce, operation, String(request.action_id || ''), String(request.content_id || ''), String(request.source_hash || ''), rformContentApiV04Sha256Hex_(JSON.stringify(request.payload || {}))].join('\n');
   if (operation === 'queue_owner_preview_prepare') {
     return [timestamp, nonce, operation, String(request.action_id || ''),
       String(request.content_id || ''), String(request.source_hash || '')].join('\n');
@@ -424,7 +427,7 @@ function rformContentApiV04SignedMessage_(request) {
     return lines.join('\n');
   }
   if (operation === 'queue_publication_approval') {
-    return [
+    const lines = [
       timestamp,
       nonce,
       operation,
@@ -433,7 +436,10 @@ function rformContentApiV04SignedMessage_(request) {
       rformContentApiV04Sha256Hex_(String(request.telegram_text || '').trim()),
       rformContentApiV04Sha256Hex_(String(request.telegram_visual_url || '').trim()),
       String(request.telegram_post_mode || '').trim().toUpperCase()
-    ].join('\n');
+    ];
+    if (request.expected_workspace_hash) lines.push(String(request.expected_workspace_hash));
+    if (request.expected_workspace_hash) lines.push(String(request.expected_asset_hash || ''));
+    return lines.join('\n');
   }
   if (operation === 'queue_publication_assets') {
     return [
@@ -801,6 +807,8 @@ function rformContentApiV04QueuePublicationAssets_(request) {
       throw new Error('Комплект изображений превышает лимит 15 МБ.');
     }
     return {
+      file_id: item.file.getId(),
+      sha256: rformContentApiV04Sha256BytesHex_(item.file.getBlob().getBytes()),
       filename: item.filename,
       mime_type: item.mimeType,
       size: item.size,
@@ -866,6 +874,10 @@ function rformContentApiV04ApplyQueuePublicationApproval_(request) {
       return String(rowValues[map[name] - 1] || '').trim();
     };
     rformContentApiV04RequireOpenMaterial_(value);
+    if(value('Publication_Status') !== 'PLANNED' || value('AutoPost_Allowed') !== 'NO' ||
+      value('Publish_At') || value('Telegram_Message_ID') || value('Posted_At') ||
+      ['READY','APPROVED'].indexOf(value('Text_Status'))===-1 ||
+      ['READY','APPROVED','NOT_REQUIRED'].indexOf(value('Visual_Status'))===-1) throw new Error('Материал не готов или уже передан в публикацию.');
     if (['YES', 'ДА', 'TRUE', '1'].indexOf(value('Public_Data_Allowed').toUpperCase()) === -1) {
       throw new Error('Публичные данные для материала не разрешены.');
     }
@@ -877,6 +889,15 @@ function rformContentApiV04ApplyQueuePublicationApproval_(request) {
     if (value('Publish_Error')) throw new Error('Сначала устраните ошибку публикации.');
     if (['YES', 'ДА', 'TRUE', '1', 'DUPLICATE'].indexOf(value('Duplicate_Flag').toUpperCase()) !== -1) {
       throw new Error('Материал отмечен как дубликат.');
+    }
+    if (value('Telegram_Text') !== telegramText) throw new Error('Текст изменился. Проверьте актуальный предпросмотр.');
+    if (request.expected_workspace_hash && request.expected_workspace_hash !== rformContentApiV04WorkspaceHash_(value)) throw new Error('Версия материала изменилась.');
+    if(request.expected_workspace_hash) {
+      if(value('Current_Stage') !== 'OWNER_FINAL_PREVIEW') throw new Error('Требуется финальный предпросмотр.');
+      const assets=expectedPostMode==='TEXT_ONLY'?[]:rformContentApiV04QueuePublicationAssets_({content_id:contentId}).assets;
+      const fingerprint=rformContentApiV04Sha256Hex_(JSON.stringify(assets.map(function(a) {return [a.file_id,a.sha256];})));
+      if(request.expected_asset_hash!==fingerprint) throw new Error('Фотографии изменились после предпросмотра.');
+      rformContentApiV04TrainingFresh_(spreadsheet,value);
     }
     if (value('Telegram_Visual_URL') !== expectedVisualUrl ||
         (value('Telegram_Post_Mode').toUpperCase() || 'TEXT_ONLY') !== expectedPostMode) {
@@ -923,6 +944,14 @@ function rformContentApiV04ApplyQueuePublicationApproval_(request) {
         queue.getRange(row, map[name]).setValue(nextValue);
       });
       SpreadsheetApp.flush();
+      Object.keys(updates).forEach(function(name) {
+        const range=queue.getRange(row,map[name]);
+        const expected=updates[name];
+        if(expected instanceof Date) {
+          const stored=range.getValue();
+          if(!(stored instanceof Date) || stored.getTime()!==expected.getTime()) throw new Error('Approval date readback mismatch');
+        } else if(range.getDisplayValue()!==String(expected)) throw new Error('Approval readback mismatch');
+      });
       logSheet.getRange(logRow, logMap.Result).setValue('APPLIED');
     } catch (error) {
       Object.keys(previous).forEach(function (name) {
@@ -1772,4 +1801,406 @@ function rformContentApiV04QueuePreparation_(request, saveDraft) {
       throw error;
     }
   } finally { lock.releaseLock(); }
+}
+
+// Owner workspace: CONTENT_QUEUE is canonical; action log owns version/reminder history.
+const RFORM_WORKSPACE_FIELDS = Object.freeze(RFORM_OWNER_PREVIEW_FIELDS.concat(['Session_ID', 'Proof_Source']));
+
+function rformContentApiV04WorkspaceHash_(value) {
+  return rformContentApiV04Sha256Hex_(JSON.stringify(RFORM_WORKSPACE_FIELDS.map(value)));
+}
+
+function rformContentApiV04WorkspaceContext_() {
+  const ss = SpreadsheetApp.openById(RFORM_CONTENT_API_V04.spreadsheetId);
+  const queue = rformContentApiV04RequireSheet_(ss, RFORM_CONTENT_API_V04.queueSheet);
+  const log = rformContentApiV04RequireSheet_(ss, RFORM_CONTENT_API_V04.actionLogSheet);
+  const map = rformContentApiV04HeaderMap_(rformContentApiV04Headers_(queue));
+  const lm = rformContentApiV04HeaderMap_(rformContentApiV04Headers_(log));
+  RFORM_WORKSPACE_FIELDS.forEach(function(f) { if (!map[f]) throw new Error('Missing queue field: ' + f); });
+  RFORM_CONTENT_API_V04.actionLogHeaders.forEach(function(f) { if (!lm[f]) throw new Error('Missing audit field: ' + f); });
+  return {ss:ss, queue:queue, log:log, map:map, lm:lm};
+}
+
+function rformContentApiV04WorkspaceRecords_(c) {
+  if (c.log.getLastRow() < 2) return [];
+  return c.log.getRange(2, 1, c.log.getLastRow()-1, c.log.getLastColumn()).getDisplayValues()
+    .map(function(row) {
+      const out = {};
+      Object.keys(c.lm).forEach(function(k) { out[k] = String(row[c.lm[k]-1] || ''); });
+      return out;
+    });
+}
+
+function rformContentApiV04WorkspaceMeta_() {
+  const c = rformContentApiV04WorkspaceContext_();
+  const meta = {};
+  rformContentApiV04WorkspaceRecords_(c).forEach(function(r) {
+    if (r.Result !== 'APPLIED' || !/^OWNER_(SAVE|HOLD|RETURN|REMINDER|AI_REQUEST|AI_PROPOSAL)$/.test(r.Action)) return;
+    const m = meta[r.Content_ID] || {versions:[], reminder:null, ai:null};
+    let n; try { n = JSON.parse(r.New_Values || '{}'); } catch (_) { return; }
+    if (r.Action === 'OWNER_SAVE') m.versions.push({action_id:r.Action_ID, at:r.Timestamp});
+    if (r.Action === 'OWNER_HOLD' || r.Action === 'OWNER_REMINDER') m.reminder = n._meta || null;
+    if (r.Action === 'OWNER_RETURN') m.reminder = null;
+    if (r.Action === 'OWNER_AI_REQUEST') m.ai = Object.assign({request_id:r.Action_ID, status:'REQUESTED'}, n._meta);
+    if (r.Action === 'OWNER_AI_PROPOSAL') m.ai = Object.assign({proposal_id:r.Action_ID, status:'PROPOSED'}, n._meta);
+    m.versions = m.versions.slice(-10);
+    meta[r.Content_ID] = m;
+  });
+  return meta;
+}
+
+function rformContentApiV04WorkspaceMutable_(value) {
+  if (['PLANNED', 'HOLD', 'NOT_READY'].indexOf(value('Publication_Status')) === -1 ||
+      value('AutoPost_Allowed') !== 'NO' || value('Publish_At') ||
+      value('Telegram_Message_ID') || value('Telegram_Post_URL') || value('Posted_At') ||
+      /SUPERSEDED|ARCHIV|CANCELLED/i.test(value('Pipeline_Status')) ||
+      value('Duplicate_Flag') || value('Publish_Error')) throw new Error('Материал закрыт, имеет расписание или заблокирован.');
+}
+
+function rformContentApiV04WorkspaceCommit_(c, request, row, action, updates, metadata) {
+  const before = c.queue.getRange(row,1,1,c.queue.getLastColumn()).getDisplayValues()[0];
+  const previous = {}, next = {};
+  Object.keys(updates).forEach(function(f) {
+    if (!c.map[f]) throw new Error('Missing field: ' + f);
+    previous[f] = String(before[c.map[f]-1] || '');
+    next[f] = String(updates[f]);
+  });
+  if (metadata) next._meta = metadata;
+  const identity = rformContentApiV04Sha256Hex_(JSON.stringify([
+    request.content_id || '', request.source_hash || '', request.payload || {}
+  ]));
+  c.log.appendRow([request.action_id,new Date(),request.content_id,action,identity,
+    Object.keys(updates).join(','),JSON.stringify(previous),JSON.stringify(next),
+    'OWNER_WORKSPACE',request.nonce || '', 'PENDING']);
+  const lr = c.log.getLastRow();
+  try {
+    Object.keys(updates).forEach(function(f) {
+      const text = next[f];
+      c.queue.getRange(row,c.map[f]).setValue(f === 'Updated_At' ? "'" + text : rformContentApiV04SafeText_(text));
+    });
+    SpreadsheetApp.flush();
+    const readback = c.queue.getRange(row,1,1,c.queue.getLastColumn()).getDisplayValues()[0];
+    // Verify unchanged fields too, including all publication controls.
+    Object.keys(c.map).forEach(function(f) {
+      const expected = Object.prototype.hasOwnProperty.call(updates,f) ? next[f] : String(before[c.map[f]-1] || '');
+      if (String(readback[c.map[f]-1] || '') !== expected) throw new Error('Readback mismatch');
+    });
+    c.log.getRange(lr,c.lm.Result).setValue('APPLIED');
+    SpreadsheetApp.flush();
+    if (c.log.getRange(lr,c.lm.Result).getDisplayValue() !== 'APPLIED') throw new Error('Audit readback mismatch');
+    return {ok:true,status:'APPLIED',action_id:request.action_id,content_id:request.content_id,
+      source_hash:rformContentApiV04WorkspaceHash_(function(f) { return String(readback[c.map[f]-1] || '').trim(); })};
+  } catch(error) {
+    try {
+      Object.keys(previous).forEach(function(f) {
+        // Force literals on rollback; do not lose seconds or leading formula characters.
+        c.queue.getRange(row,c.map[f]).setValue("'" + previous[f]);
+      });
+      SpreadsheetApp.flush();
+      Object.keys(previous).forEach(function(f) {
+        if(c.queue.getRange(row,c.map[f]).getDisplayValue() !== previous[f]) throw new Error('Rollback mismatch');
+      });
+      c.log.getRange(lr,c.lm.Result).setValue('FAILED_ROLLED_BACK');
+    } catch(_) {
+      try { c.log.getRange(lr,c.lm.Result).setValue('OUTCOME_UNKNOWN'); } catch(__) {}
+      throw new Error('Исход операции неизвестен. Проверьте статус; повтор отключён.');
+    }
+    throw error;
+  }
+}
+
+function rformContentApiV04Workspace_(request) {
+  const p = request.payload || {};
+  rformContentApiV04RequireActionId_(String(request.action_id || ''));
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) throw new Error('Очередь занята.');
+  try {
+    const c = rformContentApiV04WorkspaceContext_();
+    if (p.action === 'sync_training') return rformContentApiV04TrainingDrafts_(c,request);
+    rformContentApiV04RequireRecordId_(request.content_id,'Код материала');
+    const row = rformContentApiV04FindUniqueRow_(c.queue,'Content_ID',request.content_id);
+    const raw = c.queue.getRange(row,1,1,c.queue.getLastColumn()).getDisplayValues()[0];
+    const value = function(f) { return String(raw[c.map[f]-1] || '').trim(); };
+    const identity = rformContentApiV04Sha256Hex_(JSON.stringify([request.content_id,request.source_hash || '',p]));
+    const records = rformContentApiV04WorkspaceRecords_(c);
+    const prior = records.find(function(r) { return r.Action_ID === request.action_id; });
+    if(prior) {
+      if(prior.Content_ID !== request.content_id || prior.Comment !== identity) throw new Error('Action_ID относится к другому запросу.');
+      if(prior.Result !== 'APPLIED') throw new Error('Исход предыдущего запроса не подтверждён.');
+      const next = JSON.parse(prior.New_Values || '{}');
+      Object.keys(next).filter(function(k) { return k !== '_meta'; }).forEach(function(f) {
+        if(value(f) !== String(next[f]).trim()) throw new Error('После операции материал изменился.');
+      });
+      return {ok:true,status:'ALREADY_APPLIED',action_id:request.action_id,metadata:next._meta || null};
+    }
+    if (request.source_hash !== rformContentApiV04WorkspaceHash_(value)) throw new Error('Материал изменился. Откройте актуальную карточку.');
+    rformContentApiV04WorkspaceMutable_(value);
+    if(p.action === 'stage_photo') return rformContentApiV04WorkspaceStagePhoto_(c,request,row);
+    if(p.action === 'draft_assets') {
+      const files=rformContentApiV04WorkspaceFiles_(c,request,p.asset_ids,value);
+      return {ok:true,assets:files.map(function(f) {return {file_id:f.getId(),mime_type:f.getMimeType(),
+        filename:f.getName(),data_base64:Utilities.base64Encode(f.getBlob().getBytes())};})};
+    }
+    const now = Utilities.formatDate(new Date(),'Europe/Moscow','dd.MM.yyyy HH:mm:ss');
+    const invalidate = {Approval_Status:'NOT_READY',AutoPost_Allowed:'NO',Publish_At:'',
+      Preview_Review_Status:'RECHECK_REQUIRED',Preview_Review_Hash:'',
+      Preview_Reviewed_At:'',Preview_Reviewed_By:'',Updated_At:now};
+    if(p.action === 'save') {
+      const text = String(p.text || '').trim();
+      if(!text || text.length > 4096) throw new Error('Текст должен содержать от 1 до 4096 символов.');
+      if(value('Public_Data_Allowed') !== 'YES') throw new Error('Публичные данные не разрешены.');
+      const updates = Object.assign({},invalidate,{Telegram_Text:text,Text_Status:'READY'});
+      if(p.asset_ids !== undefined) {
+        const ids = p.asset_ids;
+        if(!Array.isArray(ids) || ids.length>10 || new Set(ids).size !== ids.length) throw new Error('Некорректный комплект фотографий.');
+        const manifest = rformContentApiV04WorkspaceRevision_(c,request,ids,value);
+        updates.Telegram_Visual_URL = manifest.url;
+        updates.Telegram_Post_Mode = ids.length === 0 ? 'TEXT_ONLY' : (ids.length === 1 ? 'PHOTO_CAPTION' : 'ALBUM_CAPTION');
+        updates.Visual_Status = ids.length ? 'READY' : 'NOT_REQUIRED';
+      }
+      return rformContentApiV04WorkspaceCommit_(c,request,row,'OWNER_SAVE',updates,
+        {text:text,visual_url:updates.Telegram_Visual_URL === undefined?value('Telegram_Visual_URL'):updates.Telegram_Visual_URL});
+    }
+    if(p.action === 'hold' || p.action === 'reminder') {
+      const due = String(p.review_at || '');
+      if(due && (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\+03:00$/.test(due) ||
+        !Number.isFinite(Date.parse(due)) || Date.parse(due) <= Date.now())) throw new Error('Нужна будущая дата рассмотрения по Москве.');
+      if(p.action === 'reminder' && value('Publication_Status') !== 'HOLD') throw new Error('Напоминание доступно для отложенного материала.');
+      const updates = Object.assign({},invalidate,{Publication_Status:'HOLD',Pipeline_Status:'HOLD'});
+      return rformContentApiV04WorkspaceCommit_(c,request,row,p.action === 'hold'?'OWNER_HOLD':'OWNER_REMINDER',
+        updates,{review_at:due,notify:!!p.notify});
+    }
+    if(p.action === 'return') {
+      if(value('Publication_Status') !== 'HOLD') throw new Error('Материал не отложен.');
+      return rformContentApiV04WorkspaceCommit_(c,request,row,'OWNER_RETURN',
+        Object.assign({},invalidate,{Publication_Status:'PLANNED',Pipeline_Status:'READY · CHANNEL CONTROL',Current_Stage:'CHANNEL_CONTROL_REVIEW'}));
+    }
+    if(p.action === 'prepare') {
+      rformContentApiV04TrainingFresh_(c.ss,value);
+      if(value('Publication_Status') !== 'PLANNED' || value('Public_Data_Allowed') !== 'YES' ||
+        ['READY','READY_FOR_SOURCE_DATA'].indexOf(value('Source_Packet_Status')) === -1 ||
+        value('Text_Status') !== 'READY' || value('Blocking_Issue') || !value('Telegram_Text')) throw new Error('Материал ещё не готов к предпросмотру.');
+      const mode=value('Telegram_Post_Mode');
+      if(mode !== 'TEXT_ONLY') {
+        const packet = rformContentApiV04QueuePublicationAssets_({content_id:request.content_id});
+        const expectedCount = mode === 'PHOTO_CAPTION' ? 1 : packet.assets.length;
+        if(!packet.assets.length || packet.assets.length !== expectedCount ||
+          ['PHOTO_CAPTION','ALBUM_CAPTION'].indexOf(mode) === -1 ||
+          (mode === 'ALBUM_CAPTION' && packet.assets.length<2)) throw new Error('Некорректный состав фотографий.');
+      } else if(value('Telegram_Visual_URL')) throw new Error('TEXT_ONLY содержит визуал.');
+      return rformContentApiV04WorkspaceCommit_(c,request,row,'OWNER_PREPARE',
+        Object.assign({},invalidate,{Current_Stage:'OWNER_FINAL_PREVIEW'}));
+    }
+    if(p.action === 'ai_request') {
+      const instruction=String(p.instruction || '').trim();
+      if(!instruction || instruction.length>2000) throw new Error('Поручение должно содержать от 1 до 2000 символов.');
+      return rformContentApiV04WorkspaceCommit_(c,request,row,'OWNER_AI_REQUEST',{},
+        {source_hash:request.source_hash,instruction:instruction,status:'REQUESTED'});
+    }
+    if(p.action === 'version_read') {
+      const version=records.find(function(r) {return r.Action_ID===p.version_id && r.Content_ID===request.content_id && r.Action==='OWNER_SAVE' && r.Result==='APPLIED';});
+      if(!version) throw new Error('Версия не найдена.');
+      const snapshot=JSON.parse(version.New_Values)._meta;
+      const ids=[];
+      if(snapshot.visual_url) {
+        const iterator=DriveApp.getFolderById(rformContentApiV04DriveFolderId_(snapshot.visual_url)).getFiles();
+        const files=[];
+        while(iterator.hasNext()) {const f=iterator.next();files.push({id:f.getId(),name:f.getName()});}
+        files.sort(function(a,b){return a.name.localeCompare(b.name);}).forEach(function(f){ids.push(f.id);});
+      }
+      return {ok:true,text:snapshot.text,asset_ids:ids};
+    }
+    if(p.action === 'ai_proposal') {
+      const ai=records.find(function(r) {return r.Action_ID === p.request_id && r.Action === 'OWNER_AI_REQUEST' && r.Content_ID===request.content_id && r.Result==='APPLIED';});
+      if(!ai || JSON.parse(ai.New_Values)._meta.source_hash !== request.source_hash) throw new Error('Запрос ИИ устарел или отсутствует.');
+      if(records.some(function(r) {return r.Action==='OWNER_AI_PROPOSAL' && r.Content_ID===request.content_id && r.Result==='APPLIED' && JSON.parse(r.New_Values || '{}')._meta.request_id===p.request_id;})) throw new Error('Для запроса уже есть предложение.');
+      const proposal=String(p.text || '').trim();
+      if(!proposal || proposal.length>4096) throw new Error('Некорректное предложение ИИ.');
+      // A worker can propose only, never save or approve a material.
+      return rformContentApiV04WorkspaceCommit_(c,request,row,'OWNER_AI_PROPOSAL',{},
+        {source_hash:request.source_hash,request_id:p.request_id,text:proposal});
+    }
+    throw new Error('Действие workspace не поддерживается.');
+  } finally { lock.releaseLock(); }
+}
+
+function rformContentApiV04WorkspaceStagePhoto_(c,request,row) {
+  const p=request.payload;
+  if(['image/jpeg','image/png'].indexOf(p.mime_type)===-1) throw new Error('Поддерживаются JPEG и PNG.');
+  const bytes=Utilities.base64Decode(String(p.data_base64 || ''));
+  if(!bytes.length || bytes.length>RFORM_CONTENT_API_V04.maxPublicationVisualBytes) throw new Error('Фото должно быть не более 5 МБ.');
+  const u=function(i) {return (bytes[i]+256)%256;};
+  const jpeg=u(0)===255 && u(1)===216 && u(2)===255;
+  const png=[137,80,78,71,13,10,26,10].every(function(v,i) {return u(i)===v;});
+  if((p.mime_type==='image/jpeg'&&!jpeg)||(p.mime_type==='image/png'&&!png)) throw new Error('Содержимое не соответствует формату фото.');
+  const root=DriveApp.getFolderById(RFORM_CONTENT_API_V04.assetsRootFolderId);
+  const folder=root.createFolder('OWNER_STAGE_'+request.action_id);
+  const file=folder.createFile(Utilities.newBlob(bytes,p.mime_type,'photo.'+(jpeg?'jpg':'png')));
+  const result=rformContentApiV04WorkspaceCommit_(c,request,row,'OWNER_STAGE_PHOTO',{},
+    {file_id:file.getId(),content_id:request.content_id,source_hash:request.source_hash});
+  result.metadata={file_id:file.getId()}; return result;
+}
+
+function rformContentApiV04WorkspaceRevision_(c,request,ids,value) {
+  if(!ids.length) return {url:''};
+  const files=rformContentApiV04WorkspaceFiles_(c,request,ids,value);
+  // New private immutable directory per committed revision; Autopost sees exactly this set.
+  const folder=DriveApp.getFolderById(RFORM_CONTENT_API_V04.assetsRootFolderId).createFolder('OWNER_REV_'+request.action_id);
+  files.forEach(function(f,i) { f.makeCopy('card-'+('0'+(i+1)).slice(-2)+'_v01.'+(f.getMimeType()==='image/png'?'png':'jpg'),folder); });
+  return {url:folder.getUrl()};
+}
+
+function rformContentApiV04WorkspaceFiles_(c,request,ids,value) {
+  if(!Array.isArray(ids) || ids.length>10 || new Set(ids).size!==ids.length) throw new Error('Некорректный комплект фото.');
+  const allowed={};
+  rformContentApiV04WorkspaceRecords_(c).forEach(function(r) {
+    if(r.Content_ID===request.content_id && r.Action==='OWNER_STAGE_PHOTO' && r.Result==='APPLIED') {
+      const m=JSON.parse(r.New_Values || '{}')._meta;
+      if(m && m.source_hash===request.source_hash) allowed[m.file_id]=true;
+    }
+    if(r.Content_ID===request.content_id && r.Action==='OWNER_SAVE' && r.Result==='APPLIED') {
+      const snapshot=JSON.parse(r.New_Values || '{}')._meta;
+      if(snapshot && snapshot.visual_url) {
+        const iterator=DriveApp.getFolderById(rformContentApiV04DriveFolderId_(snapshot.visual_url)).getFiles();
+        while(iterator.hasNext()) allowed[iterator.next().getId()]=true;
+      }
+    }
+  });
+  if(value('Telegram_Visual_URL')) {
+    const existing=DriveApp.getFolderById(rformContentApiV04DriveFolderId_(value('Telegram_Visual_URL'))).getFiles();
+    while(existing.hasNext()) { const f=existing.next(); allowed[f.getId()]=true; }
+  }
+  let total=0;
+  const files=ids.map(function(id) {
+    if(!allowed[id]) throw new Error('Фото не принадлежит текущему материалу или версии.');
+    const f=DriveApp.getFileById(id);
+    if(['image/jpeg','image/png'].indexOf(f.getMimeType())===-1 || f.getSize()>5*1024*1024) throw new Error('Неподдерживаемое фото.');
+    total+=f.getSize();return f;
+  });
+  if(total>15*1024*1024) throw new Error('Комплект превышает 15 МБ.');
+  return files;
+}
+
+function rformContentApiV04EnableTrainingDrafts() {
+  const existingProps=PropertiesService.getScriptProperties();
+  const existingBaseline=existingProps.getProperty('RFORM_AUTO_DRAFT_BASELINE');
+  if(existingBaseline) {
+    existingProps.setProperty('RFORM_AUTO_DRAFT_ENABLED','YES');
+    return {ok:true,status:'ALREADY_CONFIGURED',baseline_closed_sessions:JSON.parse(existingBaseline).length,publication_enabled:false};
+  }
+  const c=rformContentApiV04WorkspaceContext_();
+  const sheet=rformContentApiV04RequireSheet_(c.ss,RFORM_CONTENT_API_V04.trainingSessionsSheet);
+  const rows=rformContentApiV04ReadRows_(sheet,RFORM_CONTENT_API_V04.trainingSessionFields,'Session_ID');
+  const baseline=rows.filter(function(r) {return r.Session_Status==='CLOSED';}).map(function(r) {return r.Session_ID;});
+  const props=PropertiesService.getScriptProperties();
+  // Mark only already closed sessions; in-progress sessions may close after enablement.
+  const encoded=JSON.stringify(baseline);
+  if(encoded.length>8000) throw new Error('Baseline exceeds property limit; use a bounded reviewed migration.');
+  props.setProperty('RFORM_AUTO_DRAFT_BASELINE',encoded);
+  props.setProperty('RFORM_AUTO_DRAFT_ENABLED','YES');
+  return {ok:true,baseline_closed_sessions:baseline.length,publication_enabled:false};
+}
+
+function rformContentApiV04DisableTrainingDrafts() {
+  PropertiesService.getScriptProperties().setProperty('RFORM_AUTO_DRAFT_ENABLED','NO');
+  return {ok:true};
+}
+
+function rformContentApiV04TrainingText_(s) {
+  const result=String(s.Main_Result || '').trim();
+  if(!result) throw new Error('В закрытой тренировке отсутствует Main_Result.');
+  const parts=[s.Date+' · Тренировка '+s.Session_Type,'Итоги: '+result];
+  if(s.Actual_Duration) parts.push('Продолжительность: '+s.Actual_Duration+' мин.');
+  if(s.Session_Decision) parts.push('Решение: '+s.Session_Decision);
+  parts.push('#RForm_Training');
+  const text=parts.join('\n\n');
+  if(text.length>1200) throw new Error('Факты требуют редакторского сокращения; автоматический короткий текст не создан.');
+  return text;
+}
+
+function rformContentApiV04TrainingDrafts_(c,request) {
+  const props=PropertiesService.getScriptProperties();
+  if(props.getProperty('RFORM_AUTO_DRAFT_ENABLED')!=='YES') return {ok:true,status:'DISABLED',created:[]};
+  const baseline=JSON.parse(props.getProperty('RFORM_AUTO_DRAFT_BASELINE') || '[]');
+  const sessions=rformContentApiV04ReadRows_(rformContentApiV04RequireSheet_(c.ss,RFORM_CONTENT_API_V04.trainingSessionsSheet),
+    RFORM_CONTENT_API_V04.trainingSessionFields.concat(['Completed_At','Duplicate_Flag']),'Session_ID');
+  const queue=rformContentApiV04ReadRows_(c.queue,RFORM_CONTENT_API_V04.queueFields,'Content_ID');
+  const created=[],blocked=[];
+  const unique={};
+  sessions.forEach(function(s) {unique[s.Session_ID]=(unique[s.Session_ID]||0)+1;});
+  sessions.filter(function(s) {return s.Session_Status==='CLOSED' && baseline.indexOf(s.Session_ID)===-1;})
+    .forEach(function(s) {
+    if(created.length>=3) return;
+    if(unique[s.Session_ID]!==1) {blocked.push({session_id:s.Session_ID,reason:'DUPLICATE_SESSION'});return;}
+    if(!s.Completed_At || /^(YES|TRUE|1|DUPLICATE|ДА)$/i.test(s.Duplicate_Flag || '')) {
+      blocked.push({session_id:s.Session_ID,reason:'COMPLETION_NOT_VERIFIED'});return;
+    }
+    const covered=queue.some(function(q) {
+      if(q.Session_ID===s.Session_ID) return true; // Includes HOLD: never recreate a deferred draft.
+      const m=String(q.Proof_Source || '').match(/COVERS:([^\s·]+)/);
+      return m && m[1].split(',').indexOf(s.Session_ID)!==-1;
+    });
+    if(covered) return;
+    let text;try {text=rformContentApiV04TrainingText_(s);} catch(_) {blocked.push({session_id:s.Session_ID,reason:'FACT_PACKET_NOT_READY'});return;}
+    const id=rformContentApiV04PublicationId_(s.Session_ID,s.Date);
+    const actionId=rformContentApiV04Sha256Hex_('TRAINING_DRAFT_V1\n'+s.Session_ID).slice(0,32);
+    const records=rformContentApiV04WorkspaceRecords_(c);
+    if(records.some(function(r) {return r.Action_ID===actionId;})) {blocked.push({session_id:s.Session_ID,reason:'CHECK_PRIOR_OUTCOME'});return;}
+    const item={Content_ID:id,Session_ID:s.Session_ID,Date:s.Date,Rubric:'TRAINING_LOG',
+      Main_Training_Fact:s.Main_Result,Decision:s.Session_Decision,Public_Data_Allowed:'YES',
+      Source_Packet_Status:'READY',Text_Status:'READY',Visual_Status:'NOT_REQUIRED',Approval_Status:'NOT_READY',
+      Publication_Status:'PLANNED',Pipeline_Status:'READY · OWNER DRAFT',Current_Stage:'OWNER_FINAL_PREVIEW',
+      Telegram_Text:text,Telegram_Post_Mode:'TEXT_ONLY',Telegram_Chat_ID:'@r_form',
+      AutoPost_Allowed:'NO',Publish_At:'',Preview_Review_Status:'NOT_REVIEWED',
+      Proof_Source:'TRAINING_SESSIONS / '+s.Session_ID+' / COVERS:'+s.Session_ID,
+      Updated_At:Utilities.formatDate(new Date(),'Europe/Moscow','dd.MM.yyyy HH:mm:ss'),
+      Created_At:Utilities.formatDate(new Date(),'Europe/Moscow','dd.MM.yyyy HH:mm:ss')};
+    Object.keys(item).forEach(function(f) {if(!c.map[f]) throw new Error('Missing training draft field: '+f);});
+    c.log.appendRow([actionId,new Date(),id,'AUTO_TRAINING_DRAFT',s.Session_ID,Object.keys(item).join(','),
+      '{}',JSON.stringify(Object.assign({},item,{_meta:{training_hash:rformContentApiV04TrainingHash_(s)}})),'TRAINING_DRAFT_WORKER',request.nonce || '','PENDING']);
+    const lr=c.log.getLastRow();
+    try {
+      const row=new Array(c.queue.getLastColumn()).fill('');
+      Object.keys(item).forEach(function(f) {row[c.map[f]-1]="'"+String(item[f]);});
+      c.queue.appendRow(row);SpreadsheetApp.flush();
+      const qr=rformContentApiV04FindUniqueRow_(c.queue,'Content_ID',id);
+      const read=c.queue.getRange(qr,1,1,c.queue.getLastColumn()).getDisplayValues()[0];
+      Object.keys(item).forEach(function(f) {if(String(read[c.map[f]-1] || '')!==String(item[f])) throw new Error('Draft readback mismatch');});
+      c.log.getRange(lr,c.lm.Result).setValue('APPLIED');SpreadsheetApp.flush();
+      if(c.log.getRange(lr,c.lm.Result).getDisplayValue()!=='APPLIED') throw new Error('Audit mismatch');
+      created.push(id);queue.push(item);
+    } catch(_) {
+      try {
+        const qr=rformContentApiV04FindOptionalRow_(c.queue,'Content_ID',id);
+        if(qr) {
+          c.queue.getRange(qr,c.map.Current_Stage).setValue('CHANNEL_CONTROL_REVIEW');
+          c.queue.getRange(qr,c.map.Blocking_Issue).setValue('AUTO_DRAFT_OUTCOME_UNKNOWN');
+          c.queue.getRange(qr,c.map.AutoPost_Allowed).setValue('NO');
+        }
+        c.log.getRange(lr,c.lm.Result).setValue('OUTCOME_UNKNOWN');
+        SpreadsheetApp.flush();
+      } catch(__) {}
+      throw new Error('Исход создания черновика неизвестен; автоматический повтор отключён.');
+    }
+  });
+  return {ok:true,status:'APPLIED',created:created,blocked:blocked};
+}
+
+function rformContentApiV04TrainingHash_(s) {
+  return rformContentApiV04Sha256Hex_(JSON.stringify(RFORM_CONTENT_API_V04.trainingSessionFields.concat(['Completed_At','Duplicate_Flag']).map(function(f) {return String(s[f] || '').trim();})));
+}
+
+function rformContentApiV04TrainingFresh_(ss,value) {
+  if(!value('Session_ID')) return;
+  const log=rformContentApiV04RequireSheet_(ss,RFORM_CONTENT_API_V04.actionLogSheet);
+  const c={log:log,lm:rformContentApiV04HeaderMap_(rformContentApiV04Headers_(log))};
+  const record=rformContentApiV04WorkspaceRecords_(c).find(function(r) {
+    return r.Content_ID===value('Content_ID') && r.Action==='AUTO_TRAINING_DRAFT' && r.Result==='APPLIED';
+  });
+  if(!record) return; // Existing editorial objects keep their established fact QA.
+  const expected=JSON.parse(record.New_Values)._meta.training_hash;
+  const sessions=rformContentApiV04ReadRows_(rformContentApiV04RequireSheet_(ss,RFORM_CONTENT_API_V04.trainingSessionsSheet),
+    RFORM_CONTENT_API_V04.trainingSessionFields.concat(['Completed_At','Duplicate_Flag']),'Session_ID').filter(function(s) {return s.Session_ID===value('Session_ID');});
+  if(sessions.length!==1 || sessions[0].Session_Status!=='CLOSED' ||
+    expected!==rformContentApiV04TrainingHash_(sessions[0])) throw new Error('Исходная тренировка изменилась; требуется сверка фактов.');
 }
