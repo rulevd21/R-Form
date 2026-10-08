@@ -1,3 +1,5 @@
+> Подготовлен кандидат этапа 3 (не установлен): [content-training-stage3-v1.2.2.md](../../docs/content-training-stage3-v1.2.2.md).
+
 > Текущая установленная версия: Content Control 0.5.9, Content API 0.6.2, Owner Bot 1.2.1. Паспорт установки и проверок: [content-stabilization-v1.2.1.md](../../docs/content-stabilization-v1.2.1.md).
 > Ниже сохранены исторические описания прежних версий; текущие возможности и ограничения указаны в паспорте.
 

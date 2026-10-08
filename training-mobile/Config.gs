@@ -1,0 +1,82 @@
+/**
+ * Серверная конфигурация R/Form.
+ * Значения из этого файла не передаются клиенту, кроме безопасной сводки.
+ */
+var RFormConfig = Object.freeze({
+  APP_NAME: 'R/Form Training Mobile',
+  APP_VERSION: '2.1.9',
+  API_VERSION: '2026-08-05',
+  SCHEMA_VERSION: 'RFORM_MASTER_DATA_v1/2026-08-05',
+
+  SPREADSHEET_ID: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
+  EXPECTED_SPREADSHEET_NAME: 'RFORM_MASTER_DATA_v1',
+  TIME_ZONE: 'Europe/Moscow',
+
+  GOAL_KG: 117.5,
+  COMPETITION_DATE: '2026-09-12',
+  DEFAULT_PLANNED_DURATION: '60–75',
+
+  WRITE_ACTOR: 'RFORM_TRAINING_MOBILE',
+  INBOX_APPLIED_BY: 'OWNER',
+  SOURCE_CHAT: 'RFORM_TRAINING_MOBILE',
+
+  LOCK_TIMEOUT_MS: 20000,
+  MAX_TEXT_LENGTH: 4000,
+  MAX_COMMENT_LENGTH: 1000,
+  MAX_ROWS_PER_SHEET: Object.freeze({
+    TRAINING_PLAN: 1000,
+    TRAINING_SETS: 20018,
+    TRAINING_SESSIONS: 5001,
+    DAILY: 5003,
+    INBOX_LOG: 5000,
+    QA_LOG: 1000
+  }),
+
+  CACHE_TTL_SECONDS: Object.freeze({
+    HEADERS: 60,
+    ACTIVE_PLAN: 120,
+    DICTIONARIES: 300,
+    SESSION_INDEX: 60,
+    ANALYTICS: 600,
+    SYSTEM_STATUS: 30
+  }),
+
+  SCRIPT_PROPERTIES: Object.freeze({
+    WRITE_ENABLED: 'WRITE_ENABLED',
+    DIAGNOSTIC_MODE: 'DIAGNOSTIC_MODE'
+  }),
+
+  SHEETS: Object.freeze({
+    CONTROL_PANEL: 'CONTROL_PANEL',
+    ACTIVE_PLANS: 'ACTIVE_PLANS',
+    DAILY: 'DAILY',
+    NUTRITION_RAW: 'NUTRITION_RAW',
+    NUTRITION_DAILY: 'NUTRITION_DAILY',
+    TRAINING_PLAN: 'TRAINING_PLAN',
+    TRAINING_SESSIONS: 'TRAINING_SESSIONS',
+    TRAINING_SETS: 'TRAINING_SETS',
+    MEASUREMENTS: 'MEASUREMENTS',
+    DECISIONS: 'DECISIONS',
+    CONTENT_QUEUE: 'CONTENT_QUEUE',
+    CONTENT_REGISTRY: 'CONTENT_REGISTRY',
+    INBOX_LOG: 'INBOX_LOG',
+    DAY_CLOSURE: 'DAY_CLOSURE',
+    DICTIONARIES: 'DICTIONARIES',
+    QA_LOG: 'QA_LOG'
+  }),
+
+  CLOSED_SESSION_STATUSES: Object.freeze([
+    'CLOSED', 'CORRECTED', 'APPROVED'
+  ]),
+  CLOSED_DAY_STATUSES: Object.freeze([
+    'CLOSED', 'LOCKED', 'CORRECTED'
+  ]),
+
+  SET_MUTABLE_FIELDS: Object.freeze([
+    'Weight_Kg', 'Reps', 'RIR', 'RPE', 'Rest_Seconds', 'Tempo',
+    'Pause_Seconds', 'Commands_Used', 'Technique_Status', 'Pain_During',
+    'Deviation', 'Comment'
+  ]),
+
+  AUTOREGULATION_ENABLED: false
+});
