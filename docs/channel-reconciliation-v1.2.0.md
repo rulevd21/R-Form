@@ -19,6 +19,7 @@ Definition of done: current queue reconciled, archive/manual publication control
 
 - Bot workspace: Work / Held / Published / Archive / Reconciliation; search includes archived objects; technical tests and closed editorial gates are excluded from active work/previews.
 - Archive reasons: cancelled by owner, obsolete, replaced by observed channel post. Draft text, private assets and audit history remain. Restore opens a fresh revision gate; no approval or schedule is restored.
+- Live validation checked: Publication_Status and Approval_Status use strict `DICTIONARIES!L2:L19`. Archive writes existing CANCELLED or SUPERSEDED, never a new ARCHIVED publication enum. The ARCHIVED pipeline/stage and derived UI grouping require no dictionary/schema modification.
 - Manual publication: owner selects a registered channel URL or forwards an original channel message, reviews draft vs observed text, and chooses actual published edition or replaced draft. No text-similarity write is performed automatically. Published edition and original draft remain separately inspectable.
 - Existing webhook captures `channel_post` and `edited_channel_post` only for channel -1004309818003 / @r_form. A bounded durable transport spool holds at most 20 observations, each at most 12,000 UTF-8 bytes, in Script Properties. It is not an editorial queue. Existing five-minute Poll drains at most three observations and invokes Content API reconciliation.
 - Canonical observations are signed, verified, idempotent audit entries. Old revisions cannot replace newer ones; same-revision text conflicts stop processing. Media are references, never downloaded or published by reconciliation. Albums are presented as grouped observations when Telegram media_group_id is available.
@@ -44,7 +45,7 @@ The import helper stores historic observations only, six per invocation, with an
 
 ## Validation
 
-- Node: 128 test-runner cases pass, including signature and stale-state protection, archive/restore, manual link, duplicate matches, observed edits, maximum text/callback limits, transport spool, history batches, private notifications, poll isolation and publication guards; legacy transport/callback/preview tests also retained. All network/Sheets/Drive/Telegram calls mocked; no live publication.
+- Node: 129 test-runner cases pass, including signature and stale-state protection, archive/restore, manual link, duplicate matches, observed edits, maximum text/callback limits, transport spool, history batches, private notifications, poll isolation and publication guards; legacy transport/callback/preview tests also retained. All network/Sheets/Drive/Telegram calls mocked; no live publication.
 - Python: 86 tests pass, including Streamlit navigation/rendering of the new Materials page, lifecycle and signing contract.
 - JavaScript syntax checks pass for both main sources and historical helper.
 - Production-shaped 31-row/61-observation rehearsal does not modify queue rows or call channel transports.

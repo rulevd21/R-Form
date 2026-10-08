@@ -1748,7 +1748,8 @@ function rformOwnerBotV1ChannelCapture_(m) {
   if(!m.chat || String(m.chat.id)!=='-1004309818003' || m.chat.type!=='channel') return;
   // Transport spool only. Canonical observations and queue changes belong to Content API.
   const p=rformOwnerBotV1ChannelPayload_(m),json=JSON.stringify(p);
-  const id=rformOwnerBotV1Sha256Hex_(json).slice(0,32),lock=LockService.getScriptLock();
+  // Short transport lock is independent of Poll's ScriptLock and network calls.
+  const id=rformOwnerBotV1Sha256Hex_(json).slice(0,32),lock=LockService.getUserLock();
   if(!lock.tryLock(5000)) throw new Error('CHANNEL_CAPTURE_FAILED: lock');
   try {
     const keys=JSON.parse(props.getProperty('ow_channel_spool') || '[]');
@@ -1771,10 +1772,13 @@ function rformOwnerBotV1ChannelDrain_() {
     let raw='';for(let i=0;i<n;i++) {const chunk=props.getProperty('ow_channel_'+id+'_'+i);if(chunk===null) throw new Error('Channel spool missing chunk.');raw+=chunk;}
     const result=rformOwnerBotV1WorkspaceApi_('','',JSON.parse(raw),id);
     if(!result.ok || ['APPLIED','ALREADY_APPLIED','ALREADY_OBSERVED','STALE_OBSERVATION'].indexOf(result.status)===-1) throw new Error('Observation not confirmed.');
-    const current=JSON.parse(props.getProperty('ow_channel_spool') || '[]').filter(function(k){return k!==id;});
-    props.setProperty('ow_channel_spool',JSON.stringify(current));
-    for(let i=0;i<n;i++) props.deleteProperty('ow_channel_'+id+'_'+i);
-    props.deleteProperty('ow_channel_'+id+'_n');
+    const spoolLock=LockService.getUserLock();if(!spoolLock.tryLock(5000)) throw new Error('Transport removal busy.');
+    try {
+      const current=JSON.parse(props.getProperty('ow_channel_spool') || '[]').filter(function(k){return k!==id;});
+      props.setProperty('ow_channel_spool',JSON.stringify(current));
+      for(let i=0;i<n;i++) props.deleteProperty('ow_channel_'+id+'_'+i);
+      props.deleteProperty('ow_channel_'+id+'_n');
+    } finally {spoolLock.releaseLock();}
   });
   const sync=rformOwnerBotV1WorkspaceApi_('','',{action:'reconcile_channel'});
   if(!sync.ok || (sync.blocked || []).length) throw new Error('Unconfirmed reconciliation requires operator check.');

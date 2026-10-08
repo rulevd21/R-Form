@@ -76,11 +76,12 @@ for(const field of ['AutoPost_Allowed','Publish_At','Telegram_Message_ID','Publi
 test('archive, restore and replaced-by-post are non destructive and clear obsolete reminders',()=>{
   const x=harness();x.call({action:'hold'});x.call({action:'reminder',review_at:'2099-10-10T12:00:00+03:00',notify:true});
   const text=x.item().Telegram_Text;x.call({action:'archive',reason:'CANCELLED_BY_OWNER'});
-  assert.equal(x.item().Publication_Status,'ARCHIVED');assert.equal(x.item().Telegram_Text,text);
+  assert.equal(x.item().Publication_Status,'CANCELLED');assert.equal(x.item().Telegram_Text,text);
   assert.equal(x.api.rformContentApiV04WorkspaceMeta_()['CNT-FIXTURE'].reminder,null);
   assert.throws(()=>x.call({action:'save',text:'should fail'}));
   x.call({action:'restore'});assert.equal(x.item().Publication_Status,'PLANNED');assert.equal(x.item().Current_Stage,'CHANNEL_CONTROL_REVIEW');
   const e=observed(x).event;x.call({action:'archive',reason:'REPLACED_BY_POST',message_id:77,event_hash:e.hash});
+  assert.equal(x.item().Publication_Status,'SUPERSEDED');
   assert.equal(x.item().Telegram_Message_ID,'');assert.equal(x.item().Posted_At,'');
   assert.equal(x.api.rformContentApiV04WorkspaceMeta_()['CNT-FIXTURE'].archive.post_url,e.post_url);
 });
@@ -217,4 +218,17 @@ test('channel delivery failure retains observation and does not starve existing 
   x.bot.rformOwnerBotV1ChannelDrain_=()=>{throw Error('UNKNOWN');};
   let read=0;x.bot.rformOwnerBotV1ApiRead_=()=>{read++;return{queue:[]};};
   x.bot.rformOwnerBotV1Poll();assert.equal(read,1);assert.equal(x.props.RFORM_OWNER_CHANNEL_SYNC_ERROR,'NEEDS_CHECK');
+});
+
+test('capture is not blocked by Poll script lock and arriving observation survives drain',()=>{
+  const x=harness();x.props.RFORM_OWNER_CHANNEL_SYNC_ENABLED='YES';
+  const m={chat:{id:-1004309818003,type:'channel'},message_id:77,date:1789620000,text:'fact'};
+  let scriptLocks=0;x.bot.LockService={...x.bot.LockService,getScriptLock:()=>{scriptLocks++;return{tryLock:()=>false,releaseLock:()=>{}};}};
+  x.bot.rformOwnerBotV1ChannelCapture_(m);assert.equal(scriptLocks,0);
+  const original=x.bot.rformOwnerBotV1WorkspaceApi_;let added=false;
+  x.bot.rformOwnerBotV1WorkspaceApi_=(...args)=>{
+    if(!added){added=true;x.bot.rformOwnerBotV1ChannelCapture_({...m,message_id:78});}
+    return original(...args);
+  };
+  x.bot.rformOwnerBotV1ChannelDrain_();assert.equal(JSON.parse(x.props.ow_channel_spool).length,1);
 });

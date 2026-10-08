@@ -2395,6 +2395,6 @@ function rformContentApiV04ArchiveAction_(c,request,row,value) {
   if(p.reason==='TECHNICAL_TEST' && !/^TEST-/.test(value('Content_ID'))) throw new Error('Это не техническая запись.');
   const event=p.reason==='REPLACED_BY_POST'?rformContentApiV04ChannelEvent_(c,p):null;
   return rformContentApiV04WorkspaceCommit_(c,request,row,'OWNER_ARCHIVE',Object.assign(updates,{
-    Publication_Status:'ARCHIVED',Pipeline_Status:'ARCHIVED',Current_Stage:'ARCHIVED'
+    Publication_Status:event?'SUPERSEDED':'CANCELLED',Pipeline_Status:'ARCHIVED',Current_Stage:'ARCHIVED'
   }),{reason:p.reason,event_hash:event?event.hash:null,post_url:event?event.post_url:null});
 }

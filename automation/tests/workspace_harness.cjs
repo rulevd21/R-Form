@@ -15,7 +15,13 @@ function harness(){
       getDisplayValue(){return this.getDisplayValues()[0][0];},
       getValues:()=>Array.from({length:nr},(_,i)=>Array.from({length:nc},(_,j)=>self.rows[r+i-1]?.[c+j-1]??'')),
       getValue:()=>self.rows[r-1][c-1],
-      setValue(v){if(self.fail&&self.fail(r,c,v))throw Error('fixture write failure');self.rows[r-1][c-1]=literal(v);}
+      setValue(v){
+        if(self.name==='CONTENT_QUEUE' && self.rows[0][c-1]==='Publication_Status' &&
+           !['NOT_READY','WAITING_TRAINING','WAITING_NUTRITION','READY_FOR_SOURCE_DATA','IN_TEXT','IN_VISUAL','REVIEW','APPROVED',
+             'PUBLISHED','SUPERSEDED','SCHEDULED','PUBLISHING','ERROR','PLANNED','HOLD','CANCELLED','READY','NOT_REQUIRED',''].includes(literal(v)))
+          throw Error('Live dictionary validation rejects publication status');
+        if(self.fail&&self.fail(r,c,v))throw Error('fixture write failure');self.rows[r-1][c-1]=literal(v);
+      }
     };}
   }
   const iterator=arr=>{let i=0;return{hasNext:()=>i<arr.length,next:()=>arr[i++]};};
