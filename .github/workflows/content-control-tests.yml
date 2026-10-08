@@ -9,6 +9,7 @@ on:
       - 'automation/content_control_api_v0_4.gs'
       - 'automation/tests/**'
       - 'automation/owner_bot_v1.gs'
+      - 'training-mobile/**'
       - '.github/workflows/content-control-tests.yml'
   pull_request:
     paths:
@@ -16,6 +17,7 @@ on:
       - 'automation/content_control_api_v0_4.gs'
       - 'automation/tests/**'
       - 'automation/owner_bot_v1.gs'
+      - 'training-mobile/**'
       - '.github/workflows/content-control-tests.yml'
   workflow_dispatch:
 
@@ -46,3 +48,6 @@ jobs:
 
       - name: Check Owner Bot syntax
         run: cp ../../automation/owner_bot_v1.gs /tmp/owner_bot_v1.js && node --check /tmp/owner_bot_v1.js
+
+      - name: Check recovered Training module syntax
+        run: for f in ../../training-mobile/*.gs; do node --check < "$f"; done

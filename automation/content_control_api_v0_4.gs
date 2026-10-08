@@ -1,4 +1,4 @@
-// R/Form Content Control API v0.6.1
+// R/Form Content Control API v0.6.3
 // Standalone Apps Script web app for Channel Control.
 // Reads CONTENT_QUEUE + DATA_EVENTS, applies allowlisted content actions,
 // saves owner-facing event edits, stores private photo/video assets in Drive,
@@ -7,7 +7,7 @@
 // the separate Telegram Autopost project remains the only publishing transport.
 
 const RFORM_CONTENT_API_V04 = Object.freeze({
-  version: '0.6.2',
+  version: '0.6.3',
   spreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
   queueSheet: 'CONTENT_QUEUE',
   eventsSheet: 'DATA_EVENTS',
@@ -2052,7 +2052,9 @@ function rformContentApiV04Workspace_(request) {
     }
     if(p.action === 'ai_proposal') {
       const ai=records.find(function(r) {return r.Action_ID === p.request_id && r.Action === 'OWNER_AI_REQUEST' && r.Content_ID===request.content_id && r.Result==='APPLIED';});
-      if(!ai || JSON.parse(ai.New_Values)._meta.source_hash !== request.source_hash) throw new Error('Запрос ИИ устарел или отсутствует.');
+      const latestAi=(rformContentApiV04WorkspaceMeta_(c)[request.content_id] || {}).ai;
+      if(!ai || !latestAi || latestAi.request_id!==p.request_id || latestAi.status!=='REQUESTED' ||
+        JSON.parse(ai.New_Values)._meta.source_hash !== request.source_hash) throw new Error('Запрос ИИ устарел или отсутствует.');
       if(records.some(function(r) {return r.Action==='OWNER_AI_PROPOSAL' && r.Content_ID===request.content_id && r.Result==='APPLIED' && JSON.parse(r.New_Values || '{}')._meta.request_id===p.request_id;})) throw new Error('Для запроса уже есть предложение.');
       const proposal=String(p.text || '').trim();
       if(!proposal || proposal.length>4096) throw new Error('Некорректное предложение ИИ.');
@@ -2149,12 +2151,18 @@ function rformContentApiV04DisableTrainingDrafts() {
 function rformContentApiV04TrainingText_(s) {
   const result=String(s.Main_Result || '').trim();
   if(!result) throw new Error('В закрытой тренировке отсутствует Main_Result.');
-  const parts=[s.Date+' · Тренировка '+s.Session_Type,'Итоги: '+result];
+  // Keep complete exercise groups, including their varying sets and RIR.
+  // Never cut a numeric tuple or manufacture an interpretation from Plan_Status.
+  const groups=result.split(/;\s+(?=[А-ЯЁA-Z][а-яёa-z])/).filter(Boolean);
+  const selected=[];let chars=0;
+  groups.forEach(function(g){if(selected.length<3 && chars+g.length<=800){selected.push(g);chars+=g.length;}});
+  if(!selected.length) throw new Error('Нет целого краткого фрагмента фактов.');
+  const parts=[s.Date+' · Тренировка '+s.Session_Type,'Факты:\n'+selected.join('; ')];
   if(s.Actual_Duration) parts.push('Продолжительность: '+s.Actual_Duration+' мин.');
-  if(s.Session_Decision) parts.push('Решение: '+s.Session_Decision);
+  if(selected.length<groups.length) parts.push('В посте — часть упражнений. Полные итоги сохранены в R/Form.');
   parts.push('#RForm_Training');
   const text=parts.join('\n\n');
-  if(text.length>1200) throw new Error('Факты требуют редакторского сокращения; автоматический короткий текст не создан.');
+  if(text.length>1200) throw new Error('Факты требуют редакторского сокращения.');
   return text;
 }
 
@@ -2417,4 +2425,28 @@ function rformContentApiV04ActionStatus_(request) {
 
 function rformContentApiV04Held_(value) {
   return value('Publication_Status')==='HOLD' || /HOLD|ПАУЗА/i.test(value('Pipeline_Status'));
+}
+
+// Operator bridge for the existing ChatGPT executor. No key, provider or trigger.
+// A bounded proposal packet is staged as a Script Property; canonical commit
+// still goes through Workspace_ and its freshness/idempotency/audit checks.
+function rformContentApiV04SubmitChatGPTProposal() {
+  const props=PropertiesService.getScriptProperties(),key='RFORM_CHATGPT_PROPOSAL';
+  const raw=props.getProperty(key);
+  if(!raw) return {ok:true,status:'NO_PACKET',publication_enabled:false};
+  if(Utilities.newBlob(raw).getBytes().length>8500) throw new Error('Пакет предложения превышает лимит.');
+  const p=JSON.parse(raw),fields=['content_id','source_hash','request_id','text'];
+  if(Object.keys(p).some(function(k){return fields.indexOf(k)===-1;}) ||
+    fields.some(function(k){return typeof p[k]!=='string' || !p[k].trim();})) throw new Error('Некорректный пакет предложения.');
+  rformContentApiV04RequireRecordId_(p.content_id,'Код материала');
+  if(!/^[a-f0-9]{32}$/.test(p.request_id) || !/^[a-f0-9]{64}$/.test(p.source_hash)) throw new Error('Некорректная идентичность предложения.');
+  const actionId=rformContentApiV04Sha256Hex_('CHATGPT_PROPOSAL_V1\n'+JSON.stringify(p)).slice(0,32);
+  const result=rformContentApiV04Workspace_({action_id:actionId,content_id:p.content_id,source_hash:p.source_hash,
+    nonce:'CHATGPT_OPERATOR',payload:{action:'ai_proposal',request_id:p.request_id,text:p.text}});
+  const ai=(rformContentApiV04WorkspaceMeta_()[p.content_id] || {}).ai;
+  if(!ai || ai.proposal_id!==actionId || ai.request_id!==p.request_id || ai.text!==p.text.trim()) throw new Error('Предложение не подтверждено чтением. Пакет сохранён.');
+  // Do not clear a different operator's newer packet.
+  if(props.getProperty(key)===raw) props.deleteProperty(key);
+  console.log(JSON.stringify({event:'CHATGPT_PROPOSAL_APPLIED',content_id:p.content_id,action_id:actionId,publication_enabled:false}));
+  return {ok:true,status:result.status,content_id:p.content_id,action_id:actionId,publication_enabled:false};
 }

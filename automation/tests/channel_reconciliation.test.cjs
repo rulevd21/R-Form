@@ -168,7 +168,7 @@ test('legacy action and scheduling guards reject archived/closed editorial rows'
 test('historical baseline helper imports all 61 observations and resumes without queue writes',()=>{
   const x=harness(),before=JSON.stringify(x.queue.rows);
   // Historical one-time helper remains pinned to the original authorized API.
-  const historical=fs.readFileSync(path.join(__dirname,'../channel_history_import_20261008.gs'),'utf8').replace("RFORM_CONTENT_API_V04.version!=='0.6.1'","RFORM_CONTENT_API_V04.version!=='0.6.2'");
+  const historical=fs.readFileSync(path.join(__dirname,'../channel_history_import_20261008.gs'),'utf8').replace("RFORM_CONTENT_API_V04.version!=='0.6.1'","RFORM_CONTENT_API_V04.version!=='0.6.3'");
   vm.runInContext(historical,x.api);
   let result;for(let i=0;i<11;i++) result=x.api.rformChannelHistoryImport20261008();
   assert.equal(result.total,61);assert.equal(result.remaining,0);assert.equal(x.log.rows.length,62);

@@ -24,7 +24,7 @@
 //   RFORM_OWNER_TELEGRAM_CHAT_ID
 
 const RFORM_OWNER_BOT_V1 = Object.freeze({
-  version: '1.2.1',
+  version: '1.2.2',
   spreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
   actionLogSheet: 'CONTENT_ACTION_LOG',
   pollMinutes: 5,
@@ -502,7 +502,7 @@ function rformOwnerBotV1Poll() {
   if(!lock.tryLock(5000)) return;
   const report={version:RFORM_OWNER_BOT_V1.version,at:new Date().toISOString(),stages:{},outcome:'OK'};
   function stage(name,fn) {
-    try {const result=fn();report.stages[name]='OK';return result;}
+    try {const result=fn();if(!report.stages[name]) report.stages[name]='OK';return result;}
     catch(_) {report.stages[name]='ERROR';report.outcome='PARTIAL';console.warn('Owner Poll stage failed: '+name);return null;}
   }
   try {
@@ -511,7 +511,11 @@ function rformOwnerBotV1Poll() {
       catch(e){props.setProperty('RFORM_OWNER_CHANNEL_SYNC_ERROR','NEEDS_CHECK');throw e;}
     });
     if(props.getProperty('RFORM_OWNER_AUTO_DRAFTS_ENABLED')==='YES') stage('training',function(){
-      return rformOwnerBotV1WorkspaceApi_('','',{action:'sync_training'});
+      const result=rformOwnerBotV1WorkspaceApi_('','',{action:'sync_training'});
+      report.training={created:(result.created || []).length,blocked:(result.blocked || []).slice(0,10),
+        blocked_count:(result.blocked || []).length,status:result.status};
+      if(report.training.blocked_count) {report.stages.training='NEEDS_REVIEW';report.outcome='PARTIAL';}
+      return result;
     });
     const bundle=stage('read',function(){return rformOwnerBotV1ApiRead_();});
     if(!bundle) {
@@ -1304,7 +1308,8 @@ function rformOwnerBotV1WorkspaceMenu_() {
       [{text:'Отложено',callback_data:'ow:list:held:0'}],
       [{text:'Опубликовано',callback_data:'ow:list:published:0'}],
       [{text:'Архив',callback_data:'ow:list:archived:0'}],
-      [{text:'Сверка с каналом',callback_data:'ow:sync:0'}]
+      [{text:'Сверка с каналом',callback_data:'ow:sync:0'}],
+      [{text:'ИИ-поручения',callback_data:'ow:aiqueue:0'}]
     ]})
   });
 }
@@ -1461,6 +1466,7 @@ function rformOwnerBotV1WorkspaceMessage_(message) {
     if(!query) {rformOwnerBotV1SendOwnerText_('Введите /search и название, дату или код тренировки.');return true;}
     rformOwnerBotV1WorkspaceSearch_(rformOwnerBotV1ApiRead_(),0,query);return true;
   }
+  if(/^\/ai(?:@\w+)?$/i.test(text)) {rformOwnerBotV1AiQueue_(rformOwnerBotV1ApiRead_(),0);return true;}
   if(text==='/status') {rformOwnerBotV1Status_();return true;}
   if(text==='/cancel') {CacheService.getScriptCache().remove('ow_active');rformOwnerBotV1SendOwnerText_('Ввод отменён. Сохранённый материал не изменён.');return true;}
   let active;try {active=JSON.parse(CacheService.getScriptCache().get('ow_active') || 'null');} catch(_) {}
@@ -1533,7 +1539,7 @@ function rformOwnerBotV1WorkspaceMessage_(message) {
       rformOwnerBotV1WorkspaceApi_(d.content_id,d.source_hash,{action:'ai_request',instruction:text},
         rformOwnerBotV1Sha256Hex_('AI\n'+message.chat.id+'\n'+message.message_id).slice(0,32));
       CacheService.getScriptCache().remove('ow_active');
-      rformOwnerBotV1SendOwnerText_('Поручение сохранено для R/Form Content Orchestrator. Исходный текст не изменён. Предложение появится после обработки исполнителем; автоматический ИИ-исполнитель пока не подключён.');return true;
+      rformOwnerBotV1SendOwnerText_('Поручение сохранено для R/Form Content Orchestrator. Исходный текст не изменён. Для обработки скажите в ChatGPT: «Обработай ИИ-поручения R/Form». Копировать текст не нужно. После обработки бот покажет предложение. Статус поручений: /ai.');return true;
     }
     if(active.await==='date' && text) {
       const date=rformOwnerBotV1WorkspaceDate_(text);
@@ -1564,6 +1570,7 @@ function rformOwnerBotV1WorkspaceCallback_(callback) {
     const action=parts[1];
     if(action==='menu') {rformOwnerBotV1WorkspaceMenu_();return;}
     const bundle=rformOwnerBotV1ApiRead_();
+    if(action==='aiqueue') {rformOwnerBotV1AiQueue_(bundle,Number(parts[2]));return;}
     if(rformOwnerBotV1ChannelCallback_(bundle,parts)) return;
     if(action==='list') {
       const section=parts[2];
@@ -1966,6 +1973,35 @@ function rformOwnerBotV1Status_() {
   if(raw) {const receipt=JSON.parse(raw),status=rformOwnerBotV1ActionStatus_(receipt);
     lines.push('Операция '+receipt.action_id+': '+status.status);
     if(['APPLIED','FAILED_ROLLED_BACK','REJECTED'].indexOf(status.status)!==-1) p.deleteProperty('RFORM_OWNER_PENDING_ACTION');}
+  if(report && report.training) {
+    lines.push('Тренировочные черновики: создано '+report.training.created+', заблокировано '+report.training.blocked_count);
+    report.training.blocked.forEach(function(b){lines.push(b.session_id+': '+b.reason);});
+  }
+  lines.push('ИИ-правки выполняются через ChatGPT; поручения и результаты: /ai.');
   lines.push('Проверка результата не повторяет действие. Время указано в UTC.');
   rformOwnerBotV1SendOwnerText_(lines.join('\n'));
+}
+
+
+// Read-only owner view. ChatGPT is the existing executor, not an API service.
+function rformOwnerBotV1AiQueue_(bundle,page) {
+  const meta=bundle.workspace_meta || {};
+  const rows=(bundle.queue || []).filter(function(q){return !!(meta[q.Content_ID] || {}).ai;});
+  const offset=Math.max(0,Math.min(Number(page)||0,Math.max(0,Math.ceil(rows.length/5)-1)));
+  const labels={REQUESTED:'Ожидает ChatGPT',PROPOSED:'Предложение готово'};
+  const lines=['ИИ-поручения · '+rows.length];
+  const keys=rows.slice(offset*5,offset*5+5).map(function(q){
+    const ai=meta[q.Content_ID].ai;
+    const current=ai.source_hash===rformOwnerBotV1WorkspaceHash_(q);
+    const closed=['published','archived'].indexOf(rformOwnerBotV1MaterialSection_(q))!==-1;
+    const status=!current?'Устарело: материал изменён':closed?'Материал закрыт':labels[ai.status] || 'Требует проверки';
+    lines.push(q.Content_ID+' · '+status);
+    return [{text:status.slice(0,24)+' · '+q.Content_ID.slice(-24),callback_data:'ow:open:'+rformOwnerBotV1ItemToken_(q)}];
+  });
+  lines.push('Для обработки скажите в ChatGPT: «Обработай ИИ-поручения R/Form». Текст копировать не нужно.');
+  lines.push('Предложение не заменяет исходник. Откройте карточку, просмотрите правки и сохраните их.');
+  const nav=[];if(offset)nav.push({text:'Назад',callback_data:'ow:aiqueue:'+(offset-1)});
+  if((offset+1)*5<rows.length)nav.push({text:'Далее',callback_data:'ow:aiqueue:'+(offset+1)});
+  if(nav.length)keys.push(nav);keys.push([{text:'Разделы',callback_data:'ow:menu'}]);
+  rformOwnerBotV1SendOwnerText_(lines.join('\n'),{reply_markup:JSON.stringify({inline_keyboard:keys})});
 }
