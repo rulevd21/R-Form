@@ -83,7 +83,8 @@ function harness(){
   bot.rformOwnerBotV1Telegram_=(token,method,payload)=>{messages.push({method,payload});return {message_id:++seq};};
   bot.rformOwnerBotV1ApiPost_=req=>{
     api.rformContentApiV04Authorize_(req);
-    if(req.operation==='read') return api.rformContentApiV04Payload_();
+    if(req.operation==='read' || req.operation==='read_owner') return api.rformContentApiV04Payload_(req.operation==='read_owner');
+    if(req.operation==='action_status') return api.rformContentApiV04ActionStatus_(req);
     if(req.operation==='owner_workspace') return api.rformContentApiV04Workspace_(req);
     if(req.operation==='queue_publication_assets') return api.rformContentApiV04QueuePublicationAssets_(req);
     if(req.operation==='queue_publication_approval') return api.rformContentApiV04ApplyQueuePublicationApproval_(req);

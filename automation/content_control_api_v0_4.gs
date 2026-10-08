@@ -7,7 +7,7 @@
 // the separate Telegram Autopost project remains the only publishing transport.
 
 const RFORM_CONTENT_API_V04 = Object.freeze({
-  version: '0.6.1',
+  version: '0.6.2',
   spreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
   queueSheet: 'CONTENT_QUEUE',
   eventsSheet: 'DATA_EVENTS',
@@ -168,7 +168,7 @@ function rformContentApiV04Preflight() {
     mode: 'CONTROL_API_PREFLIGHT',
     version: RFORM_CONTENT_API_V04.version,
     capabilities: [
-      'content.read', 'content.action', 'event.review', 'event.decision', 'event.media',
+      'content.read', 'content.action_status', 'content.read_owner', 'content.action', 'event.review', 'event.decision', 'event.media',
       'training.read', 'publication.propose', 'publication.visual',
       'publication.approve_schedule', 'publication.queue_approve_schedule',
       'publication.queue_assets', 'publication.owner_workspace', 'publication.channel_reconcile', 'publication.owner_preview_prepare'
@@ -207,6 +207,8 @@ function doPost(e) {
     const request = rformContentApiV04ParseRequest_(e);
     rformContentApiV04Authorize_(request);
     const operation = String(request.operation || 'read');
+    if (operation === 'action_status') return rformContentApiV04Json_(rformContentApiV04ActionStatus_(request));
+    if (operation === 'read_owner') return rformContentApiV04Json_(rformContentApiV04Payload_(true));
     if (operation === 'owner_workspace') return rformContentApiV04Json_(rformContentApiV04Workspace_(request));
     if (operation === 'queue_owner_preview_prepare') {
       return rformContentApiV04Json_(rformContentApiV04PrepareOwnerPreview_(request));
@@ -246,19 +248,19 @@ function doPost(e) {
   }
 }
 
-function rformContentApiV04Payload_() {
+function rformContentApiV04Payload_(ownerOnly) {
   const spreadsheet = SpreadsheetApp.openById(RFORM_CONTENT_API_V04.spreadsheetId);
   const queue = rformContentApiV04ReadRows_(
     rformContentApiV04RequireSheet_(spreadsheet, RFORM_CONTENT_API_V04.queueSheet),
     RFORM_CONTENT_API_V04.queueFields,
     'Content_ID'
   );
-  const events = rformContentApiV04ReadRows_(
+  const events = ownerOnly ? [] : rformContentApiV04ReadRows_(
     rformContentApiV04RequireSheet_(spreadsheet, RFORM_CONTENT_API_V04.eventsSheet),
     RFORM_CONTENT_API_V04.eventFields,
     'Event_ID'
   );
-  const trainingSessions = rformContentApiV04ReadRows_(
+  const trainingSessions = ownerOnly ? [] : rformContentApiV04ReadRows_(
     rformContentApiV04RequireSheet_(spreadsheet, RFORM_CONTENT_API_V04.trainingSessionsSheet),
     RFORM_CONTENT_API_V04.trainingSessionFields,
     'Session_ID'
@@ -270,7 +272,7 @@ function rformContentApiV04Payload_() {
     version: RFORM_CONTENT_API_V04.version,
     mode: 'CONTROLLED_WRITE',
     capabilities: [
-      'content.read', 'content.action', 'event.review', 'event.decision', 'event.media',
+      'content.read', 'content.action_status', 'content.read_owner', 'content.action', 'event.review', 'event.decision', 'event.media',
       'training.read', 'publication.propose', 'publication.visual',
       'publication.approve_schedule', 'publication.queue_approve_schedule',
       'publication.queue_assets', 'publication.owner_workspace', 'publication.channel_reconcile', 'publication.owner_preview_prepare', 'publication.queue_text_draft_save'
@@ -318,7 +320,7 @@ function rformContentApiV04Authorize_(request) {
   }
   if (!/^[a-f0-9]{32}$/.test(nonce)) throw new Error('Некорректный nonce.');
   if ([
-    'read', 'content_action', 'event_review', 'event_decision', 'event_media',
+    'read', 'read_owner', 'action_status', 'content_action', 'event_review', 'event_decision', 'event_media',
     'publication_approval', 'queue_publication_approval', 'queue_publication_assets',
     'queue_owner_preview_prepare', 'queue_text_draft_save', 'owner_workspace'
   ].indexOf(operation) === -1) {
@@ -345,6 +347,8 @@ function rformContentApiV04SignedMessage_(request) {
   const nonce = String(request.nonce || '');
   const operation = String(request.operation || 'read');
   if (operation === 'read') return timestamp + '.' + nonce;
+  if (operation === 'read_owner') return [timestamp, nonce, operation].join('\n');
+  if (operation === 'action_status') return [timestamp, nonce, operation, String(request.action_id || ''), String(request.content_id || '')].join('\n');
   if (operation === 'owner_workspace') return [timestamp, nonce, operation, String(request.action_id || ''), String(request.content_id || ''), String(request.source_hash || ''), rformContentApiV04Sha256Hex_(JSON.stringify(request.payload || {}))].join('\n');
   if (operation === 'queue_owner_preview_prepare') {
     return [timestamp, nonce, operation, String(request.action_id || ''),
@@ -2001,13 +2005,13 @@ function rformContentApiV04Workspace_(request) {
       const due = String(p.review_at || '');
       if(due && (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\+03:00$/.test(due) ||
         !Number.isFinite(Date.parse(due)) || Date.parse(due) <= Date.now())) throw new Error('Нужна будущая дата рассмотрения по Москве.');
-      if(p.action === 'reminder' && value('Publication_Status') !== 'HOLD') throw new Error('Напоминание доступно для отложенного материала.');
+      if(p.action === 'reminder' && !rformContentApiV04Held_(value)) throw new Error('Напоминание доступно для отложенного материала.');
       const updates = Object.assign({},invalidate,{Publication_Status:'HOLD',Pipeline_Status:'HOLD'});
       return rformContentApiV04WorkspaceCommit_(c,request,row,p.action === 'hold'?'OWNER_HOLD':'OWNER_REMINDER',
         updates,{review_at:due,notify:!!p.notify});
     }
     if(p.action === 'return') {
-      if(value('Publication_Status') !== 'HOLD') throw new Error('Материал не отложен.');
+      if(!rformContentApiV04Held_(value)) throw new Error('Материал не отложен.');
       return rformContentApiV04WorkspaceCommit_(c,request,row,'OWNER_RETURN',
         Object.assign({},invalidate,{Publication_Status:'PLANNED',Pipeline_Status:'READY · CHANNEL CONTROL',Current_Stage:'CHANNEL_CONTROL_REVIEW'}));
     }
@@ -2397,4 +2401,20 @@ function rformContentApiV04ArchiveAction_(c,request,row,value) {
   return rformContentApiV04WorkspaceCommit_(c,request,row,'OWNER_ARCHIVE',Object.assign(updates,{
     Publication_Status:event?'SUPERSEDED':'CANCELLED',Pipeline_Status:'ARCHIVED',Current_Stage:'ARCHIVED'
   }),{reason:p.reason,event_hash:event?event.hash:null,post_url:event?event.post_url:null});
+}
+
+// Authenticated receipt lookup; never modifies queue, audit or publication state.
+function rformContentApiV04ActionStatus_(request) {
+  rformContentApiV04RequireActionId_(String(request.action_id || ''));
+  const records=rformContentApiV04WorkspaceRecords_(rformContentApiV04WorkspaceContext_());
+  const found=records.filter(function(r){return r.Action_ID===request.action_id;});
+  if(found.length>1) return {ok:true,status:'OUTCOME_UNKNOWN',action_id:request.action_id};
+  if(!found.length) return {ok:true,status:'NOT_FOUND',action_id:request.action_id};
+  const r=found[0];
+  if(String(r.Content_ID)!==String(request.content_id || '')) throw new Error('Action_ID относится к другому материалу.');
+  return {ok:true,status:r.Result,action_id:r.Action_ID,content_id:r.Content_ID,at:r.Timestamp};
+}
+
+function rformContentApiV04Held_(value) {
+  return value('Publication_Status')==='HOLD' || /HOLD|ПАУЗА/i.test(value('Pipeline_Status'));
 }

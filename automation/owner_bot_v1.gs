@@ -24,7 +24,7 @@
 //   RFORM_OWNER_TELEGRAM_CHAT_ID
 
 const RFORM_OWNER_BOT_V1 = Object.freeze({
-  version: '1.2.0',
+  version: '1.2.1',
   spreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
   actionLogSheet: 'CONTENT_ACTION_LOG',
   pollMinutes: 5,
@@ -495,45 +495,53 @@ function rformOwnerBotV1HandlePair_(props, userId, chatId, chatType, text) {
 }
 
 function rformOwnerBotV1Poll() {
-  const props = PropertiesService.getScriptProperties();
-  if (String(props.getProperty(RFORM_OWNER_BOT_V1.props.enabled)).toUpperCase() !== 'YES') return;
+  const props=PropertiesService.getScriptProperties();
+  if(String(props.getProperty(RFORM_OWNER_BOT_V1.props.enabled)).toUpperCase()!=='YES') return;
   rformOwnerBotV1RequireOwnerPair_(props);
-
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(5000)) return;
+  const lock=LockService.getScriptLock();
+  if(!lock.tryLock(5000)) return;
+  const report={version:RFORM_OWNER_BOT_V1.version,at:new Date().toISOString(),stages:{},outcome:'OK'};
+  function stage(name,fn) {
+    try {const result=fn();report.stages[name]='OK';return result;}
+    catch(_) {report.stages[name]='ERROR';report.outcome='PARTIAL';console.warn('Owner Poll stage failed: '+name);return null;}
+  }
   try {
-    if(props.getProperty('RFORM_OWNER_CHANNEL_SYNC_ENABLED')==='YES') {
+    if(props.getProperty('RFORM_OWNER_CHANNEL_SYNC_ENABLED')==='YES') stage('channel',function(){
       try {rformOwnerBotV1ChannelDrain_();props.deleteProperty('RFORM_OWNER_CHANNEL_SYNC_ERROR');}
-      catch(_) {props.setProperty('RFORM_OWNER_CHANNEL_SYNC_ERROR','NEEDS_CHECK');console.warn('Channel reconciliation needs checking; captured observations retained.');}
-    }
-    if (props.getProperty('RFORM_OWNER_AUTO_DRAFTS_ENABLED') === 'YES') rformOwnerBotV1WorkspaceApi_('', '', {action:'sync_training'});
-    const bundle = rformOwnerBotV1ApiRead_();
-    const previews = rformOwnerBotV1BuildReadyPreviews_(
-      bundle,
-      RFORM_OWNER_BOT_V1.maxPreviewsPerPoll,
-      true
-    );
-    rformOwnerBotV1WorkspaceReminders_(bundle);
-    rformOwnerBotV1WorkspaceProposals_(bundle);
-    if(props.getProperty('RFORM_OWNER_CHANNEL_SYNC_ENABLED')==='YES') rformOwnerBotV1ChannelNotify_(bundle);
-    const sentState = rformOwnerBotV1SentState_();
-
-    previews.forEach(function (preview) {
-      const contentId = String(preview.item.Content_ID || '');
-      if (!contentId) return;
-      if (sentState[contentId] === preview.previewId) return;
-
-      rformOwnerBotV1SendPreview_(preview, {
-        actionsEnabled: rformOwnerBotV1ActionsEnabled_(),
-        markSent: true,
-        testMode: false
-      });
-      sentState[contentId] = preview.previewId;
-      rformOwnerBotV1SaveSentState_(sentState);
+      catch(e){props.setProperty('RFORM_OWNER_CHANNEL_SYNC_ERROR','NEEDS_CHECK');throw e;}
     });
-  } catch (error) {
-    console.error('Owner Bot poll failed: ' + (error && error.stack ? error.stack : error));
-  } finally {
+    if(props.getProperty('RFORM_OWNER_AUTO_DRAFTS_ENABLED')==='YES') stage('training',function(){
+      return rformOwnerBotV1WorkspaceApi_('','',{action:'sync_training'});
+    });
+    const bundle=stage('read',function(){return rformOwnerBotV1ApiRead_();});
+    if(!bundle) {
+      ['reminders','proposals','reconciliation','previews'].forEach(function(k){report.stages[k]='SKIPPED_NO_DATA';});
+      report.outcome='ERROR';return;
+    }
+    report.data_at=bundle.generated_at || report.at;
+    props.setProperty('RFORM_OWNER_LAST_READ_AT',report.data_at);
+    stage('reminders',function(){rformOwnerBotV1WorkspaceReminders_(bundle);});
+    stage('proposals',function(){rformOwnerBotV1WorkspaceProposals_(bundle);});
+    if(props.getProperty('RFORM_OWNER_CHANNEL_SYNC_ENABLED')==='YES') stage('reconciliation',function(){rformOwnerBotV1ChannelNotify_(bundle);});
+    const sent=rformOwnerBotV1SentState_();let count=0,attempted=0;
+    const ready=rformOwnerBotV1ReadyItems_(bundle.queue || []);
+    const cursor=ready.length?Math.max(0,Number(props.getProperty('RFORM_OWNER_PREVIEW_CURSOR')) || 0)%ready.length:0;
+    const ordered=ready.slice(cursor).concat(ready.slice(0,cursor));
+    ordered.forEach(function(item){
+      if(count>=RFORM_OWNER_BOT_V1.maxPreviewsPerPoll || attempted>=RFORM_OWNER_BOT_V1.maxPreviewsPerPoll*2) return;
+      attempted++;
+      stage('preview_'+rformOwnerBotV1ItemToken_(item),function(){
+        const preview=rformOwnerBotV1BuildReadyPreviews_({queue:[item]},1,true)[0];
+        if(!preview || sent[item.Content_ID]===preview.previewId) return;
+        count++;
+        rformOwnerBotV1SendPreview_(preview,{actionsEnabled:rformOwnerBotV1ActionsEnabled_(),markSent:true,testMode:false});
+        sent[item.Content_ID]=preview.previewId;rformOwnerBotV1SaveSentState_(sent);
+      });
+    });
+    if(ready.length) props.setProperty('RFORM_OWNER_PREVIEW_CURSOR',String((cursor+attempted)%ready.length));
+  } catch(error) {report.outcome='ERROR';throw error;} finally {
+    props.setProperty('RFORM_OWNER_POLL_REPORT',JSON.stringify(report));
+    if(report.outcome==='OK') props.setProperty('RFORM_OWNER_POLL_LAST_SUCCESS',new Date().toISOString());
     lock.releaseLock();
   }
 }
@@ -579,7 +587,7 @@ function rformOwnerBotV1ReadyItems_(queue) {
     const mode = String(item.Telegram_Post_Mode || 'TEXT_ONLY').trim().toUpperCase() || 'TEXT_ONLY';
     const text = String(item.Telegram_Text || '').trim();
 
-    if (stage !== RFORM_OWNER_BOT_V1.readyStage || rformOwnerBotV1WorkspaceArchived_(item)) return false;
+    if (stage !== RFORM_OWNER_BOT_V1.readyStage || rformOwnerBotV1MaterialSection_(item)!=='work') return false;
     if (['YES', 'ДА', 'TRUE', '1'].indexOf(publicAllowed) === -1) return false;
     if (['SCHEDULED', 'PUBLISHING', 'PUBLISHED', 'HOLD', 'CANCELLED', 'SUPERSEDED', 'ARCHIVED'].indexOf(publication) !== -1) return false;
     if (['YES', 'ДА', 'TRUE', '1', 'DUPLICATE'].indexOf(duplicate) !== -1) return false;
@@ -859,12 +867,12 @@ function rformOwnerBotV1ApiRead_() {
   const secret = rformOwnerBotV1RequireProperty_(props, RFORM_OWNER_BOT_V1.props.apiSecret);
   const timestamp = Math.floor(Date.now() / 1000);
   const nonce = rformOwnerBotV1RandomHex_(16);
-  const message = String(timestamp) + '.' + nonce;
+  const message = [String(timestamp), nonce, 'read_owner'].join('\n');
   const request = {
     timestamp: timestamp,
     nonce: nonce,
     signature: rformOwnerBotV1HmacBase64Url_(message, secret),
-    operation: 'read'
+    operation: 'read_owner'
   };
   return rformOwnerBotV1ApiPost_(request);
 }
@@ -941,7 +949,7 @@ function rformOwnerBotV1ApiHold_(preview) {
 function rformOwnerBotV1ApiPost_(request) {
   const props = PropertiesService.getScriptProperties();
   const url = rformOwnerBotV1RequireProperty_(props, RFORM_OWNER_BOT_V1.props.apiUrl);
-  const trace = request.operation === 'read' ? {event: 'OWNER_BOT_API_READ_TRANSPORT', version: RFORM_OWNER_BOT_V1.version, stage: 'POST', outcome: 'ERROR', postAttempts: 1, getAttempts: 0} : null;
+  const trace = /^read(?:_owner)?$/.test(request.operation) ? {event: 'OWNER_BOT_API_READ_TRANSPORT', version: RFORM_OWNER_BOT_V1.version, stage: 'POST', outcome: 'ERROR', postAttempts: 1, getAttempts: 0} : null;
   const startedAt = Date.now();
   function responseMeta_(reply) {
     try {
@@ -996,10 +1004,8 @@ function rformOwnerBotV1ApiPost_(request) {
   if (trace) { trace.json = true; trace.ok = !!(parsed && parsed.ok); }
   if (status < 200 || status >= 300 || !parsed.ok) {
     if (trace) trace.stage = 'API_REJECTED';
-    throw new Error(
-      'Content Control API rejected request: ' +
-      (parsed && parsed.message ? parsed.message : body.slice(0, 500))
-    );
+    const rejection=new Error('Content Control API rejected request: '+(parsed && parsed.message ? parsed.message : 'Request rejected'));
+    rejection.code='API_REJECTED';throw rejection;
   }
   if (trace) { trace.stage = 'DONE'; trace.outcome = 'OK'; }
   return parsed;
@@ -1239,13 +1245,32 @@ function rformOwnerBotV1WorkspaceTrusted_(message,from) {
 
 function rformOwnerBotV1WorkspaceApi_(id,hash,payload,actionId) {
   const props=PropertiesService.getScriptProperties();
+  if(id && props.getProperty('RFORM_OWNER_PENDING_ACTION') && ['draft_assets','version_read'].indexOf(payload.action)===-1) throw new Error('Проверьте результат предыдущей операции через /status.');
   const req={timestamp:Math.floor(Date.now()/1000),nonce:rformOwnerBotV1RandomHex_(16),
     operation:'owner_workspace',action_id:actionId || rformOwnerBotV1RandomHex_(16),
     content_id:id || '',source_hash:hash || '',payload:payload};
   const message=[String(req.timestamp),req.nonce,req.operation,req.action_id,req.content_id,
     req.source_hash,rformOwnerBotV1Sha256Hex_(JSON.stringify(payload))].join('\n');
   req.signature=rformOwnerBotV1HmacBase64Url_(message,rformOwnerBotV1RequireProperty_(props,RFORM_OWNER_BOT_V1.props.apiSecret));
-  return rformOwnerBotV1ApiPost_(req);
+  try {return rformOwnerBotV1ApiPost_(req);}
+  catch(error) {
+    if(error.code==='API_REJECTED') throw error;
+    const receipt={action_id:req.action_id,content_id:req.content_id};
+    // Multi-row/background and media/read actions require their original readback.
+    if(!id || ['stage_photo','draft_assets','version_read'].indexOf(payload.action)!==-1) throw error;
+    props.setProperty('RFORM_OWNER_PENDING_ACTION',JSON.stringify(receipt));
+    const status=rformOwnerBotV1ActionStatus_(receipt);
+    if(status.status==='APPLIED') {props.deleteProperty('RFORM_OWNER_PENDING_ACTION');return {ok:true,status:'APPLIED',action_id:req.action_id,recovered:true};}
+    throw new Error('Исход операции: '+status.status+'. ID: '+req.action_id+'. Проверьте /status; повтор отключён.');
+  }
+}
+
+function rformOwnerBotV1ActionStatus_(receipt) {
+  const req={timestamp:Math.floor(Date.now()/1000),nonce:rformOwnerBotV1RandomHex_(16),operation:'action_status',
+    action_id:receipt.action_id,content_id:receipt.content_id};
+  req.signature=rformOwnerBotV1HmacBase64Url_([String(req.timestamp),req.nonce,req.operation,req.action_id,req.content_id].join('\n'),
+    rformOwnerBotV1RequireProperty_(PropertiesService.getScriptProperties(),RFORM_OWNER_BOT_V1.props.apiSecret));
+  try {return rformOwnerBotV1ApiPost_(req);} catch(_) {return {status:'OUTCOME_UNKNOWN'};}
 }
 
 function rformOwnerBotV1WorkspaceItem_(bundle,token) {
@@ -1254,23 +1279,26 @@ function rformOwnerBotV1WorkspaceItem_(bundle,token) {
   return items[0];
 }
 
+function rformOwnerBotV1MaterialSection_(q) {
+  if(String(q.Publication_Status || '').trim().toUpperCase()==='PUBLISHED') return 'published';
+  if(rformOwnerBotV1WorkspaceArchived_(q)) return 'archived';
+  if(String(q.Publication_Status || '').trim().toUpperCase()==='HOLD' || /HOLD|ПАУЗА/i.test(q.Pipeline_Status || '')) return 'held';
+  return 'work';
+}
+
 function rformOwnerBotV1WorkspaceRows_(queue,section,query) {
-  const s=String(query || '').toLocaleLowerCase('ru');
-  return (queue || []).filter(function(q) {
-    const pub=String(q.Publication_Status || '');
-    const archived=rformOwnerBotV1WorkspaceArchived_(q);
-    const match=section==='published'?pub==='PUBLISHED':section==='archived'?archived && pub!=='PUBLISHED':
-      section==='held'?pub==='HOLD' && !archived:
-      ['PLANNED','NOT_READY','SCHEDULED','PUBLISHING'].indexOf(pub)!==-1 && !archived;
-    if(!match) return false;
-    return !s || [q.Content_ID,q.Date,q.Session_ID,q.Rubric,String(q.Telegram_Text || '').split('\n')[0]]
-      .join(' ').toLocaleLowerCase('ru').indexOf(s)!==-1;
-  }).sort(function(a,b) {return rformOwnerBotV1DateSort_(b)-rformOwnerBotV1DateSort_(a);});
+  return (queue || []).filter(function(q){return rformOwnerBotV1MaterialSection_(q)===section && rformOwnerBotV1SearchMatch_(q,query);})
+    .sort(function(a,b){return rformOwnerBotV1DateSort_(b)-rformOwnerBotV1DateSort_(a);});
+}
+
+function rformOwnerBotV1SearchMatch_(q,query) {
+  return !query || [q.Content_ID,q.Date,q.Posted_At,q.Updated_At,q.Session_ID,q.Rubric,q.Telegram_Text,
+    q.Telegram_Message_ID,q.Telegram_Post_URL,q.Decision].join(' ').toLocaleLowerCase('ru').indexOf(String(query).toLocaleLowerCase('ru'))!==-1;
 }
 
 function rformOwnerBotV1WorkspaceMenu_() {
   const warning=PropertiesService.getScriptProperties().getProperty('RFORM_OWNER_CHANNEL_SYNC_ERROR')?'\nСверка с каналом требует проверки; сохранённые наблюдения не потеряны.':'';
-  rformOwnerBotV1SendOwnerText_('R/Form · Материалы\n\nВыберите раздел. Для поиска: /search слово или дата.'+warning,{
+  rformOwnerBotV1SendOwnerText_('R/Form · Материалы\n\nВыберите раздел. Для поиска: /search текст, дата, номер поста или ссылка. Состояние обработки: /status.'+warning,{
     reply_markup:JSON.stringify({inline_keyboard:[
       [{text:'В работе',callback_data:'ow:list:work:0'}],
       [{text:'Отложено',callback_data:'ow:list:held:0'}],
@@ -1319,9 +1347,10 @@ function rformOwnerBotV1WorkspaceOpen_(bundle,token) {
   const item=rformOwnerBotV1WorkspaceItem_(bundle,token);
   const meta=(bundle.workspace_meta || {})[item.Content_ID] || {};
   const title=String(item.Telegram_Text || item.Content_ID).split('\n')[0];
+  const next=rformOwnerBotV1MaterialSection_(item)==='held'?'Верните материал в работу, когда будете готовы.':item.Blocking_Issue?'Устраните блокировку: '+item.Blocking_Issue:'Проверьте текст и фотографии, затем откройте финальный предпросмотр.';
   const info=[title,item.Date+' · '+item.Rubric,'Статус: '+item.Publication_Status,
     'Последнее изменение: '+(item.Updated_At || '—'),
-    'Сохранённых правок: '+(meta.versions || []).length];
+    'Сохранённых правок: '+(meta.versions || []).length, 'Следующий шаг: '+next];
   if(meta.reminder && meta.reminder.review_at) info.push('Рассмотреть: '+meta.reminder.review_at+' · напоминание '+(meta.reminder.notify?'включено':'выключено'));
   if(item.Publication_Status==='PUBLISHED') {
     CacheService.getScriptCache().remove('ow_active');
@@ -1361,7 +1390,7 @@ function rformOwnerBotV1WorkspaceOpen_(bundle,token) {
     [{text:'Фото и порядок',callback_data:'ow:photos:'+token},{text:'Просмотр правок',callback_data:'ow:review:'+token}],
     [{text:'История версий',callback_data:'ow:history:'+token}]
   ];
-  if(item.Publication_Status==='HOLD') {
+  if(rformOwnerBotV1MaterialSection_(item)==='held') {
     keys.push([{text:'Вернуть в работу',callback_data:'ow:return:'+token},{text:'Дата рассмотрения',callback_data:'ow:date:'+token}]);
   } else {
     keys.push([{text:'Финальный предпросмотр',callback_data:'ow:preview:'+token},{text:'Отложить',callback_data:'ow:hold:'+token}]);
@@ -1432,6 +1461,7 @@ function rformOwnerBotV1WorkspaceMessage_(message) {
     if(!query) {rformOwnerBotV1SendOwnerText_('Введите /search и название, дату или код тренировки.');return true;}
     rformOwnerBotV1WorkspaceSearch_(rformOwnerBotV1ApiRead_(),0,query);return true;
   }
+  if(text==='/status') {rformOwnerBotV1Status_();return true;}
   if(text==='/cancel') {CacheService.getScriptCache().remove('ow_active');rformOwnerBotV1SendOwnerText_('Ввод отменён. Сохранённый материал не изменён.');return true;}
   let active;try {active=JSON.parse(CacheService.getScriptCache().get('ow_active') || 'null');} catch(_) {}
   if(!active || text.startsWith('/')) return false;
@@ -1674,21 +1704,27 @@ function rformOwnerBotV1WorkspaceCallback_(callback) {
 }
 
 function rformOwnerBotV1WorkspaceSearch_(bundle,page,query) {
-  // Reuse pagination over the union, without relabelling production states.
-  const matched=(bundle.queue || []).filter(function(q) {
-    if(!q.Content_ID) return false;
-    return [q.Content_ID,q.Date,q.Session_ID,q.Rubric,String(q.Telegram_Text || '').split('\n')[0]]
-      .join(' ').toLocaleLowerCase('ru').indexOf(query.toLocaleLowerCase('ru'))!==-1;
-  });
-  const synthetic=matched.map(function(q) {return Object.assign({},q,{Publication_Status:'PLANNED',Pipeline_Status:'',Current_Stage:'',Text_Status:'',Content_ID:q.Content_ID});});
-  rformOwnerBotV1WorkspaceList_({queue:synthetic},'work',page,query);
+  const queue=bundle.queue || [], known=new Set(queue.map(function(q){return String(q.Telegram_Message_ID || '');}));
+  const needle=String(query).toLocaleLowerCase('ru');
+  const rows=queue.filter(function(q){return q.Content_ID && rformOwnerBotV1SearchMatch_(q,query);})
+    .map(function(q){return {title:q.Content_ID+' · '+String(q.Telegram_Text || '').split('\n')[0],callback:'ow:open:'+rformOwnerBotV1ItemToken_(q)};});
+  (bundle.channel_posts || []).filter(function(p){return !known.has(String(p.message_id)) &&
+    [p.message_id,p.post_url,p.text,new Date(p.date*1000).toLocaleDateString('ru-RU',{timeZone:'Europe/Moscow'})].join(' ').toLocaleLowerCase('ru').indexOf(needle)!==-1;
+  }).forEach(function(p){rows.push({title:'Пост '+p.message_id+' · '+String(p.text || 'Медиа').split('\n')[0],callback:'ow:post:'+p.message_id});});
+  CacheService.getScriptCache().put('ow_search',String(query),21600);
+  const index=Math.max(0,Math.min(Number(page)||0,Math.max(0,Math.ceil(rows.length/5)-1)));
+  const keys=rows.slice(index*5,index*5+5).map(function(r){return [{text:r.title.slice(0,60),callback_data:r.callback}];});
+  const nav=[];if(index)nav.push({text:'Назад',callback_data:'ow:list:search:'+(index-1)});
+  if((index+1)*5<rows.length)nav.push({text:'Далее',callback_data:'ow:list:search:'+(index+1)});
+  if(nav.length)keys.push(nav);keys.push([{text:'Разделы',callback_data:'ow:menu'}]);
+  rformOwnerBotV1SendOwnerText_('Поиск: '+query+' · '+rows.length+'\nСтраница '+(index+1)+'/'+Math.max(1,Math.ceil(rows.length/5)),{reply_markup:JSON.stringify({inline_keyboard:keys})});
 }
 
 function rformOwnerBotV1WorkspaceReminders_(bundle) {
   const meta=bundle.workspace_meta || {};
   (bundle.queue || []).forEach(function(item) {
     const m=meta[item.Content_ID] || {}, reminder=m.reminder;
-    if(item.Publication_Status!=='HOLD' || !reminder || !reminder.notify ||
+    if(rformOwnerBotV1MaterialSection_(item)!=='held' || !reminder || !reminder.notify ||
       !reminder.review_at || Date.parse(reminder.review_at)>Date.now()) return;
     const key='ow_reminded_'+rformOwnerBotV1Sha256Hex_(item.Content_ID+'\n'+reminder.review_at).slice(0,16);
     const props=PropertiesService.getScriptProperties();
@@ -1725,7 +1761,7 @@ function rformOwnerBotV1WorkspaceProposals_(bundle) {
 }
 
 function rformOwnerBotV1WorkspaceArchived_(q) {
-  return ['ARCHIVED','CANCELLED','SUPERSEDED'].indexOf(q.Publication_Status)!==-1 ||
+  return ['ARCHIVED','CANCELLED','SUPERSEDED'].indexOf(String(q.Publication_Status || '').trim().toUpperCase())!==-1 ||
     /ARCHIV|SUPERSEDED|CANCELLED|ЗАКРЫТО|ЗАМЕНЕНО/i.test([q.Pipeline_Status,q.Current_Stage,q.Text_Status].join(' ')) ||
     q.Current_Stage==='EDITORIAL_GATE_CLOSED' || /^TEST-/.test(q.Content_ID);
 }
@@ -1788,7 +1824,7 @@ function rformOwnerBotV1EnableChannelSync() {
   const props=PropertiesService.getScriptProperties(),token=rformOwnerBotV1RequireProperty_(props,RFORM_OWNER_BOT_V1.props.token);
   const me=rformOwnerBotV1Telegram_(token,'getMe',{});
   const chat=rformOwnerBotV1Telegram_(token,'getChat',{chat_id:'-1004309818003'});
-  const member=rformOwnerBotV1Telegram_(token,'getChatMember',{chat_id:'-1004309818003',user_id:me.id});
+  const member=rformOwnerBotV1Telegram_(token,'getChatMember',{chat_id:'-1004309818003',user_id:String(me.id)});
   if(String(chat.id)!=='-1004309818003' || ['member','administrator','creator'].indexOf(member.status)===-1) throw new Error('Добавьте существующий Owner Bot в канал R/Form для чтения сообщений.');
   // Existing webhook, pairing and backlog retained. No Install/Enable rerun.
   const url=rformOwnerBotV1RequireProperty_(props,RFORM_OWNER_BOT_V1.props.webAppUrl);
@@ -1803,12 +1839,12 @@ function rformOwnerBotV1EnableChannelSync() {
 }
 
 function rformOwnerBotV1ChannelList_(bundle,page) {
-  const rows=bundle.channel_review || [],index=Math.max(0,Math.min(Number(page)||0,Math.max(0,Math.ceil(rows.length/5)-1)));
+  const rows=(bundle.channel_review || []).filter(function(r){return (r.candidates || []).length;}),index=Math.max(0,Math.min(Number(page)||0,Math.max(0,Math.ceil(rows.length/5)-1)));
   const keys=rows.slice(index*5,index*5+5).map(function(r){return [{text:r.event.text.split('\n')[0].slice(0,60),callback_data:'ow:channel:'+r.event.message_id}];});
   const nav=[];if(index)nav.push({text:'Назад',callback_data:'ow:sync:'+(index-1)});
   if((index+1)*5<rows.length)nav.push({text:'Далее',callback_data:'ow:sync:'+(index+1)});
-  if(nav.length)keys.push(nav);keys.push([{text:'Разделы',callback_data:'ow:menu'}]);
-  rformOwnerBotV1SendOwnerText_('Сверка с каналом · '+rows.length+'\nНовые и исторические посты без связи с материалом.',{reply_markup:JSON.stringify({inline_keyboard:keys})});
+  if(nav.length)keys.push(nav);keys.push([{text:'История канала',callback_data:'ow:list:published:0'}]);keys.push([{text:'Разделы',callback_data:'ow:menu'}]);
+  rformOwnerBotV1SendOwnerText_('Сверка с каналом · '+rows.length+'\nТолько посты с возможным соответствием открытому материалу. Исторические посты без кандидатов не требуют действия.',{reply_markup:JSON.stringify({inline_keyboard:keys})});
 }
 
 function rformOwnerBotV1ChannelOpen_(bundle,id) {
@@ -1916,4 +1952,20 @@ function rformOwnerBotV1ChannelNotify_(bundle) {
       reply_markup:JSON.stringify({inline_keyboard:[[{text:'Сравнить с черновиком',callback_data:'ow:channel:'+event.message_id}]]})});
     props.setProperty(key,'SENT');break;
   }
+}
+
+function rformOwnerBotV1Status_() {
+  const p=PropertiesService.getScriptProperties();
+  let report;try{report=JSON.parse(p.getProperty('RFORM_OWNER_POLL_REPORT') || 'null');}catch(_){}
+  const lines=['Состояние обработки · v'+RFORM_OWNER_BOT_V1.version,
+    'Последний полный успех: '+(p.getProperty('RFORM_OWNER_POLL_LAST_SUCCESS') || 'ещё не зафиксирован'),
+    'Последние полученные данные: '+(p.getProperty('RFORM_OWNER_LAST_READ_AT') || 'нет')];
+  if(report) {lines.push('Последний запуск: '+report.at+' · '+report.outcome);
+    Object.keys(report.stages).forEach(function(k){lines.push(k+': '+report.stages[k]);});}
+  const raw=p.getProperty('RFORM_OWNER_PENDING_ACTION');
+  if(raw) {const receipt=JSON.parse(raw),status=rformOwnerBotV1ActionStatus_(receipt);
+    lines.push('Операция '+receipt.action_id+': '+status.status);
+    if(['APPLIED','FAILED_ROLLED_BACK','REJECTED'].indexOf(status.status)!==-1) p.deleteProperty('RFORM_OWNER_PENDING_ACTION');}
+  lines.push('Проверка результата не повторяет действие. Время указано в UTC.');
+  rformOwnerBotV1SendOwnerText_(lines.join('\n'));
 }
