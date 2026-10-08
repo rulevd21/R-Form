@@ -1,4 +1,4 @@
-// R/Form Content Control API v0.6.0
+// R/Form Content Control API v0.6.1
 // Standalone Apps Script web app for Channel Control.
 // Reads CONTENT_QUEUE + DATA_EVENTS, applies allowlisted content actions,
 // saves owner-facing event edits, stores private photo/video assets in Drive,
@@ -7,7 +7,7 @@
 // the separate Telegram Autopost project remains the only publishing transport.
 
 const RFORM_CONTENT_API_V04 = Object.freeze({
-  version: '0.6.0',
+  version: '0.6.1',
   spreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
   queueSheet: 'CONTENT_QUEUE',
   eventsSheet: 'DATA_EVENTS',
@@ -171,7 +171,7 @@ function rformContentApiV04Preflight() {
       'content.read', 'content.action', 'event.review', 'event.decision', 'event.media',
       'training.read', 'publication.propose', 'publication.visual',
       'publication.approve_schedule', 'publication.queue_approve_schedule',
-      'publication.queue_assets', 'publication.owner_workspace', 'publication.owner_preview_prepare'
+      'publication.queue_assets', 'publication.owner_workspace', 'publication.channel_reconcile', 'publication.owner_preview_prepare'
     ],
     spreadsheet: spreadsheet.getName(),
     queueRows: Math.max(queue.getLastRow() - 1, 0),
@@ -263,6 +263,8 @@ function rformContentApiV04Payload_() {
     RFORM_CONTENT_API_V04.trainingSessionFields,
     'Session_ID'
   );
+  const workspaceContext=rformContentApiV04WorkspaceContext_(spreadsheet);
+  const channelPosts=rformContentApiV04ChannelPosts_(workspaceContext);
   return {
     ok: true,
     version: RFORM_CONTENT_API_V04.version,
@@ -271,7 +273,7 @@ function rformContentApiV04Payload_() {
       'content.read', 'content.action', 'event.review', 'event.decision', 'event.media',
       'training.read', 'publication.propose', 'publication.visual',
       'publication.approve_schedule', 'publication.queue_approve_schedule',
-      'publication.queue_assets', 'publication.owner_workspace', 'publication.owner_preview_prepare', 'publication.queue_text_draft_save'
+      'publication.queue_assets', 'publication.owner_workspace', 'publication.channel_reconcile', 'publication.owner_preview_prepare', 'publication.queue_text_draft_save'
     ],
     generated_at: new Date().toISOString(),
     queue_fields: RFORM_CONTENT_API_V04.queueFields,
@@ -280,7 +282,9 @@ function rformContentApiV04Payload_() {
     queue: queue,
     events: events,
     training_sessions: trainingSessions,
-    workspace_meta: rformContentApiV04WorkspaceMeta_(),
+    workspace_meta: rformContentApiV04WorkspaceMeta_(workspaceContext),
+    channel_review: rformContentApiV04ChannelReview_(workspaceContext),
+    channel_posts: Object.keys(channelPosts).map(function(id){return channelPosts[id];}),
     row_counts: {queue: queue.length, events: events.length, training_sessions: trainingSessions.length}
   };
 }
@@ -1530,8 +1534,8 @@ function rformContentApiV04RequireOpenMaterial_(value) {
   const publication = String(value('Publication_Status')).toUpperCase();
   const pipeline = String(value('Pipeline_Status')).toUpperCase();
   const textStatus = String(value('Text_Status')).toUpperCase();
-  const terminal = ['PUBLISHED', 'SUPERSEDED', 'CANCELLED'];
-  if (terminal.indexOf(publication) !== -1 || terminal.indexOf(textStatus) !== -1 ||
+  const terminal = ['PUBLISHED', 'SUPERSEDED', 'CANCELLED', 'ARCHIVED'];
+  if (rformContentApiV04Archived_(value) || terminal.indexOf(publication) !== -1 || terminal.indexOf(textStatus) !== -1 ||
       pipeline.indexOf('PUBLISHED') !== -1 || pipeline.indexOf('SUPERSEDED') !== -1 ||
       pipeline.indexOf('CANCELLED') !== -1) {
     throw new Error('Закрытые материалы нельзя изменять из приложения.');
@@ -1810,8 +1814,8 @@ function rformContentApiV04WorkspaceHash_(value) {
   return rformContentApiV04Sha256Hex_(JSON.stringify(RFORM_WORKSPACE_FIELDS.map(value)));
 }
 
-function rformContentApiV04WorkspaceContext_() {
-  const ss = SpreadsheetApp.openById(RFORM_CONTENT_API_V04.spreadsheetId);
+function rformContentApiV04WorkspaceContext_(spreadsheet) {
+  const ss = spreadsheet || SpreadsheetApp.openById(RFORM_CONTENT_API_V04.spreadsheetId);
   const queue = rformContentApiV04RequireSheet_(ss, RFORM_CONTENT_API_V04.queueSheet);
   const log = rformContentApiV04RequireSheet_(ss, RFORM_CONTENT_API_V04.actionLogSheet);
   const map = rformContentApiV04HeaderMap_(rformContentApiV04Headers_(queue));
@@ -1822,8 +1826,9 @@ function rformContentApiV04WorkspaceContext_() {
 }
 
 function rformContentApiV04WorkspaceRecords_(c) {
-  if (c.log.getLastRow() < 2) return [];
-  return c.log.getRange(2, 1, c.log.getLastRow()-1, c.log.getLastColumn()).getDisplayValues()
+  if(c.records) return c.records;
+  if (c.log.getLastRow() < 2) return c.records=[];
+  return c.records=c.log.getRange(2, 1, c.log.getLastRow()-1, c.log.getLastColumn()).getDisplayValues()
     .map(function(row) {
       const out = {};
       Object.keys(c.lm).forEach(function(k) { out[k] = String(row[c.lm[k]-1] || ''); });
@@ -1831,20 +1836,32 @@ function rformContentApiV04WorkspaceRecords_(c) {
     });
 }
 
-function rformContentApiV04WorkspaceMeta_() {
-  const c = rformContentApiV04WorkspaceContext_();
+function rformContentApiV04WorkspaceMeta_(context) {
+  const c = context || rformContentApiV04WorkspaceContext_();
   const meta = {};
   rformContentApiV04WorkspaceRecords_(c).forEach(function(r) {
-    if (r.Result !== 'APPLIED' || !/^OWNER_(SAVE|HOLD|RETURN|REMINDER|AI_REQUEST|AI_PROPOSAL)$/.test(r.Action)) return;
+    if (r.Result !== 'APPLIED' || !/^OWNER_(SAVE|HOLD|RETURN|REMINDER|AI_REQUEST|AI_PROPOSAL|ARCHIVE|RESTORE|LINK_PUBLICATION)$/.test(r.Action)) return;
     const m = meta[r.Content_ID] || {versions:[], reminder:null, ai:null};
     let n; try { n = JSON.parse(r.New_Values || '{}'); } catch (_) { return; }
     if (r.Action === 'OWNER_SAVE') m.versions.push({action_id:r.Action_ID, at:r.Timestamp});
     if (r.Action === 'OWNER_HOLD' || r.Action === 'OWNER_REMINDER') m.reminder = n._meta || null;
-    if (r.Action === 'OWNER_RETURN') m.reminder = null;
+    if (['OWNER_RETURN','OWNER_ARCHIVE','OWNER_RESTORE','OWNER_LINK_PUBLICATION'].indexOf(r.Action)!==-1) m.reminder = null;
+    if (r.Action==='OWNER_ARCHIVE') m.archive=n._meta;
+    if (r.Action==='OWNER_RESTORE') m.archive=null;
+    if (r.Action==='OWNER_LINK_PUBLICATION') m.publication=n._meta;
     if (r.Action === 'OWNER_AI_REQUEST') m.ai = Object.assign({request_id:r.Action_ID, status:'REQUESTED'}, n._meta);
     if (r.Action === 'OWNER_AI_PROPOSAL') m.ai = Object.assign({proposal_id:r.Action_ID, status:'PROPOSED'}, n._meta);
     m.versions = m.versions.slice(-10);
     meta[r.Content_ID] = m;
+  });
+  const posts=rformContentApiV04ChannelPosts_(c);
+  if(c.queue.getLastRow()>1) c.queue.getRange(2,1,c.queue.getLastRow()-1,c.queue.getLastColumn()).getDisplayValues().forEach(function(raw) {
+    const id=String(raw[c.map.Content_ID-1] || ''),messageId=String(raw[c.map.Telegram_Message_ID-1] || '');
+    if(raw[c.map.Publication_Status-1]!=='PUBLISHED' || !posts[messageId]) return;
+    const p=posts[messageId],m=meta[id] || {versions:[],reminder:null,ai:null};
+    m.publication=Object.assign({},m.publication || {},{message_id:p.message_id,event_hash:p.hash,
+      post_url:p.post_url,published_text:p.text,channel_revision:p.revision,published_date:p.date});
+    meta[id]=m;
   });
   return meta;
 }
@@ -1853,7 +1870,7 @@ function rformContentApiV04WorkspaceMutable_(value) {
   if (['PLANNED', 'HOLD', 'NOT_READY'].indexOf(value('Publication_Status')) === -1 ||
       value('AutoPost_Allowed') !== 'NO' || value('Publish_At') ||
       value('Telegram_Message_ID') || value('Telegram_Post_URL') || value('Posted_At') ||
-      /SUPERSEDED|ARCHIV|CANCELLED/i.test(value('Pipeline_Status')) ||
+      rformContentApiV04Archived_(value) ||
       value('Duplicate_Flag') || value('Publish_Error')) throw new Error('Материал закрыт, имеет расписание или заблокирован.');
 }
 
@@ -1869,7 +1886,7 @@ function rformContentApiV04WorkspaceCommit_(c, request, row, action, updates, me
   const identity = rformContentApiV04Sha256Hex_(JSON.stringify([
     request.content_id || '', request.source_hash || '', request.payload || {}
   ]));
-  c.log.appendRow([request.action_id,new Date(),request.content_id,action,identity,
+  c.records=null; c.log.appendRow([request.action_id,new Date(),request.content_id,action,identity,
     Object.keys(updates).join(','),JSON.stringify(previous),JSON.stringify(next),
     'OWNER_WORKSPACE',request.nonce || '', 'PENDING']);
   const lr = c.log.getLastRow();
@@ -1885,7 +1902,7 @@ function rformContentApiV04WorkspaceCommit_(c, request, row, action, updates, me
       const expected = Object.prototype.hasOwnProperty.call(updates,f) ? next[f] : String(before[c.map[f]-1] || '');
       if (String(readback[c.map[f]-1] || '') !== expected) throw new Error('Readback mismatch');
     });
-    c.log.getRange(lr,c.lm.Result).setValue('APPLIED');
+    c.log.getRange(lr,c.lm.Result).setValue('APPLIED');c.records=null;
     SpreadsheetApp.flush();
     if (c.log.getRange(lr,c.lm.Result).getDisplayValue() !== 'APPLIED') throw new Error('Audit readback mismatch');
     return {ok:true,status:'APPLIED',action_id:request.action_id,content_id:request.content_id,
@@ -1917,6 +1934,23 @@ function rformContentApiV04Workspace_(request) {
   try {
     const c = rformContentApiV04WorkspaceContext_();
     if (p.action === 'sync_training') return rformContentApiV04TrainingDrafts_(c,request);
+    if (p.action === 'channel_record') return rformContentApiV04ChannelRecord_(c,request);
+    if (p.action === 'reconcile_channel') return rformContentApiV04ReconcileChannel_(c,request);
+    if (p.action === 'channel_dismiss') {
+      const event=rformContentApiV04ChannelEvent_(c,p);
+      const prior=rformContentApiV04WorkspaceRecords_(c).find(function(r){return r.Action_ID===request.action_id;});
+      if(prior) {
+        if(prior.Action!=='CHANNEL_DISMISS' || prior.Result!=='APPLIED' || JSON.parse(prior.New_Values)._meta.event_hash!==event.hash) throw new Error('Исход предыдущего запроса не подтверждён.');
+        return {ok:true,status:'ALREADY_APPLIED'};
+      }
+      c.records=null; c.log.appendRow([request.action_id,new Date(),'CHANNEL-'+event.message_id,'CHANNEL_DISMISS',event.hash,'','{}',
+        JSON.stringify({_meta:{event_hash:event.hash}}),'OWNER_WORKSPACE',request.nonce || '','PENDING']);
+      const lr=c.log.getLastRow();SpreadsheetApp.flush();
+      if(JSON.parse(c.log.getRange(lr,c.lm.New_Values).getDisplayValue())._meta.event_hash!==event.hash) throw new Error('Dismiss readback mismatch');
+      c.log.getRange(lr,c.lm.Result).setValue('APPLIED');c.records=null;SpreadsheetApp.flush();
+      if(c.log.getRange(lr,c.lm.Result).getDisplayValue()!=='APPLIED') throw new Error('Dismiss audit mismatch');
+      return {ok:true,status:'APPLIED'};
+    }
     rformContentApiV04RequireRecordId_(request.content_id,'Код материала');
     const row = rformContentApiV04FindUniqueRow_(c.queue,'Content_ID',request.content_id);
     const raw = c.queue.getRange(row,1,1,c.queue.getLastColumn()).getDisplayValues()[0];
@@ -1934,7 +1968,9 @@ function rformContentApiV04Workspace_(request) {
       return {ok:true,status:'ALREADY_APPLIED',action_id:request.action_id,metadata:next._meta || null};
     }
     if (request.source_hash !== rformContentApiV04WorkspaceHash_(value)) throw new Error('Материал изменился. Откройте актуальную карточку.');
+    if(['archive','restore'].indexOf(p.action)!==-1) return rformContentApiV04ArchiveAction_(c,request,row,value);
     rformContentApiV04WorkspaceMutable_(value);
+    if(p.action==='link_publication') return rformContentApiV04LinkPublication_(c,request,row,value,rformContentApiV04ChannelEvent_(c,p));
     if(p.action === 'stage_photo') return rformContentApiV04WorkspaceStagePhoto_(c,request,row);
     if(p.action === 'draft_assets') {
       const files=rformContentApiV04WorkspaceFiles_(c,request,p.asset_ids,value);
@@ -2156,7 +2192,7 @@ function rformContentApiV04TrainingDrafts_(c,request) {
       Updated_At:Utilities.formatDate(new Date(),'Europe/Moscow','dd.MM.yyyy HH:mm:ss'),
       Created_At:Utilities.formatDate(new Date(),'Europe/Moscow','dd.MM.yyyy HH:mm:ss')};
     Object.keys(item).forEach(function(f) {if(!c.map[f]) throw new Error('Missing training draft field: '+f);});
-    c.log.appendRow([actionId,new Date(),id,'AUTO_TRAINING_DRAFT',s.Session_ID,Object.keys(item).join(','),
+    c.records=null; c.log.appendRow([actionId,new Date(),id,'AUTO_TRAINING_DRAFT',s.Session_ID,Object.keys(item).join(','),
       '{}',JSON.stringify(Object.assign({},item,{_meta:{training_hash:rformContentApiV04TrainingHash_(s)}})),'TRAINING_DRAFT_WORKER',request.nonce || '','PENDING']);
     const lr=c.log.getLastRow();
     try {
@@ -2166,7 +2202,7 @@ function rformContentApiV04TrainingDrafts_(c,request) {
       const qr=rformContentApiV04FindUniqueRow_(c.queue,'Content_ID',id);
       const read=c.queue.getRange(qr,1,1,c.queue.getLastColumn()).getDisplayValues()[0];
       Object.keys(item).forEach(function(f) {if(String(read[c.map[f]-1] || '')!==String(item[f])) throw new Error('Draft readback mismatch');});
-      c.log.getRange(lr,c.lm.Result).setValue('APPLIED');SpreadsheetApp.flush();
+      c.log.getRange(lr,c.lm.Result).setValue('APPLIED');c.records=null;SpreadsheetApp.flush();
       if(c.log.getRange(lr,c.lm.Result).getDisplayValue()!=='APPLIED') throw new Error('Audit mismatch');
       created.push(id);queue.push(item);
     } catch(_) {
@@ -2203,4 +2239,162 @@ function rformContentApiV04TrainingFresh_(ss,value) {
     RFORM_CONTENT_API_V04.trainingSessionFields.concat(['Completed_At','Duplicate_Flag']),'Session_ID').filter(function(s) {return s.Session_ID===value('Session_ID');});
   if(sessions.length!==1 || sessions[0].Session_Status!=='CLOSED' ||
     expected!==rformContentApiV04TrainingHash_(sessions[0])) throw new Error('Исходная тренировка изменилась; требуется сверка фактов.');
+}
+
+// Channel observations use the existing action log, never another queue or publisher.
+const RFORM_CHANNEL = Object.freeze({id:'-1004309818003', username:'r_form'});
+
+function rformContentApiV04Archived_(value) {
+  return ['ARCHIVED','CANCELLED','SUPERSEDED'].indexOf(value('Publication_Status'))!==-1 ||
+    /ARCHIV|SUPERSEDED|CANCELLED|ЗАКРЫТО|ЗАМЕНЕНО/i.test(value('Pipeline_Status')+' '+value('Current_Stage')+' '+value('Text_Status')) ||
+    value('Current_Stage')==='EDITORIAL_GATE_CLOSED' || /^TEST-/.test(value('Content_ID'));
+}
+
+function rformContentApiV04ChannelPosts_(c) {
+  const posts={};
+  rformContentApiV04WorkspaceRecords_(c).forEach(function(r) {
+    if(r.Action!=='CHANNEL_POST' || r.Result!=='APPLIED') return;
+    let p;try {p=JSON.parse(r.New_Values)._meta;} catch(_) {return;}
+    if(!p || p.channel_id!==RFORM_CHANNEL.id) return;
+    const old=posts[p.message_id];
+    if(!old || p.revision>old.revision) posts[p.message_id]=p;
+  });
+  return posts;
+}
+
+function rformContentApiV04ChannelHash_(p) {
+  return rformContentApiV04Sha256Hex_(JSON.stringify([p.channel_id,p.message_id,p.date,p.revision,p.text,p.media_group_id,p.media]));
+}
+
+function rformContentApiV04ChannelEvent_(c,p) {
+  const event=rformContentApiV04ChannelPosts_(c)[String(p.message_id)];
+  if(!event || event.hash!==p.event_hash) throw new Error('Факт публикации отсутствует или изменился. Повторите сверку.');
+  return event;
+}
+
+function rformContentApiV04ChannelRecord_(c,request) {
+  const p=request.payload;
+  if(String(p.channel_id)!==RFORM_CHANNEL.id || !Number.isSafeInteger(p.message_id) || p.message_id<1 ||
+    !Number.isSafeInteger(p.date) || p.date<1 || p.date>Date.now()/1000+300 ||
+    !Number.isSafeInteger(p.revision) || p.revision<p.date || p.revision>Date.now()/1000+300 ||
+    typeof p.text!=='string' || p.text.length>4096 || !Array.isArray(p.media) || p.media.length>10 ||
+    p.media.some(function(m){return !m || ['photo','video','document'].indexOf(m.type)===-1 || typeof m.file_id!=='string' || m.file_id.length>200;}))
+    throw new Error('Некорректное наблюдение канала.');
+  const event={channel_id:RFORM_CHANNEL.id,message_id:p.message_id,date:p.date,revision:p.revision,
+    text:p.text,media_group_id:String(p.media_group_id || '').slice(0,100),media:p.media,
+    post_url:'https://t.me/'+RFORM_CHANNEL.username+'/'+p.message_id};
+  event.hash=rformContentApiV04ChannelHash_(event);
+  const prior=rformContentApiV04WorkspaceRecords_(c).find(function(r){return r.Action_ID===request.action_id;});
+  if(prior) {
+    if(prior.Action!=='CHANNEL_POST' || prior.Result!=='APPLIED' || JSON.parse(prior.New_Values)._meta.hash!==event.hash)
+      throw new Error('Исход наблюдения не подтверждён или Action_ID занят.');
+    return {ok:true,status:'ALREADY_APPLIED',event:event};
+  }
+  const old=rformContentApiV04ChannelPosts_(c)[p.message_id];
+  if(old && old.hash===event.hash) return {ok:true,status:'ALREADY_OBSERVED',event:old};
+  if(old && old.revision>event.revision) return {ok:true,status:'STALE_OBSERVATION',event:old};
+  if(old && old.revision===event.revision) {
+    if(old.text===event.text && old.date===event.date) return {ok:true,status:'ALREADY_OBSERVED',event:old};
+    throw new Error('Конфликт версий публикации; требуется сверка.');
+  }
+  c.records=null; c.log.appendRow([request.action_id,new Date(),'CHANNEL-'+p.message_id,'CHANNEL_POST',event.hash,'',
+    JSON.stringify(old || {}),JSON.stringify({_meta:event}),'CHANNEL_OBSERVER',request.nonce || '','PENDING']);
+  const lr=c.log.getLastRow();SpreadsheetApp.flush();
+  if(JSON.parse(c.log.getRange(lr,c.lm.New_Values).getDisplayValue())._meta.hash!==event.hash) throw new Error('Observation readback mismatch');
+  c.log.getRange(lr,c.lm.Result).setValue('APPLIED');c.records=null;SpreadsheetApp.flush();
+  if(c.log.getRange(lr,c.lm.Result).getDisplayValue()!=='APPLIED') throw new Error('Observation audit mismatch');
+  // Recording an observation never mutates CONTENT_QUEUE. Existing Poll resolves exact matches.
+  return {ok:true,status:'APPLIED',event:event};
+}
+
+function rformContentApiV04ChannelNormalize_(s) {
+  // Preserve punctuation and numbers: only whitespace is ignored for automatic matches.
+  return String(s || '').trim().replace(/\s+/g,' ');
+}
+
+function rformContentApiV04ChannelScore_(a,b) {
+  const tokens=function(s){return new Set(String(s || '').toLowerCase().match(/[а-яёa-z0-9]{3,}/g) || []);};
+  const x=tokens(a),y=tokens(b);if(!x.size || !y.size) return 0;
+  let common=0;x.forEach(function(t){if(y.has(t))common++;});
+  return common>=6?common/Math.min(x.size,y.size):0;
+}
+
+function rformContentApiV04ChannelReview_(c) {
+  const posts=rformContentApiV04ChannelPosts_(c),records=rformContentApiV04WorkspaceRecords_(c);
+  const linked=new Set(),dismissed=new Set();
+  records.forEach(function(r) {
+    if(r.Result!=='APPLIED' || ['OWNER_LINK_PUBLICATION','OWNER_ARCHIVE','CHANNEL_DISMISS'].indexOf(r.Action)===-1) return;
+    let m;try {m=JSON.parse(r.New_Values)._meta;} catch(_) {return;}
+    if(m && m.event_hash) (r.Action==='CHANNEL_DISMISS'?dismissed:linked).add(m.event_hash);
+  });
+  const rows=c.queue.getLastRow()<2?[]:c.queue.getRange(2,1,c.queue.getLastRow()-1,c.queue.getLastColumn()).getDisplayValues();
+  rows.forEach(function(r){const id=String(r[c.map.Telegram_Message_ID-1] || '');if(posts[id] && r[c.map.Publication_Status-1]==='PUBLISHED') linked.add(posts[id].hash);});
+  return Object.keys(posts).map(function(id){return posts[id];}).filter(function(p){return p.text.trim() && !linked.has(p.hash) && !dismissed.has(p.hash);})
+    .map(function(p) {
+      const candidates=rows.map(function(raw,i) {
+        const v=function(f){return String(raw[c.map[f]-1] || '').trim();};
+        if(rformContentApiV04Archived_(v) || ['PLANNED','NOT_READY','HOLD'].indexOf(v('Publication_Status'))===-1) return null;
+        const text=v('Telegram_Text');
+        const exact=text.length>=80 && rformContentApiV04ChannelNormalize_(text)===rformContentApiV04ChannelNormalize_(p.text);
+        const score=rformContentApiV04ChannelScore_(text,p.text);
+        return (exact || score>=0.55)?{content_id:v('Content_ID'),title:text.split('\n')[0],row:i+2,source_hash:rformContentApiV04WorkspaceHash_(v),exact:exact,score:score}:null;
+      }).filter(Boolean).sort(function(a,b){return Number(b.exact)-Number(a.exact) || b.score-a.score;});
+      return {event:p,candidates:candidates.slice(0,3),exact_count:candidates.filter(function(q){return q.exact;}).length};
+    }).sort(function(a,b){return b.event.date-a.event.date;});
+}
+
+function rformContentApiV04ReconcileChannel_(c,request) {
+  const applied=[],blocked=[];
+  rformContentApiV04ChannelReview_(c).filter(function(r){return r.exact_count===1;}).slice(0,3).forEach(function(r) {
+    const match=r.candidates[0],raw=c.queue.getRange(match.row,1,1,c.queue.getLastColumn()).getDisplayValues()[0];
+    const v=function(f){return String(raw[c.map[f]-1] || '').trim();};
+    try {rformContentApiV04WorkspaceMutable_(v);} catch(_) {return;}
+    const aid=rformContentApiV04Sha256Hex_('EXACT\n'+match.content_id+'\n'+r.event.hash).slice(0,32);
+    const prior=rformContentApiV04WorkspaceRecords_(c).find(function(log){return log.Action_ID===aid;});
+    if(prior) {if(prior.Result!=='APPLIED')blocked.push(match.content_id);return;} // Never replay uncertain writes.
+    const derived={action_id:aid,content_id:match.content_id,source_hash:match.source_hash,nonce:request.nonce,
+      payload:{action:'link_publication',message_id:r.event.message_id,event_hash:r.event.hash,automatic:true}};
+    applied.push(rformContentApiV04LinkPublication_(c,derived,match.row,v,r.event));
+  });
+  return {ok:true,applied:applied,blocked:blocked};
+}
+
+function rformContentApiV04LinkPublication_(c,request,row,value,event) {
+  // Preserve the prepared draft and private assets; published edition lives in the audited observation.
+  const id=String(event.message_id);
+  const rows=c.queue.getLastRow()<2?[]:c.queue.getRange(2,1,c.queue.getLastRow()-1,c.queue.getLastColumn()).getDisplayValues();
+  if(rows.some(function(r,i){return i+2!==row && String(r[c.map.Telegram_Message_ID-1] || '')===id;})) throw new Error('Публикация уже связана с другим материалом.');
+  return rformContentApiV04WorkspaceCommit_(c,request,row,'OWNER_LINK_PUBLICATION',{
+    Publication_Status:'PUBLISHED',Pipeline_Status:'PUBLISHED · MANUAL RECONCILED',Current_Stage:'PUBLISHED',
+    Approval_Status:'NOT_READY',AutoPost_Allowed:'NO',Publish_At:'',Preview_Review_Status:'NOT_REQUIRED',
+    Preview_Review_Hash:'',Preview_Reviewed_At:'',Preview_Reviewed_By:'',
+    Telegram_Message_ID:id,Telegram_Post_URL:event.post_url,
+    Posted_At:Utilities.formatDate(new Date(event.date*1000),'Europe/Moscow','dd.MM.yyyy HH:mm:ss'),
+    Updated_At:Utilities.formatDate(new Date(),'Europe/Moscow','dd.MM.yyyy HH:mm:ss')
+  },{event_hash:event.hash,message_id:event.message_id,post_url:event.post_url,automatic:!!request.payload.automatic,
+    draft_text:value('Telegram_Text'),published_text:event.text});
+}
+
+function rformContentApiV04ArchiveAction_(c,request,row,value) {
+  const p=request.payload,archived=rformContentApiV04Archived_(value);
+  if(['PLANNED','NOT_READY','HOLD','ARCHIVED','CANCELLED','SUPERSEDED'].indexOf(value('Publication_Status'))===-1 ||
+    value('AutoPost_Allowed')!=='NO' || value('Publish_At') || value('Telegram_Message_ID') || value('Telegram_Post_URL') || value('Posted_At') ||
+    value('Publish_Error')) throw new Error('Материал имеет публикацию, расписание или неопределённый исход.');
+  const now=Utilities.formatDate(new Date(),'Europe/Moscow','dd.MM.yyyy HH:mm:ss');
+  const updates={Approval_Status:'NOT_READY',AutoPost_Allowed:'NO',Publish_At:'',Preview_Review_Status:'RECHECK_REQUIRED',
+    Preview_Review_Hash:'',Preview_Reviewed_At:'',Preview_Reviewed_By:'',Updated_At:now};
+  if(p.action==='restore') {
+    if(!archived || /^TEST-/.test(value('Content_ID')) || value('Duplicate_Flag')) throw new Error('Нельзя восстановить эту запись.');
+    if(value('Text_Status')==='SUPERSEDED') updates.Text_Status=value('Telegram_Text')?'READY':'NOT_READY';
+    return rformContentApiV04WorkspaceCommit_(c,request,row,'OWNER_RESTORE',Object.assign(updates,{
+      Publication_Status:'PLANNED',Pipeline_Status:'REWORK',Current_Stage:'CHANNEL_CONTROL_REVIEW'
+    }),{reason:'MANUAL_RESTORE'});
+  }
+  if(archived) throw new Error('Материал уже в архиве.');
+  if(['CANCELLED_BY_OWNER','REPLACED_BY_POST','STALE','TECHNICAL_TEST'].indexOf(p.reason)===-1) throw new Error('Укажите причину архива.');
+  if(p.reason==='TECHNICAL_TEST' && !/^TEST-/.test(value('Content_ID'))) throw new Error('Это не техническая запись.');
+  const event=p.reason==='REPLACED_BY_POST'?rformContentApiV04ChannelEvent_(c,p):null;
+  return rformContentApiV04WorkspaceCommit_(c,request,row,'OWNER_ARCHIVE',Object.assign(updates,{
+    Publication_Status:event?'SUPERSEDED':'CANCELLED',Pipeline_Status:'ARCHIVED',Current_Stage:'ARCHIVED'
+  }),{reason:p.reason,event_hash:event?event.hash:null,post_url:event?event.post_url:null});
 }

@@ -107,6 +107,9 @@ class DataBundle:
     note: str = ""
     api_version: str = ""
     capabilities: tuple[str, ...] = ()
+    channel_review: tuple[dict[str, Any], ...] = ()
+    channel_posts: tuple[dict[str, Any], ...] = ()
+    workspace_meta: dict[str, Any] | None = None
 
 
 def _drop_blank_rows(frame: pd.DataFrame) -> pd.DataFrame:
@@ -758,6 +761,9 @@ def _load_apps_script(endpoint_url: str, secret: str, timeout_seconds: int) -> D
         ),
         api_version=str(payload.get("version") or ""),
         capabilities=capabilities,
+        channel_review=tuple(payload.get("channel_review") or []),
+        channel_posts=tuple(payload.get("channel_posts") or []),
+        workspace_meta=payload.get("workspace_meta") or {},
     )
 
 
@@ -1057,4 +1063,34 @@ def execute_queue_text_draft_save(endpoint_url: str, secret: str, row, telegram_
             or result.get("content_id") != request["content_id"]
             or result.get("action_id") != request["action_id"]):
         raise DataSourceError("Сохранение текста не подтверждено. Обновите данные и проверьте материал.")
+    return result
+
+
+def build_owner_workspace_request(secret: str, row, payload: dict, *, timestamp=None,
+                                  nonce=None, action_id=None):
+    """Same signed wire contract as Owner Bot; bind to the complete workspace snapshot."""
+    if payload.get("action") not in {"archive", "restore", "link_publication"}:
+        raise ValueError("Действие не разрешено в этом интерфейсе.")
+    fields = OWNER_PREVIEW_FIELDS + ("Session_ID", "Proof_Source")
+    missing = [f for f in fields if f not in row]
+    if missing:
+        raise ValueError("Обновите источник: отсутствуют поля " + ", ".join(missing))
+    values = [str(row[f] if not pd.isna(row[f]) else "").strip() for f in fields]
+    source_hash = _sha256_text(json.dumps(values, ensure_ascii=False, separators=(",", ":")))
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    ts, request_nonce, aid = _request_identity(timestamp=timestamp, nonce=nonce, action_id=action_id)
+    cid = str(row["Content_ID"]).strip()
+    return {"timestamp": ts, "nonce": request_nonce, "operation": "owner_workspace",
+            "action_id": aid, "content_id": cid, "source_hash": source_hash, "payload": payload,
+            "signature": _sign_message(secret, [str(ts), request_nonce, "owner_workspace", aid,
+                        cid, source_hash, _sha256_text(encoded)])}
+
+
+def execute_owner_workspace(endpoint_url: str, secret: str, row, payload: dict, *,
+                            action_id=None, timeout_seconds=30):
+    request = build_owner_workspace_request(secret, row, payload, action_id=action_id)
+    result = _post_signed(endpoint_url, request, timeout_seconds, "изменение карточки материала")
+    if (result.get("status") not in {"APPLIED", "ALREADY_APPLIED"}
+            or result.get("action_id") != request["action_id"]):
+        raise DataSourceError("Изменение не подтверждено. Обновите карточку перед новым действием.")
     return result

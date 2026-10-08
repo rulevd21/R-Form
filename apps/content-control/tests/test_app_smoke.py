@@ -34,14 +34,14 @@ class AppSmokeTests(unittest.TestCase):
         navigation = next(item for item in app.radio if item.label == "Раздел")
         self.assertEqual(
             list(navigation.options),
-            ["Сегодня", "План", "Система"],
+            ["Сегодня", "Материалы", "План", "Система"],
         )
         self.assertEqual(app.subheader[0].value, "Готово к согласованию")
         self.assertTrue(any("синтетические данные" in warning.value for warning in app.warning))
 
     def test_all_navigation_pages_render(self) -> None:
         app = AppTest.from_file(str(APP_ROOT / "app.py"), default_timeout=30).run()
-        for page in ("План", "Система"):
+        for page in ("Материалы", "План", "Система"):
             with self.subTest(page=page):
                 navigation = next(item for item in app.radio if item.label == "Раздел")
                 navigation.set_value(page).run()
