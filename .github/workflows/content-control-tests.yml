@@ -7,13 +7,15 @@ on:
     paths:
       - 'apps/content-control/**'
       - 'automation/content_control_api_v0_4.gs'
-      - 'automation/tests/owner_preview_prepare.test.cjs'
+      - 'automation/tests/**'
+      - 'automation/owner_bot_v1.gs'
       - '.github/workflows/content-control-tests.yml'
   pull_request:
     paths:
       - 'apps/content-control/**'
       - 'automation/content_control_api_v0_4.gs'
-      - 'automation/tests/owner_preview_prepare.test.cjs'
+      - 'automation/tests/**'
+      - 'automation/owner_bot_v1.gs'
       - '.github/workflows/content-control-tests.yml'
   workflow_dispatch:
 
@@ -39,5 +41,8 @@ jobs:
       - name: Run tests
         run: python -m unittest discover -s tests -v
       - name: Test preparation-only Apps Script behavior
-        run: node --test ../../automation/tests/owner_preview_prepare.test.cjs
+        run: node --test ../../automation/tests/*.test.cjs
 
+
+      - name: Check Owner Bot syntax
+        run: cp ../../automation/owner_bot_v1.gs /tmp/owner_bot_v1.js && node --check /tmp/owner_bot_v1.js
