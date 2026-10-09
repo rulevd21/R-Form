@@ -1,12 +1,12 @@
 {
-  "manifest_version": "1.0.0",
+  "manifest_version": "1.0.1",
   "generated_at": "2026-10-09",
   "repository": "rulevd21/R-Form",
   "governance_status": "ACTIVE",
   "production_ref": {
     "branch": "production",
-    "verified_source_commit": "122c26290b7ddd3a096216cf47248aedd609d388",
-    "policy": "The production branch is a deployment evidence pointer. Move it only after an installed release passes readback and runtime acceptance. Never move it merely because code was merged."
+    "verified_source_commit": "5550d3c423294fd89c980d08ce019808b735c434",
+    "policy": "Move production only after runtime acceptance. Standalone components may declare an exact verified source_ref outside the production branch."
   },
   "canonical_business_source": {
     "name": "RFORM_MASTER_DATA_v1",
@@ -15,101 +15,25 @@
     "public_identifiers_in_repository": false
   },
   "components": [
-    {
-      "component": "training",
-      "runtime": "Google Apps Script",
-      "production_version": "CORE 2.1.9 / UI 2.2.2",
-      "deployment_evidence": "PR #23",
-      "source_ref": "production",
-      "status": "VERIFIED_PRODUCTION",
-      "last_verified": "2026-10-09",
-      "notes": "Completed_At RPC serialization hotfix installed as existing Training deployment version 6; affected CLOSED session loaded with 14/14 saved sets."
-    },
-    {
-      "component": "content_control_ui",
-      "runtime": "Streamlit",
-      "production_version": "0.5.10",
-      "deployment_evidence": "PR #22",
-      "source_ref": "production",
-      "status": "VERIFIED_PRODUCTION",
-      "last_verified": "2026-10-09",
-      "notes": "Admin/diagnostic interface. It is not the canonical content state store."
-    },
-    {
-      "component": "content_control_api",
-      "runtime": "Google Apps Script Web App",
-      "production_version": "0.6.4",
-      "deployment_evidence": "PR #24",
-      "source_ref": "production",
-      "status": "VERIFIED_PRODUCTION",
-      "last_verified": "2026-10-09",
-      "notes": "Existing deployment updated to version 18; source readback matched tested candidate. Content API 0.7.0 from PR #25 is not production until separate installation and activation evidence is recorded."
-    },
-    {
-      "component": "owner_bot",
-      "runtime": "Google Apps Script + Telegram Bot API",
-      "production_version": "1.2.4",
-      "deployment_evidence": "PR #24",
-      "source_ref": "production",
-      "status": "VERIFIED_PRODUCTION",
-      "last_verified": "2026-10-09",
-      "notes": "Existing deployment updated to version 11; preflight verified pairing, poll trigger, webhook and zero pending updates."
-    },
-    {
-      "component": "telegram_autopost",
-      "runtime": "Google Apps Script + Telegram Bot API",
-      "production_version": "0.3.2",
-      "deployment_evidence": "PR #6 production acceptance comment",
-      "source_ref": "historical release source",
-      "status": "VERIFIED_PRODUCTION_WITH_OLD_EVIDENCE",
-      "last_verified": "2026-08-25",
-      "notes": "Real owner-approval to Telegram E2E passed. Runtime should be re-read on the next publisher change because evidence is older than other components."
-    },
-    {
-      "component": "content_event_detector",
-      "runtime": "Google Apps Script trigger",
-      "production_version": "UNKNOWN_RUNTIME_PROVENANCE",
-      "deployment_evidence": "PR #13 documents missing runtime provenance",
-      "source_ref": "main contains detector source versions",
-      "status": "RECONCILIATION_REQUIRED",
-      "last_verified": null,
-      "notes": "Do not claim a detector release is installed until current Apps Script source, trigger and execution receipt are reconciled."
-    },
-    {
-      "component": "rform_operating_system",
-      "runtime": "ChatGPT project skill/orchestrator",
-      "production_version": "1.1.5 candidate",
-      "deployment_evidence": "PR #8",
-      "source_ref": "agent/rform-skill-content-v1.1.3",
-      "status": "ACCEPTANCE_PENDING",
-      "last_verified": null,
-      "notes": "Must not be treated as the accepted single router until the PR #8 acceptance gates pass."
-    },
-    {
-      "component": "automatic_training_cards",
-      "runtime": "Content API / Owner Bot content pipeline",
-      "production_version": "0.7.0 candidate",
-      "deployment_evidence": "PR #25",
-      "source_ref": "fix/automatic-training-cards / merged content branch",
-      "status": "MERGED_NOT_PRODUCTION_VERIFIED",
-      "last_verified": null,
-      "notes": "Source and tests are merged; production activation and live private-render verification must be recorded before moving production ref."
-    }
+    {"component":"training","runtime":"Google Apps Script","production_version":"CORE 2.1.9 / UI 2.2.2","deployment_evidence":"PR #23","source_ref":"production","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-09"},
+    {"component":"content_control_ui","runtime":"Streamlit","production_version":"0.5.10","deployment_evidence":"PR #22","source_ref":"production","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-09"},
+    {"component":"content_control_api","runtime":"Google Apps Script","production_version":"0.7.0","deployment_evidence":"PR #25 + runtime acceptance 2026-10-09","source_ref":"5550d3c423294fd89c980d08ce019808b735c434","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-09","notes":"Preflight and private self-check passed; publication remained disabled."},
+    {"component":"owner_bot","runtime":"Google Apps Script + Telegram Bot API","production_version":"1.2.4","deployment_evidence":"PR #24","source_ref":"production","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-09"},
+    {"component":"telegram_autopost","runtime":"Google Apps Script + Telegram Bot API","production_version":"0.3.2","deployment_evidence":"PR #6 production acceptance comment","source_ref":"historical release source","status":"VERIFIED_PRODUCTION_WITH_OLD_EVIDENCE","last_verified":"2026-08-25"},
+    {"component":"content_event_detector","runtime":"Google Apps Script trigger","production_version":"0.3 + observability 0.1","deployment_evidence":"PR #13 + runtime reconciliation 2026-10-09","source_ref":"1b0474f4fa2616af5c6353650246476b67981774","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-09","notes":"Single scheduled trigger verified; scheduled and manual receipts passed; repeated manual run was NO_OP."},
+    {"component":"rform_operating_system","runtime":"ChatGPT project skill/orchestrator","production_version":"1.1.5 candidate","deployment_evidence":"PR #8","source_ref":"agent/rform-skill-content-v1.1.3","status":"ACCEPTANCE_PENDING","last_verified":null},
+    {"component":"automatic_training_cards","runtime":"Content API / Owner Bot content pipeline","production_version":"0.7.0","deployment_evidence":"PR #25 + private runtime self-check 2026-10-09","source_ref":"5550d3c423294fd89c980d08ce019808b735c434","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-09","notes":"Automatic cards enabled; publication disabled; private self-check passed and queue remained unchanged."}
   ],
   "promotion_rules": [
     "Merged is not deployed.",
     "Deployed is not verified until runtime readback and acceptance pass.",
-    "The production branch moves only to a commit that contains every source change actually installed for that release and no uninstalled production-affecting candidate beyond the declared baseline.",
-    "Every deployment PR must state component version, exact source commit, deployment identity/version where safe, readback evidence, acceptance result and rollback baseline.",
-    "Runtime secrets, deployment URLs, spreadsheet IDs and private project IDs must not be added to this public repository.",
-    "One component has one active production version. Older versions remain history, not parallel active implementations.",
-    "Any production-affecting PR left open after supersession must be closed or explicitly labelled as a historical/reference branch in its PR body."
+    "The production branch moves only after runtime acceptance for the repository baseline it represents.",
+    "Standalone runtime components outside that branch must cite an exact verified source_ref.",
+    "Runtime secrets and private identifiers must not be added to the public repository.",
+    "One component has one active production version."
   ],
   "known_governance_debt": [
-    "Reconcile content_event_detector runtime and trigger provenance.",
-    "Verify or deploy automatic_training_cards 0.7.0 before moving production ref beyond PR #24 baseline.",
     "Complete R/Form Operating System acceptance before declaring it the canonical command router.",
-    "Re-read Telegram Autopost runtime on the next publisher-affecting release.",
-    "Close or supersede legacy open R/Form core PRs after confirming no unique unpromoted production requirement remains."
+    "Re-read Telegram Autopost runtime on the next publisher-affecting release."
   ]
 }
