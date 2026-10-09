@@ -14,7 +14,7 @@ This file answers one question: **which repository lines may be used for current
 
 Current `production`: `122c26290b7ddd3a096216cf47248aedd609d388`.
 
-## Active temporary lines
+## Active R/Form temporary lines
 
 | PR | Branch | Role | Status |
 |---|---|---|---|
@@ -24,17 +24,21 @@ Current `production`: `122c26290b7ddd3a096216cf47248aedd609d388`.
 
 These branches are not production merely because they are open, tested or merged internally.
 
-## Legacy / sandbox lines retained for evidence
+## Historical training lines — closed, code retained
 
 | PR | Branch | Classification | Rule |
 |---|---|---|---|
-| #4 | `release/training-exercise-changes-v0.1-rc1` | LEGACY RC | Reconcile unique requirements against current Training source; never deploy wholesale |
-| #10 | `feature/training-free-session-v0.1` | SANDBOX/HISTORICAL | Never promote directly; extract remaining requirements onto current production base if still needed |
+| #4 | `release/training-exercise-changes-v0.1-rc1` | SUPERSEDED LEGACY RC | Closed. Reconcile any unique requirement against current Training source; never deploy wholesale |
+| #10 | `feature/training-free-session-v0.1` | ARCHIVED SANDBOX | Closed. If FREE behavior is still needed, port requirements onto the current production base |
+
+Closing these PRs does not delete their branches or Git history. They are evidence/reference only.
 
 ## Superseded PRs closed during governance cleanup
 
 - PR #1 — legacy Channel Control v0.3 architecture; superseded by Content Control + Owner Bot + Telegram Autopost.
+- PR #4 — legacy Training exercise-change production RC; old base and deployment model.
 - PR #6 — Owner Bot v1.0.5; superseded by verified Owner Bot v1.2.4. Historical Telegram Autopost v0.3.2 E2E evidence is retained in the PR discussion.
+- PR #10 — FREE training sandbox; production promotion was explicitly not ready and current Training has since advanced.
 - PR #11 — Completed_At integrity draft; superseded by installed Training CORE 2.1.9 / PR #23 runtime fix.
 
 ## Non-R/Form repository scope
@@ -49,9 +53,9 @@ PR #9 / `commercial-wines-dashboard-v17` and the `commercial-wines` area are unr
 - `[ACTIVE P0]`
 - `[ACTIVE P1]`
 - `[ACTIVE INTEGRATION]`
-- `[LEGACY RC — RECONCILE BEFORE USE]`
-- `[SANDBOX/HISTORICAL — NO DIRECT PROMOTION]`
 - `[SUPERSEDED]`
+- `[SUPERSEDED LEGACY RC]`
+- `[ARCHIVED SANDBOX]`
 - `[OUTSIDE R/FORM CORE — MIGRATION CANDIDATE]`
 
 These labels are human navigation aids. The machine-readable authority for runtime state remains `RFORM_RUNTIME_MANIFEST.json`.
