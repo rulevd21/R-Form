@@ -44,6 +44,17 @@ test('APPLIED replay with missing timestamp or non-CLOSED state refuses success 
 test('lost timestamp during canonical write blocks APPLIED audit',()=>{
  const x=training({strip:true});assert.throws(()=>x.finish(),/Не удалось подтвердить/);assert.equal(x.rows.INBOX_LOG.length,0);
 });
+test('closed session read is RPC-safe and preserves exact canonical timestamp',()=>{
+ const x=training();x.finish();const raw=x.rows.TRAINING_SESSIONS[0],stamp=raw.Completed_At.getTime(),writes=x.writes.length;
+ const session=x.ctx.RFormSessionService.getById(x.payload.sessionId);
+ assert.equal(session.completedAt,raw.Completed_At.toISOString());
+ assert.equal(new Date(session.completedAt).getTime(),stamp);
+ const assertRpcSafe=value=>{if(value instanceof Date)throw Error('Date cannot cross google.script.run');if(value&&typeof value==='object')Object.values(value).forEach(assertRpcSafe);};
+ assertRpcSafe(session);assertRpcSafe({session});
+ assert.equal(x.writes.length,writes);assert.equal(raw.Completed_At.getTime(),stamp);
+ raw.Completed_At='2026-10-09T05:11:00.123Z';assert.equal(x.ctx.RFormSessionService.getById(x.payload.sessionId).completedAt,raw.Completed_At);
+ raw.Completed_At='';assert.equal(x.ctx.RFormSessionService.getById(x.payload.sessionId).completedAt,'');
+});
 test('recovered writer close integrates with content sync and preview without publication',()=>{
  const writer=training(),r=writer.finish(),source=writer.rows.TRAINING_SESSIONS[0],x=harness();
  x.props.RFORM_AUTO_DRAFT_ENABLED='YES';x.addSession({...source,Completed_At:source.Completed_At.toISOString()});
