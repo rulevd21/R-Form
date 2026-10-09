@@ -26,7 +26,7 @@ var RFormSessionService = (function() {
       conclusion: String(row.Session_Conclusion || ''),
       decision: String(row.Session_Decision || ''),
       sessionStatus: String(row.Session_Status || ''),
-      completedAt: row.Completed_At || '',
+      completedAt: row.Completed_At instanceof Date ? row.Completed_At.toISOString() : String(row.Completed_At || ''),
       duplicateFlag: String(row.Duplicate_Flag || '')
     };
   }
