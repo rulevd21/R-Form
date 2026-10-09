@@ -1,0 +1,16 @@
+:root {
+  --ast-magenta: #A04476; /* Pantone 682 C */
+  --ast-navy: #1E355C;   /* Pantone 534 C */
+  --ast-blue: #3D6791;   /* Pantone 2160 C */
+  --ast-gray: #948A8A;   /* Pantone 4290 C */
+  --ast-peach: #CE998D;  /* Pantone 7612 C */
+  --ast-magenta-soft: #DCB4C6;
+  --ast-navy-soft: #A3A8BA;
+  --ast-blue-soft: #B5C0D2;
+  --ast-gray-soft: #D5D0D1;
+  --ast-peach-soft: #EED7D0;
+}
+
+/* Brandbook typography: Mabry Pro Medium/Normal/Bold/Light.
+   Portable HTML does not bundle font files; use installed Mabry Pro when available. */
+body { font-family: "Mabry Pro", "Arial Narrow", Arial, sans-serif; }
