@@ -3,6 +3,8 @@
 // Never creates CONTENT_QUEUE rows and never publishes to Telegram.
 // Adds: effective-window filtering, allowed-area filtering, CONTENT_QUEUE source reconciliation,
 // stale v0.2 event cleanup, and a safe 6-hour DATA_EVENTS-only trigger installer.
+// Candidate observability extension v0.1: native execution receipts, no new sheet/trigger.
+// Requires verified runtime/source reconciliation before installation.
 
 const RFORM_CONTENT_EVENT_V03_CONFIG = Object.freeze({
   spreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
@@ -40,7 +42,66 @@ function rformContentEventDetectorPreviewV03() {
   };
 }
 
-function rformContentEventDetectorWriteV03() {
+function rformContentEventDetectorWriteV03(e) {
+  const startedAt = new Date();
+  const triggerUid = e && (typeof e.triggerUid === 'string' || typeof e.triggerUid === 'number')
+    ? String(e.triggerUid) : '';
+  const safeTriggerUid = /^[A-Za-z0-9_-]{1,128}$/.test(triggerUid) ? triggerUid : '';
+  const receipt = {
+    message:'RFORM_DETECTOR_RUN',
+    schema_version:'1.0',
+    run_id:Utilities.getUuid(),
+    component:'CONTENT_EVENT_DETECTOR',
+    handler:'rformContentEventDetectorWriteV03',
+    component_version:'0.3',
+    observability_version:'0.1',
+    source_baseline:'365215bf6c414fbf538034169cb42d5f6672934d',
+    runtime_source_evidence:'UNVERIFIED',
+    invocation_kind:safeTriggerUid ? 'INSTALLABLE_EVENT' : 'MANUAL_OR_API',
+    trigger_uid:safeTriggerUid || null,
+    started_at:startedAt.toISOString()
+  };
+  // If start logging fails, do not enter the writer. Never log source facts or errors verbatim.
+  console.log(JSON.stringify(Object.assign({}, receipt, {phase:'START', outcome:'RUNNING'})));
+  try {
+    const result = rformContentEventDetectorWriteV03Core_();
+    const keys = ['inserted','updated','unchanged','filtered','filteredUnchanged','totalDetected'];
+    if (!result || result.ok !== true || result.mode !== 'DATA_EVENTS_ONLY' ||
+        keys.some(k => !Number.isInteger(result[k]) || result[k] < 0) ||
+        result.totalDetected !== result.inserted + result.updated + result.unchanged) {
+      throw new Error('DETECTOR_COUNTERS_INVALID');
+    }
+    const counters = {};
+    keys.forEach(k => { counters[k] = result[k]; });
+    const mutationCount = result.inserted + result.updated + result.filtered;
+    const completedAt = new Date();
+    console.log(JSON.stringify(Object.assign({}, receipt, {
+      phase:'FINISH', outcome:mutationCount ? 'APPLIED' : 'NO_OP',
+      completed_at:completedAt.toISOString(),
+      duration_ms:Math.max(0, completedAt.getTime() - startedAt.getTime()),
+      mutation_count:mutationCount, counters,
+      business_readback:'NOT_PERFORMED_BY_RECEIPT'
+    })));
+    // Preserve the existing return interface and business writer semantics.
+    return result;
+  } catch (error) {
+    const completedAt = new Date();
+    try {
+      console.error(JSON.stringify(Object.assign({}, receipt, {
+        phase:'FINISH', outcome:'ERROR',
+        completed_at:completedAt.toISOString(),
+        duration_ms:Math.max(0, completedAt.getTime() - startedAt.getTime()),
+        business_effects:'UNKNOWN_OR_PARTIAL',
+        error_code:'PROCESSING_OR_RECEIPT_FAILED'
+      })));
+    } catch (loggingError) {
+      // Retain the original failure; absent terminal evidence is not a successful no-op.
+    }
+    throw error;
+  }
+}
+
+function rformContentEventDetectorWriteV03Core_() {
   const preview = rformContentEventDetectorPreviewV03();
   const ss = SpreadsheetApp.openById(RFORM_CONTENT_EVENT_V03_CONFIG.spreadsheetId);
   const sheet = ss.getSheetByName(RFORM_CONTENT_EVENT_V03_CONFIG.eventsSheet);
