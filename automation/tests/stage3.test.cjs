@@ -1,11 +1,12 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {harness}=require('./workspace_harness.cjs');
 const sync=x=>x.api.rformContentApiV04Workspace_({action_id:'a'.repeat(32),payload:{action:'sync_training'}});
-test('long training facts produce a short draft without invented decision or cut tuple',()=>{
+test('long training facts retain every exercise without invented decision or cut tuple',()=>{
  const x=harness(),groups=Array.from({length:12},(_,i)=>'Жим вариант '+i+' 90×4; 85×3; 85×3 RIR 3/3/2.');
  const text=x.api.rformContentApiV04TrainingText_({Date:'08.10.2026',Session_Type:'A',Main_Result:groups.join('; '),Actual_Duration:'70',Session_Decision:'Увеличить нагрузку на 50%'});
- assert(text.length<=1200);assert.match(text,/90×4; 85×3; 85×3 RIR 3\/3\/2/);
- assert.match(text,/часть упражнений/);assert(!text.includes('50%'));
+ assert(text.length<=4096);assert.match(text,/90×4; 85×3; 85×3 RIR 3\/3\/2/);
+ groups.forEach((group,i)=>assert(text.includes((i+1)+'. '+group)));
+ assert.doesNotMatch(text,/часть упражнений/);assert(!text.includes('50%'));
 });
 test('blocked source is observable as PARTIAL, no successful full-cycle timestamp',()=>{
  const x=harness();Object.assign(x.props,{RFORM_OWNER_BOT_ENABLED:'YES',RFORM_OWNER_AUTO_DRAFTS_ENABLED:'YES',RFORM_AUTO_DRAFT_ENABLED:'YES'});
