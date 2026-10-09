@@ -54,7 +54,7 @@ jobs:
     environment: production-apps-script
 
     steps:
-      - name: Validate dispatch inputs
+      - name: Validate dispatch boundary and inputs
         shell: bash
         env:
           COMPONENT: ${{ inputs.component }}
@@ -65,6 +65,12 @@ jobs:
           CONFIRM: ${{ inputs.confirm }}
         run: |
           set -euo pipefail
+
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || {
+            echo "::error::Production workflow must be dispatched from main"
+            exit 1
+          }
+
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
             echo "::error::source_sha must be an exact lowercase 40-character Git SHA"
             exit 1
@@ -90,24 +96,25 @@ jobs:
             fi
           fi
 
-      - name: Checkout exact reviewed source
-        uses: actions/checkout@v4
+      - name: Checkout trusted deployment tooling
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ inputs.source_sha }}
-          fetch-depth: 1
+          ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify checkout identity
+      - name: Verify trusted tooling identity
         shell: bash
         env:
-          SOURCE_SHA: ${{ inputs.source_sha }}
+          WORKFLOW_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
-          [[ "$actual" == "$SOURCE_SHA" ]] || {
-            echo "::error::Checked out $actual, expected $SOURCE_SHA"
+          [[ "$actual" == "$WORKFLOW_SHA" ]] || {
+            echo "::error::Trusted tooling checkout mismatch"
             exit 1
           }
+          test -f scripts/apps-script/guard.mjs
 
       - name: Resolve component contract
         id: contract
@@ -131,19 +138,35 @@ jobs:
               ;;
           esac
 
-      - name: Validate candidate source
+      - name: Materialize exact reviewed candidate
+        id: candidate
         shell: bash
         env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
           SOURCE_PATH: ${{ steps.contract.outputs.source_path }}
           ANCHOR: ${{ steps.contract.outputs.anchor }}
         run: |
           set -euo pipefail
-          test -f "$SOURCE_PATH"
-          grep -Fq "$ANCHOR" "$SOURCE_PATH"
-          echo "Candidate source path and anchor validated."
+          umask 077
+          mkdir -p .rform-candidate
+
+          if ! git cat-file -e "${SOURCE_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$SOURCE_SHA"
+          fi
+
+          git cat-file -e "${SOURCE_SHA}^{commit}"
+          git cat-file -e "${SOURCE_SHA}:${SOURCE_PATH}"
+          git show "${SOURCE_SHA}:${SOURCE_PATH}" > .rform-candidate/source.gs
+
+          test -s .rform-candidate/source.gs
+          grep -Fq "$ANCHOR" .rform-candidate/source.gs
+
+          candidate_sha256="$(sha256sum .rform-candidate/source.gs | awk '{print $1}')"
+          echo "sha256=$candidate_sha256" >> "$GITHUB_OUTPUT"
+          echo "Exact candidate materialized from Git source SHA; payload withheld."
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
 
@@ -204,7 +227,7 @@ jobs:
         working-directory: .rform-apps-script
         run: |
           set -euo pipefail
-          clasp --json show-authorized-user > authorized-user.json
+          clasp show-authorized-user --json > authorized-user.json
           node -e '
             const fs = require("fs");
             const v = JSON.parse(fs.readFileSync("authorized-user.json", "utf8"));
@@ -227,7 +250,6 @@ jobs:
         shell: bash
         env:
           OPERATION: ${{ inputs.operation }}
-          SOURCE_PATH: ${{ steps.contract.outputs.source_path }}
           ANCHOR: ${{ steps.contract.outputs.anchor }}
           EXPECTED_RUNTIME_SHA256: ${{ inputs.expected_runtime_sha256 }}
         run: |
@@ -235,7 +257,7 @@ jobs:
           node scripts/apps-script/guard.mjs prepare \
             --root .rform-apps-script/remote \
             --anchor "$ANCHOR" \
-            --candidate "$SOURCE_PATH" \
+            --candidate .rform-candidate/source.gs \
             --operation "$OPERATION" \
             --expected-runtime "$EXPECTED_RUNTIME_SHA256" \
             --backup .rform-apps-script/rollback-target \
@@ -247,7 +269,7 @@ jobs:
         working-directory: .rform-apps-script
         run: |
           set -euo pipefail
-          clasp --json list-deployments > deployments-before.json
+          clasp list-deployments --json > deployments-before.json
           node ../scripts/apps-script/guard.mjs summarize-deployments \
             --file deployments-before.json
 
@@ -274,7 +296,7 @@ jobs:
           SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
           set -euo pipefail
-          clasp --json create-version "R/Form rollback before detector ${SOURCE_SHA}" > rollback-version.json
+          clasp create-version "R/Form rollback before detector ${SOURCE_SHA}" --json > rollback-version.json
           rollback_version="$(node -e 'const v=require("./rollback-version.json"); process.stdout.write(String(v.versionNumber || ""));')"
           [[ "$rollback_version" =~ ^[1-9][0-9]*$ ]]
           echo "version=$rollback_version" >> "$GITHUB_OUTPUT"
@@ -325,10 +347,9 @@ jobs:
         run: |
           set -euo pipefail
           deployment_id="$(cat deployment-id)"
-          clasp --json create-deployment \
-            --deploymentId "$deployment_id" \
+          clasp update-deployment "$deployment_id" \
             --description "R/Form content-api ${SOURCE_SHA}" \
-            > deployment-result.json
+            --json > deployment-result.json
 
           new_version="$(node -e 'const v=require("./deployment-result.json"); process.stdout.write(String(v.versionNumber || ""));')"
           [[ "$new_version" =~ ^[1-9][0-9]*$ ]]
@@ -344,7 +365,7 @@ jobs:
           EXPECTED_DEPLOYMENT_VERSION: ${{ inputs.expected_deployment_version }}
         run: |
           set -euo pipefail
-          clasp --json list-deployments > deployments-after.json
+          clasp list-deployments --json > deployments-after.json
           node ../scripts/apps-script/guard.mjs verify-deployment \
             --file deployments-after.json \
             --id-file deployment-id \
@@ -373,11 +394,10 @@ jobs:
           rollback_deployment=0
           if [[ "$COMPONENT" == "content-api" && -f deployment-id && "$EXPECTED_DEPLOYMENT_VERSION" =~ ^[1-9][0-9]*$ ]]; then
             deployment_id="$(cat deployment-id)"
-            clasp --json create-deployment \
+            clasp update-deployment "$deployment_id" \
               --versionNumber "$EXPECTED_DEPLOYMENT_VERSION" \
-              --deploymentId "$deployment_id" \
               --description "R/Form automatic rollback" \
-              > /dev/null
+              --json > /dev/null
             rollback_deployment=$?
           fi
 
@@ -394,6 +414,7 @@ jobs:
           COMPONENT: ${{ inputs.component }}
           OPERATION: ${{ inputs.operation }}
           SOURCE_SHA: ${{ inputs.source_sha }}
+          WORKFLOW_SHA: ${{ github.sha }}
           RUNTIME_BEFORE: ${{ steps.source_guard.outputs.runtime_sha256 }}
           SOURCE_HASH: ${{ steps.source_guard.outputs.source_sha256 }}
           READBACK_HASH: ${{ steps.readback.outputs.readback_sha256 }}
@@ -406,6 +427,7 @@ jobs:
             echo "- Component: \`$COMPONENT\`"
             echo "- Operation: \`$OPERATION\`"
             echo "- Git source SHA: \`$SOURCE_SHA\`"
+            echo "- Trusted workflow/tooling SHA: \`$WORKFLOW_SHA\`"
             [[ -n "${RUNTIME_BEFORE:-}" ]] && echo "- Runtime source SHA-256 before: \`$RUNTIME_BEFORE\`"
             [[ -n "${SOURCE_HASH:-}" ]] && echo "- Candidate source SHA-256: \`$SOURCE_HASH\`"
             [[ -n "${READBACK_HASH:-}" ]] && echo "- Runtime source SHA-256 readback: \`$READBACK_HASH\`"
@@ -420,4 +442,4 @@ jobs:
         shell: bash
         run: |
           rm -f "$HOME/.clasprc.json"
-          rm -rf .rform-apps-script
+          rm -rf .rform-apps-script .rform-candidate
