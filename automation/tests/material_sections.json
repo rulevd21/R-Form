@@ -1,0 +1,13 @@
+[
+ {"row":{"Content_ID":"CNT-1","Publication_Status":"PUBLISHED","Pipeline_Status":"HOLD ARCHIVED"},"section":"published"},
+ {"row":{"Content_ID":"CNT-2","Publication_Status":"NOT_READY","Pipeline_Status":"HOLD CTA"},"section":"held"},
+ {"row":{"Content_ID":"CNT-3","Publication_Status":"HOLD"},"section":"held"},
+ {"row":{"Content_ID":"CNT-4","Publication_Status":"NOT_READY","Pipeline_Status":"ПАУЗА"},"section":"held"},
+ {"row":{"Content_ID":"CNT-5","Publication_Status":"PLANNED","Text_Status":"SUPERSEDED"},"section":"archived"},
+ {"row":{"Content_ID":"CNT-6","Publication_Status":"NOT_READY","Current_Stage":"EDITORIAL_GATE_CLOSED"},"section":"archived"},
+ {"row":{"Content_ID":"TEST-7","Publication_Status":"PLANNED"},"section":"archived"},
+ {"row":{"Content_ID":"CNT-8","Publication_Status":"CANCELLED"},"section":"archived"},
+ {"row":{"Content_ID":"CNT-9","Publication_Status":"PLANNED","Blocking_Issue":"x"},"section":"work"},
+ {"row":{"Content_ID":"CNT-10","Publication_Status":"SCHEDULED"},"section":"work"},
+ {"row":{"Content_ID":"CNT-11","Publication_Status":"IN_TEXT"},"section":"work"}
+]
