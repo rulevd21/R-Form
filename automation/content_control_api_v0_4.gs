@@ -1,4 +1,4 @@
-// R/Form Content Control API v0.6.3
+// R/Form Content Control API v0.6.4
 // Standalone Apps Script web app for Channel Control.
 // Reads CONTENT_QUEUE + DATA_EVENTS, applies allowlisted content actions,
 // saves owner-facing event edits, stores private photo/video assets in Drive,
@@ -7,7 +7,7 @@
 // the separate Telegram Autopost project remains the only publishing transport.
 
 const RFORM_CONTENT_API_V04 = Object.freeze({
-  version: '0.6.3',
+  version: '0.6.4',
   spreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
   queueSheet: 'CONTENT_QUEUE',
   eventsSheet: 'DATA_EVENTS',
@@ -2154,15 +2154,14 @@ function rformContentApiV04TrainingText_(s) {
   // Keep complete exercise groups, including their varying sets and RIR.
   // Never cut a numeric tuple or manufacture an interpretation from Plan_Status.
   const groups=result.split(/;\s+(?=[А-ЯЁA-Z][а-яёa-z])/).filter(Boolean);
-  const selected=[];let chars=0;
-  groups.forEach(function(g){if(selected.length<3 && chars+g.length<=800){selected.push(g);chars+=g.length;}});
-  if(!selected.length) throw new Error('Нет целого краткого фрагмента фактов.');
-  const parts=[s.Date+' · Тренировка '+s.Session_Type,'Факты:\n'+selected.join('; ')];
+  if(!groups.length) throw new Error('Нет полного списка фактов.');
+  const parts=[s.Date+' · Тренировка '+s.Session_Type,
+    groups.map(function(g,i){return (i+1)+'. '+g;}).join('\n\n')];
   if(s.Actual_Duration) parts.push('Продолжительность: '+s.Actual_Duration+' мин.');
-  if(selected.length<groups.length) parts.push('В посте — часть упражнений. Полные итоги сохранены в R/Form.');
   parts.push('#RForm_Training');
   const text=parts.join('\n\n');
-  if(text.length>1200) throw new Error('Факты требуют редакторского сокращения.');
+  // A long report requires editorial preparation; never silently drop exercises.
+  if(text.length>4096) throw new Error('Полный отчёт превышает лимит Telegram; подготовьте карточки.');
   return text;
 }
 

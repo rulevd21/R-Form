@@ -1,4 +1,4 @@
-// R/Form Owner Bot v1.2.0 · P0 Owner Inbox
+// R/Form Owner Bot v1.2.4 · P0 Owner Inbox
 // Standalone Google Apps Script project.
 // Purpose: private Telegram owner interface for OWNER_FINAL_PREVIEW materials.
 // Read/write contract:
@@ -24,7 +24,7 @@
 //   RFORM_OWNER_TELEGRAM_CHAT_ID
 
 const RFORM_OWNER_BOT_V1 = Object.freeze({
-  version: '1.2.3',
+  version: '1.2.4',
   spreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
   actionLogSheet: 'CONTENT_ACTION_LOG',
   pollMinutes: 5,
@@ -1450,6 +1450,8 @@ function rformOwnerBotV1WorkspaceReview_(token,d) {
   rformOwnerBotV1WorkspaceChunk_('Предложенные правки · ещё не сохранены:\n\n'+d.text);
   rformOwnerBotV1SendOwnerText_('Фото: '+d.original_asset_ids.length+' → '+d.asset_ids.length+
     '\nПорядок фото: '+(d.asset_ids.map(function(_,i){return i+1;}).join(', ') || 'без фото')+
+    '\nВид поста: '+(!d.asset_ids.length?'текст':d.asset_ids.length===1?'одно фото':'альбом из '+d.asset_ids.length+' фото')+
+    (d.asset_ids.length?(String(d.text || '').trim().length<=1024?' с подписью':' → отдельное сообщение с текстом')+'. Точный вид — после сохранения в финальном предпросмотре.':'')+
     '\nСохранение сбросит прежнее согласование. В публикацию материал не передаётся.',{
     reply_markup:JSON.stringify({inline_keyboard:[
       [{text:'Сохранить эту версию',callback_data:'ow:save:'+token+':'+d.revision}],
@@ -1557,7 +1559,7 @@ function rformOwnerBotV1WorkspaceMessage_(message) {
       d.dirty=true;rformOwnerBotV1WorkspacePutDraft_(active.token,d);
       // Replacement consumes one message only, so a Telegram album cannot overwrite one slot repeatedly.
       CacheService.getScriptCache().put('ow_active',JSON.stringify({token:active.token,await:'photo'}),21600);
-      rformOwnerBotV1SendOwnerText_('Фото добавлено в правки. Всего: '+d.asset_ids.length+'. Нажмите «Просмотр правок» перед сохранением.');
+      rformOwnerBotV1SendOwnerText_('Фото получено: '+d.asset_ids.length+'. В сохранённой версии: '+d.original_asset_ids.length+' фото. Новое фото пока не сохранено.\nСледующий шаг: «Просмотр правок» → «Сохранить эту версию» → «Финальный предпросмотр».', {reply_markup:JSON.stringify({inline_keyboard:[[{text:'Просмотр правок',callback_data:'ow:review:'+active.token}],[{text:'Фото и порядок',callback_data:'ow:photos:'+active.token}]]})});
       return true;
     }
     if(active.await==='text' && text) {
@@ -1739,7 +1741,7 @@ function rformOwnerBotV1WorkspaceCallback_(callback) {
       if(!result.ok) throw new Error('Сохранение не подтверждено.');
       CacheService.getScriptCache().remove('ow_draft_'+itemToken);
       rformOwnerBotV1RemoveKeyboard_(callback);
-      rformOwnerBotV1SendOwnerText_('Новая версия сохранена. Прежнее согласование сброшено. Публикация не запланирована.');
+      rformOwnerBotV1SendOwnerText_('Версия сохранена: '+d.asset_ids.length+' фото. Прежнее согласование сброшено.\nСледующий шаг: «Финальный предпросмотр» в новой карточке. Он покажет фото и текст в порядке публикации. Публикация не запланирована.');
       rformOwnerBotV1WorkspaceOpen_(rformOwnerBotV1ApiRead_(),itemToken);return;
     }
     if(action==='hold' || action==='return' || action==='preview') {

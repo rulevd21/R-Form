@@ -217,6 +217,11 @@ test('real bot photo receive/reorder/review/save path is offline and deduplicate
   const message={from:{id:42},chat:{id:42,type:'private'},message_id:8,photo:[{file_id:'telegram-file',file_size:4}]};
   x.bot.rformOwnerBotV1WorkspaceMessage_(message);x.bot.rformOwnerBotV1WorkspaceMessage_(message);
   let d=x.bot.rformOwnerBotV1WorkspaceDraft_(x.token);assert.equal(d.asset_ids.length,1);
+  const received=x.messages.find(m=>/Фото получено:/.test(m.payload.text||''));
+  assert.match(received.payload.text,/В сохранённой версии: 0 фото/);
+  assert.match(received.payload.text,/Новое фото пока не сохранено/);
+  assert.match(received.payload.text,/Просмотр правок.*Сохранить эту версию.*Финальный предпросмотр/);
+  assert.ok(JSON.parse(received.payload.reply_markup).inline_keyboard.flat().some(b=>b.callback_data==='ow:review:'+x.token));
   x.bot.rformOwnerBotV1WorkspaceMessage_({...message,message_id:9});
   d=x.bot.rformOwnerBotV1WorkspaceDraft_(x.token);const first=d.asset_ids[0];
   x.callback('ow:up:'+x.token+':1:'+d.revision);
@@ -225,6 +230,24 @@ test('real bot photo receive/reorder/review/save path is offline and deduplicate
   x.callback('ow:save:'+x.token+':'+d.revision);
   assert.equal(x.item().Telegram_Post_Mode,'ALBUM_CAPTION');assert.equal(x.item().AutoPost_Allowed,'NO');
   assert.equal(x.log.rows.filter(r=>r[3]==='OWNER_STAGE_PHOTO').length,2);
+});
+
+test('training report retains every exercise and varying set weights',()=>{
+  const x=harness();
+  const groups=['Жим штанги лёжа — 80×6×4, RIR 4/4/4/3',
+    'Присед — 110×8×3, RIR 4/4/4',
+    'Тяга гантелей — 35×12×3, RIR 4/3/2',
+    'Разведения лёжа — 16×15; 15×15, RIR 3/2',
+    'Разведения в наклоне — 10×15×2, RIR 3/3'];
+  const text=x.api.rformContentApiV04TrainingText_({Date:'09.10.2026',Session_Type:'C',Actual_Duration:65,Main_Result:groups.join('; ')});
+  groups.forEach((group,i)=>assert.ok(text.includes((i+1)+'. '+group)));
+  assert.match(text,/65 мин/);
+  assert.doesNotMatch(text,/часть упражнений/);
+});
+
+test('oversize training report requires preparation instead of losing exercises',()=>{
+  const x=harness();
+  assert.throws(()=>x.api.rformContentApiV04TrainingText_({Main_Result:'Жим '+ 'а'.repeat(4100)}),/превышает лимит/);
 });
 
 test('poll does not starve new previews behind already sent ones',()=>{
