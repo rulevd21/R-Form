@@ -1,0 +1,423 @@
+name: Apps Script production deployment
+
+run-name: >-
+  Apps Script ${{ inputs.operation }} · ${{ inputs.component }} ·
+  ${{ inputs.source_sha }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: Production Apps Script component
+        type: choice
+        required: true
+        options:
+          - detector
+          - content-api
+      operation:
+        description: Inspect is read-only; apply updates source and existing deployment when applicable
+        type: choice
+        required: true
+        default: inspect
+        options:
+          - inspect
+          - apply
+      source_sha:
+        description: Exact 40-character Git commit SHA containing the reviewed candidate
+        required: true
+        type: string
+      expected_runtime_sha256:
+        description: Required for apply. SHA-256 reported by a prior inspect of the current runtime target file
+        required: false
+        type: string
+      expected_deployment_version:
+        description: Content API only. Existing production deployment version that must be updated in place
+        required: false
+        type: string
+      confirm:
+        description: For apply type APPLY <component> <40-char source_sha>. Leave blank for inspect
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apps-script-production-${{ inputs.component }}
+  cancel-in-progress: false
+
+jobs:
+  production:
+    name: ${{ inputs.operation }} ${{ inputs.component }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production-apps-script
+
+    steps:
+      - name: Validate dispatch inputs
+        shell: bash
+        env:
+          COMPONENT: ${{ inputs.component }}
+          OPERATION: ${{ inputs.operation }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          EXPECTED_RUNTIME_SHA256: ${{ inputs.expected_runtime_sha256 }}
+          EXPECTED_DEPLOYMENT_VERSION: ${{ inputs.expected_deployment_version }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::source_sha must be an exact lowercase 40-character Git SHA"
+            exit 1
+          }
+
+          if [[ "$OPERATION" == "apply" ]]; then
+            [[ "$EXPECTED_RUNTIME_SHA256" =~ ^[0-9a-f]{64}$ ]] || {
+              echo "::error::apply requires expected_runtime_sha256 from a prior inspect run"
+              exit 1
+            }
+
+            expected_confirm="APPLY ${COMPONENT} ${SOURCE_SHA}"
+            [[ "$CONFIRM" == "$expected_confirm" ]] || {
+              echo "::error::Confirmation mismatch. Expected: $expected_confirm"
+              exit 1
+            }
+
+            if [[ "$COMPONENT" == "content-api" ]]; then
+              [[ "$EXPECTED_DEPLOYMENT_VERSION" =~ ^[1-9][0-9]*$ ]] || {
+                echo "::error::content-api apply requires expected_deployment_version"
+                exit 1
+              }
+            fi
+          fi
+
+      - name: Checkout exact reviewed source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify checkout identity
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          [[ "$actual" == "$SOURCE_SHA" ]] || {
+            echo "::error::Checked out $actual, expected $SOURCE_SHA"
+            exit 1
+          }
+
+      - name: Resolve component contract
+        id: contract
+        shell: bash
+        env:
+          COMPONENT: ${{ inputs.component }}
+        run: |
+          set -euo pipefail
+          case "$COMPONENT" in
+            detector)
+              echo "source_path=automation/content_event_detector_v0_3.gs" >> "$GITHUB_OUTPUT"
+              echo "anchor=rformContentEventDetectorWriteV03" >> "$GITHUB_OUTPUT"
+              ;;
+            content-api)
+              echo "source_path=automation/content_control_api_v0_4.gs" >> "$GITHUB_OUTPUT"
+              echo "anchor=RFORM_CONTENT_API_V04" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::Unsupported component"
+              exit 1
+              ;;
+          esac
+
+      - name: Validate candidate source
+        shell: bash
+        env:
+          SOURCE_PATH: ${{ steps.contract.outputs.source_path }}
+          ANCHOR: ${{ steps.contract.outputs.anchor }}
+        run: |
+          set -euo pipefail
+          test -f "$SOURCE_PATH"
+          grep -Fq "$ANCHOR" "$SOURCE_PATH"
+          echo "Candidate source path and anchor validated."
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install pinned clasp
+        shell: bash
+        run: npm install --global @google/clasp@3.4.1
+
+      - name: Materialize ephemeral clasp credentials and project config
+        shell: bash
+        env:
+          COMPONENT: ${{ inputs.component }}
+          CLASP_RC_JSON: ${{ secrets.RFORM_CLASP_RC_JSON }}
+          DETECTOR_SCRIPT_ID: ${{ secrets.RFORM_DETECTOR_SCRIPT_ID }}
+          CONTENT_API_SCRIPT_ID: ${{ secrets.RFORM_CONTENT_API_SCRIPT_ID }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          if [[ -z "${CLASP_RC_JSON:-}" ]]; then
+            echo "::error::Missing secret RFORM_CLASP_RC_JSON"
+            exit 1
+          fi
+
+          case "$COMPONENT" in
+            detector) script_id="${DETECTOR_SCRIPT_ID:-}" ;;
+            content-api) script_id="${CONTENT_API_SCRIPT_ID:-}" ;;
+          esac
+
+          if [[ -z "$script_id" ]]; then
+            echo "::error::Missing Apps Script project ID secret for $COMPONENT"
+            exit 1
+          fi
+
+          mkdir -p "$HOME" .rform-apps-script/remote
+          printf '%s' "$CLASP_RC_JSON" > "$HOME/.clasprc.json"
+          chmod 600 "$HOME/.clasprc.json"
+
+          node -e '
+            const fs = require("fs");
+            const p = process.env.HOME + "/.clasprc.json";
+            const v = JSON.parse(fs.readFileSync(p, "utf8"));
+            if (!v || typeof v !== "object") throw new Error("invalid clasp credential JSON");
+          '
+
+          SCRIPT_ID="$script_id" node -e '
+            const fs = require("fs");
+            fs.writeFileSync(
+              ".rform-apps-script/.clasp.json",
+              JSON.stringify({scriptId: process.env.SCRIPT_ID, rootDir: "remote"}, null, 2) + "\n",
+              {mode: 0o600}
+            );
+          '
+
+          unset script_id CLASP_RC_JSON DETECTOR_SCRIPT_ID CONTENT_API_SCRIPT_ID
+
+      - name: Authenticate clasp
+        shell: bash
+        working-directory: .rform-apps-script
+        run: |
+          set -euo pipefail
+          clasp --json show-authorized-user > authorized-user.json
+          node -e '
+            const fs = require("fs");
+            const v = JSON.parse(fs.readFileSync("authorized-user.json", "utf8"));
+            if (v.loggedIn !== true) throw new Error("clasp is not logged in");
+          '
+          rm -f authorized-user.json
+          echo "clasp authentication readback passed."
+
+      - name: Pull current Apps Script HEAD
+        shell: bash
+        working-directory: .rform-apps-script
+        run: |
+          set -euo pipefail
+          rm -rf remote
+          mkdir -p remote
+          clasp pull
+
+      - name: Inspect and guard target file
+        id: source_guard
+        shell: bash
+        env:
+          OPERATION: ${{ inputs.operation }}
+          SOURCE_PATH: ${{ steps.contract.outputs.source_path }}
+          ANCHOR: ${{ steps.contract.outputs.anchor }}
+          EXPECTED_RUNTIME_SHA256: ${{ inputs.expected_runtime_sha256 }}
+        run: |
+          set -euo pipefail
+          node scripts/apps-script/guard.mjs prepare \
+            --root .rform-apps-script/remote \
+            --anchor "$ANCHOR" \
+            --candidate "$SOURCE_PATH" \
+            --operation "$OPERATION" \
+            --expected-runtime "$EXPECTED_RUNTIME_SHA256" \
+            --backup .rform-apps-script/rollback-target \
+            --output "$GITHUB_OUTPUT"
+
+      - name: Read existing deployment inventory
+        if: ${{ inputs.component == 'content-api' }}
+        shell: bash
+        working-directory: .rform-apps-script
+        run: |
+          set -euo pipefail
+          clasp --json list-deployments > deployments-before.json
+          node ../scripts/apps-script/guard.mjs summarize-deployments \
+            --file deployments-before.json
+
+      - name: Select existing production deployment
+        if: ${{ inputs.operation == 'apply' && inputs.component == 'content-api' }}
+        shell: bash
+        working-directory: .rform-apps-script
+        env:
+          EXPECTED_DEPLOYMENT_VERSION: ${{ inputs.expected_deployment_version }}
+        run: |
+          set -euo pipefail
+          node ../scripts/apps-script/guard.mjs select-deployment \
+            --file deployments-before.json \
+            --expected-version "$EXPECTED_DEPLOYMENT_VERSION" \
+            --id-file deployment-id
+          chmod 600 deployment-id
+
+      - name: Create private rollback version for trigger component
+        if: ${{ inputs.operation == 'apply' && inputs.component == 'detector' }}
+        id: detector_rollback
+        shell: bash
+        working-directory: .rform-apps-script
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          clasp --json create-version "R/Form rollback before detector ${SOURCE_SHA}" > rollback-version.json
+          rollback_version="$(node -e 'const v=require("./rollback-version.json"); process.stdout.write(String(v.versionNumber || ""));')"
+          [[ "$rollback_version" =~ ^[1-9][0-9]*$ ]]
+          echo "version=$rollback_version" >> "$GITHUB_OUTPUT"
+          rm -f rollback-version.json
+          echo "Private Apps Script rollback version created: $rollback_version"
+
+      - name: Push guarded source update
+        if: ${{ inputs.operation == 'apply' }}
+        id: push
+        shell: bash
+        working-directory: .rform-apps-script
+        run: |
+          set -euo pipefail
+          clasp push --force
+
+      - name: Pull source readback
+        if: ${{ inputs.operation == 'apply' }}
+        shell: bash
+        working-directory: .rform-apps-script
+        run: |
+          set -euo pipefail
+          rm -rf remote
+          mkdir -p remote
+          clasp pull
+
+      - name: Verify exact source readback
+        if: ${{ inputs.operation == 'apply' }}
+        id: readback
+        shell: bash
+        env:
+          ANCHOR: ${{ steps.contract.outputs.anchor }}
+          SOURCE_SHA256: ${{ steps.source_guard.outputs.source_sha256 }}
+        run: |
+          set -euo pipefail
+          node scripts/apps-script/guard.mjs verify \
+            --root .rform-apps-script/remote \
+            --anchor "$ANCHOR" \
+            --expected-source "$SOURCE_SHA256" \
+            --output "$GITHUB_OUTPUT"
+
+      - name: Redeploy existing Content API deployment in place
+        if: ${{ inputs.operation == 'apply' && inputs.component == 'content-api' }}
+        id: redeploy
+        shell: bash
+        working-directory: .rform-apps-script
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          deployment_id="$(cat deployment-id)"
+          clasp --json create-deployment \
+            --deploymentId "$deployment_id" \
+            --description "R/Form content-api ${SOURCE_SHA}" \
+            > deployment-result.json
+
+          new_version="$(node -e 'const v=require("./deployment-result.json"); process.stdout.write(String(v.versionNumber || ""));')"
+          [[ "$new_version" =~ ^[1-9][0-9]*$ ]]
+          echo "version=$new_version" >> "$GITHUB_OUTPUT"
+          rm -f deployment-result.json
+          echo "Existing deployment updated in place to version $new_version."
+
+      - name: Verify deployment identity/version without exposing deployment ID
+        if: ${{ inputs.operation == 'apply' && inputs.component == 'content-api' }}
+        shell: bash
+        working-directory: .rform-apps-script
+        env:
+          EXPECTED_DEPLOYMENT_VERSION: ${{ inputs.expected_deployment_version }}
+        run: |
+          set -euo pipefail
+          clasp --json list-deployments > deployments-after.json
+          node ../scripts/apps-script/guard.mjs verify-deployment \
+            --file deployments-after.json \
+            --id-file deployment-id \
+            --previous-version "$EXPECTED_DEPLOYMENT_VERSION"
+
+      - name: Automatic rollback if apply failed after source push
+        if: ${{ failure() && inputs.operation == 'apply' && (steps.push.outcome == 'success' || steps.push.outcome == 'failure') }}
+        shell: bash
+        working-directory: .rform-apps-script
+        env:
+          COMPONENT: ${{ inputs.component }}
+          EXPECTED_DEPLOYMENT_VERSION: ${{ inputs.expected_deployment_version }}
+        run: |
+          set +e
+          echo "::warning::Apply failed after source push. Attempting automatic rollback."
+
+          if [[ -f rollback-target && -f target-relative-path ]]; then
+            target="$(cat target-relative-path)"
+            cp rollback-target "remote/$target"
+            clasp push --force
+            rollback_push=$?
+          else
+            rollback_push=1
+          fi
+
+          rollback_deployment=0
+          if [[ "$COMPONENT" == "content-api" && -f deployment-id && "$EXPECTED_DEPLOYMENT_VERSION" =~ ^[1-9][0-9]*$ ]]; then
+            deployment_id="$(cat deployment-id)"
+            clasp --json create-deployment \
+              --versionNumber "$EXPECTED_DEPLOYMENT_VERSION" \
+              --deploymentId "$deployment_id" \
+              --description "R/Form automatic rollback" \
+              > /dev/null
+            rollback_deployment=$?
+          fi
+
+          if [[ "$rollback_push" -eq 0 && "$rollback_deployment" -eq 0 ]]; then
+            echo "::warning::Automatic rollback completed."
+          else
+            echo "::error::Automatic rollback was incomplete. Manual runtime reconciliation is required."
+          fi
+
+      - name: Write safe run summary
+        if: ${{ always() }}
+        shell: bash
+        env:
+          COMPONENT: ${{ inputs.component }}
+          OPERATION: ${{ inputs.operation }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          RUNTIME_BEFORE: ${{ steps.source_guard.outputs.runtime_sha256 }}
+          SOURCE_HASH: ${{ steps.source_guard.outputs.source_sha256 }}
+          READBACK_HASH: ${{ steps.readback.outputs.readback_sha256 }}
+          DETECTOR_ROLLBACK_VERSION: ${{ steps.detector_rollback.outputs.version }}
+          CONTENT_API_NEW_VERSION: ${{ steps.redeploy.outputs.version }}
+        run: |
+          {
+            echo "## R/Form Apps Script production gate"
+            echo
+            echo "- Component: \`$COMPONENT\`"
+            echo "- Operation: \`$OPERATION\`"
+            echo "- Git source SHA: \`$SOURCE_SHA\`"
+            [[ -n "${RUNTIME_BEFORE:-}" ]] && echo "- Runtime source SHA-256 before: \`$RUNTIME_BEFORE\`"
+            [[ -n "${SOURCE_HASH:-}" ]] && echo "- Candidate source SHA-256: \`$SOURCE_HASH\`"
+            [[ -n "${READBACK_HASH:-}" ]] && echo "- Runtime source SHA-256 readback: \`$READBACK_HASH\`"
+            [[ -n "${DETECTOR_ROLLBACK_VERSION:-}" ]] && echo "- Private rollback Apps Script version: \`$DETECTOR_ROLLBACK_VERSION\`"
+            [[ -n "${CONTENT_API_NEW_VERSION:-}" ]] && echo "- Updated Content API deployment version: \`$CONTENT_API_NEW_VERSION\`"
+            echo
+            echo "No Apps Script project ID, deployment ID, OAuth token, deployment URL, spreadsheet ID, or source payload is written to this summary."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove ephemeral credentials and runtime snapshots
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -f "$HOME/.clasprc.json"
+          rm -rf .rform-apps-script
