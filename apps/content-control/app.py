@@ -619,9 +619,10 @@ def _render_content_actions(
         value=False,
         key=f"content_action_confirm::{content_id}",
     )
-    blocked = action in {"APPROVE", "READY_TO_PUBLISH"} and bool(preview_blockers(row))
+    # Preparation guard must not block already approved material transitions.
+    blocked = action in {"APPROVE", "READY_TO_PUBLISH"} and not _value(row, "Telegram_Text", "").strip()
     if blocked:
-        st.info("Сначала подготовьте материал: " + " ".join(preview_blockers(row)))
+        st.info("Текст ещё не подготовлен. Сначала подготовьте материал в Owner Bot.")
     disabled = blocked or not confirmed or (comment_required and not comment.strip())
     if st.button(
         "Применить действие",
