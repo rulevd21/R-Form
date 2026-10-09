@@ -24,7 +24,7 @@
 //   RFORM_OWNER_TELEGRAM_CHAT_ID
 
 const RFORM_OWNER_BOT_V1 = Object.freeze({
-  version: '1.2.2',
+  version: '1.2.3',
   spreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
   actionLogSheet: 'CONTENT_ACTION_LOG',
   pollMinutes: 5,
@@ -1314,14 +1314,41 @@ function rformOwnerBotV1WorkspaceMenu_() {
   });
 }
 
+// Presentation only. The API remains the authority for source freshness and writes.
+function rformOwnerBotV1MaterialTitle_(item) {
+  const text=String(item.Telegram_Text || '').trim();
+  if(text) return text.split('\n')[0].slice(0,180);
+  const session=String(item.Session_ID || '').match(/^S-(\d{4})(\d{2})(\d{2})-([A-Z])$/);
+  const date=session?session[3]+'.'+session[2]+'.'+session[1]:String(item.Date || '');
+  const names={TRAINING_LOG:'Тренировка',METHODOLOGY:'Методология',NUTRITION_CASE:'Разбор питания',WEEKLY_CONTROL:'Недельный разбор'};
+  const name=session?'Тренировка '+session[4]:(names[item.Rubric] || 'Заготовка материала');
+  return name+(date?' · '+date:'');
+}
+
+function rformOwnerBotV1PreviewBlockers_(item) {
+  const issues=[];
+  if(!String(item.Telegram_Text || '').trim()) issues.push('Текст ещё не подготовлен. Нажмите «Подготовить текст» или «Поручение ИИ».');
+  else if(item.Text_Status!=='READY') issues.push('Текст ещё не готов к согласованию. Проверьте и сохраните правки.');
+  if(item.Public_Data_Allowed!=='YES') issues.push('Не подтверждено разрешение на публичные данные.');
+  if(['READY','READY_FOR_SOURCE_DATA'].indexOf(item.Source_Packet_Status)===-1) issues.push('Исходные данные ещё не готовы.');
+  if(item.Blocking_Issue) issues.push('Блокировка: '+String(item.Blocking_Issue).slice(0,600));
+  const mode=String(item.Telegram_Post_Mode || '');
+  if(['TEXT_ONLY','PHOTO_CAPTION','ALBUM_CAPTION'].indexOf(mode)===-1) issues.push('Выберите формат публикации при сохранении текста и фотографий.');
+  else if(mode==='TEXT_ONLY' && item.Telegram_Visual_URL) issues.push('В текстовом формате остались фотографии. Проверьте комплект.');
+  else if(mode!=='TEXT_ONLY' && !item.Telegram_Visual_URL) issues.push('Фотографии ещё не добавлены.');
+  if(rformOwnerBotV1MaterialSection_(item)!=='work' || item.Publication_Status!=='PLANNED') issues.push('Предпросмотр доступен для материала в работе после подготовки.');
+  if(item.AutoPost_Allowed!=='NO' || item.Publish_At || item.Telegram_Message_ID || item.Telegram_Post_URL || item.Posted_At || item.Duplicate_Flag || item.Publish_Error) issues.push('Материал уже передан на публикацию или требует проверки состояния.');
+  return issues;
+}
+
 function rformOwnerBotV1WorkspaceList_(bundle,section,page,query) {
   if(section==='published' && !query && bundle.channel_posts) {rformOwnerBotV1ChannelPublished_(bundle,page);return;}
   const rows=query?(bundle.queue || []):rformOwnerBotV1WorkspaceRows_(bundle.queue,section,query);
   const offset=Math.max(0,Math.min(Number(page)||0,Math.max(0,Math.ceil(rows.length/5)-1)));
   const names={work:'В работе',held:'Отложено',published:'Опубликовано',archived:'Архив'};
   const buttons=rows.slice(offset*5,offset*5+5).map(function(q) {
-    const title=String(q.Telegram_Text || q.Content_ID).split('\n')[0];
-    return [{text:(q.Date+' · '+title).slice(0,60),callback_data:'ow:open:'+rformOwnerBotV1ItemToken_(q)}];
+    const title=rformOwnerBotV1MaterialTitle_(q);
+    return [{text:title.slice(0,60),callback_data:'ow:open:'+rformOwnerBotV1ItemToken_(q)}];
   });
   if(query) CacheService.getScriptCache().put('ow_search',String(query),21600);
   const route=query?'search':section;
@@ -1351,11 +1378,15 @@ function rformOwnerBotV1WorkspacePutDraft_(token,d) {
 function rformOwnerBotV1WorkspaceOpen_(bundle,token) {
   const item=rformOwnerBotV1WorkspaceItem_(bundle,token);
   const meta=(bundle.workspace_meta || {})[item.Content_ID] || {};
-  const title=String(item.Telegram_Text || item.Content_ID).split('\n')[0];
-  const next=rformOwnerBotV1MaterialSection_(item)==='held'?'Верните материал в работу, когда будете готовы.':item.Blocking_Issue?'Устраните блокировку: '+item.Blocking_Issue:'Проверьте текст и фотографии, затем откройте финальный предпросмотр.';
-  const info=[title,item.Date+' · '+item.Rubric,'Статус: '+item.Publication_Status,
+  const title=rformOwnerBotV1MaterialTitle_(item);
+  const blockers=rformOwnerBotV1PreviewBlockers_(item);
+  const next=rformOwnerBotV1WorkspaceArchived_(item)?'Материал в архиве. При необходимости верните его на доработку.':item.Publication_Status==='PUBLISHED'?'Проверьте опубликованную редакцию и ссылку.':rformOwnerBotV1MaterialSection_(item)==='held'?'Верните материал в работу, когда будете готовы.':blockers.length?blockers.join(' '):'Проверьте текст и фотографии, затем откройте финальный предпросмотр.';
+  const states={PLANNED:'В работе',HOLD:'Отложено',PUBLISHED:'Опубликовано',NOT_READY:'Заготовка',SCHEDULED:'Запланировано',PUBLISHING:'Публикуется'};
+  const info=[title,'Статус: '+(rformOwnerBotV1WorkspaceArchived_(item)?'Архив':states[item.Publication_Status] || 'Требует проверки'),
     'Последнее изменение: '+(item.Updated_At || '—'),
     'Сохранённых правок: '+(meta.versions || []).length, 'Следующий шаг: '+next];
+  info.push(String(item.Telegram_Text || '').trim()?'\nТекст поста:\n'+String(item.Telegram_Text).slice(0,650):'\nЗаготовка · текст ещё не подготовлен.');
+  if(!String(item.Telegram_Text || '').trim() && item.Main_Training_Fact) info.push('Исходные факты:\n'+String(item.Main_Training_Fact).slice(0,650));
   if(meta.reminder && meta.reminder.review_at) info.push('Рассмотреть: '+meta.reminder.review_at+' · напоминание '+(meta.reminder.notify?'включено':'выключено'));
   if(item.Publication_Status==='PUBLISHED') {
     CacheService.getScriptCache().remove('ow_active');
@@ -1391,14 +1422,16 @@ function rformOwnerBotV1WorkspaceOpen_(bundle,token) {
   }
   CacheService.getScriptCache().put('ow_active',JSON.stringify({token:token,await:'photo'}),21600);
   const keys=[
-    [{text:'Изменить текст',callback_data:'ow:edit:'+token},{text:'Поручение ИИ',callback_data:'ow:ai:'+token}],
+    [{text:String(item.Telegram_Text || '').trim()?'Изменить текст':'Подготовить текст',callback_data:'ow:edit:'+token},{text:'Поручение ИИ',callback_data:'ow:ai:'+token}],
     [{text:'Фото и порядок',callback_data:'ow:photos:'+token},{text:'Просмотр правок',callback_data:'ow:review:'+token}],
     [{text:'История версий',callback_data:'ow:history:'+token}]
   ];
   if(rformOwnerBotV1MaterialSection_(item)==='held') {
     keys.push([{text:'Вернуть в работу',callback_data:'ow:return:'+token},{text:'Дата рассмотрения',callback_data:'ow:date:'+token}]);
   } else {
-    keys.push([{text:'Финальный предпросмотр',callback_data:'ow:preview:'+token},{text:'Отложить',callback_data:'ow:hold:'+token}]);
+    const row=[{text:'Отложить',callback_data:'ow:hold:'+token}];
+    if(!blockers.length) row.unshift({text:'Финальный предпросмотр',callback_data:'ow:preview:'+token});
+    keys.push(row);
   }
   if(meta.ai && meta.ai.status==='PROPOSED') keys.push([{text:'Посмотреть предложение ИИ',callback_data:'ow:proposal:'+token}]);
   keys.push([{text:'Уже опубликовано',callback_data:'ow:published:'+token},{text:'В архив',callback_data:'ow:archive:'+token}]);
@@ -1601,6 +1634,25 @@ function rformOwnerBotV1WorkspaceCallback_(callback) {
         })})
       });return;
     }
+    if(action==='preview') {
+      const blockers=rformOwnerBotV1PreviewBlockers_(item);
+      if(blockers.length) {
+        rformOwnerBotV1SendOwnerText_('Предпросмотр пока недоступен.\n'+blockers.join('\n'));
+        rformOwnerBotV1WorkspaceOpen_(bundle,itemToken);return;
+      }
+      if(!rformOwnerBotV1ActionsEnabled_()) {
+        rformOwnerBotV1SendOwnerText_('Предпросмотр отключён в настройках. Карточка доступна через /queue.');return;
+      }
+      let draft;
+      try {draft=rformOwnerBotV1WorkspaceDraft_(itemToken);} catch(_) {}
+      if(!draft || draft.source_hash!==rformOwnerBotV1WorkspaceHash_(item)) {
+        rformOwnerBotV1SendOwnerText_('Карточка изменилась или истекла. Откройте актуальный материал и повторите предпросмотр.');
+        rformOwnerBotV1WorkspaceOpen_(bundle,itemToken);return;
+      }
+      if(draft.dirty) {
+        rformOwnerBotV1SendOwnerText_('Предпросмотр сохранённой версии недоступен: есть несохранённые правки. Нажмите «Просмотр правок» и сохраните или отмените их.');return;
+      }
+    }
     if(!rformOwnerBotV1ActionsEnabled_()) throw new Error('Действия отключены.');
     if(action==='restore') {
       const hash=CacheService.getScriptCache().get('ow_restore_'+itemToken);
@@ -1706,7 +1758,9 @@ function rformOwnerBotV1WorkspaceCallback_(callback) {
     }
   } catch(error) {
     console.warn('Owner workspace callback failed.');
-    rformOwnerBotV1SendOwnerText_('Действие не завершено. Проверьте актуальную карточку через /queue; сохранение могло примениться. Если есть правки, сначала просмотрите и сохраните либо отмените их. Повтор автоматически не выполняется.');
+    const preview=String(callback.data || '').split(':')[1]==='preview';
+    rformOwnerBotV1SendOwnerText_(preview?'Не удалось доставить предпросмотр. Откройте актуальную карточку через /queue и проверьте готовность текста, фотографий и исходных данных. Публикация не запускается.':
+      'Действие не завершено. Проверьте актуальную карточку через /queue; сохранение могло примениться. Если есть правки, сначала просмотрите и сохраните либо отмените их. Повтор автоматически не выполняется.');
   } finally {lock.releaseLock();}
 }
 
@@ -1714,7 +1768,7 @@ function rformOwnerBotV1WorkspaceSearch_(bundle,page,query) {
   const queue=bundle.queue || [], known=new Set(queue.map(function(q){return String(q.Telegram_Message_ID || '');}));
   const needle=String(query).toLocaleLowerCase('ru');
   const rows=queue.filter(function(q){return q.Content_ID && rformOwnerBotV1SearchMatch_(q,query);})
-    .map(function(q){return {title:q.Content_ID+' · '+String(q.Telegram_Text || '').split('\n')[0],callback:'ow:open:'+rformOwnerBotV1ItemToken_(q)};});
+    .map(function(q){return {title:rformOwnerBotV1MaterialTitle_(q),callback:'ow:open:'+rformOwnerBotV1ItemToken_(q)};});
   (bundle.channel_posts || []).filter(function(p){return !known.has(String(p.message_id)) &&
     [p.message_id,p.post_url,p.text,new Date(p.date*1000).toLocaleDateString('ru-RU',{timeZone:'Europe/Moscow'})].join(' ').toLocaleLowerCase('ru').indexOf(needle)!==-1;
   }).forEach(function(p){rows.push({title:'Пост '+p.message_id+' · '+String(p.text || 'Медиа').split('\n')[0],callback:'ow:post:'+p.message_id});});

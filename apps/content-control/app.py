@@ -14,6 +14,7 @@ import streamlit as st
 
 from rform_content.lifecycle import (
     material_section,
+    preview_blockers,
     ACTIVE_PUBLICATION_STATES,
     OPERATIONAL_PRIORITY,
     TERMINAL_PUBLICATION_STATES,
@@ -437,7 +438,7 @@ def _source_label(source: str) -> str:
 
 
 def render_header(source: str, capabilities: tuple[str, ...]) -> None:
-    badge = "КОНТЕНТ-КОНТРОЛЬ · v0.5.9"
+    badge = "КОНТЕНТ-КОНТРОЛЬ · v0.5.10"
     st.markdown('<div class="rf-kicker">R/Form · Контент-операции</div>', unsafe_allow_html=True)
     st.markdown('<div class="rf-title">Управление контентом</div>', unsafe_allow_html=True)
     st.markdown(
@@ -618,7 +619,10 @@ def _render_content_actions(
         value=False,
         key=f"content_action_confirm::{content_id}",
     )
-    disabled = not confirmed or (comment_required and not comment.strip())
+    blocked = action in {"APPROVE", "READY_TO_PUBLISH"} and bool(preview_blockers(row))
+    if blocked:
+        st.info("Сначала подготовьте материал: " + " ".join(preview_blockers(row)))
+    disabled = blocked or not confirmed or (comment_required and not comment.strip())
     if st.button(
         "Применить действие",
         type="primary",
@@ -753,8 +757,9 @@ def render_queue(bundle, app_config: dict[str, Any], api_secrets: dict[str, Any]
                    "published": "Проверьте фактически опубликованную редакцию и ссылку.",
                    "archived": "При необходимости верните материал на доработку."}.get(section_key,
                    "Проверьте текст и фотографии в Owner Bot, затем откройте финальный предпросмотр.")
-    if section_key == "work" and _value(row, "Blocking_Issue", ""):
-        next_action = "Устраните блокировку: " + _value(row, "Blocking_Issue", "")
+    blockers = preview_blockers(row)
+    if section_key == "work" and blockers:
+        next_action = " ".join(blockers)
     st.info("Следующий шаг: " + next_action)
 
     tab_content, tab_readiness, tab_links = st.tabs(["Материал", "Готовность", "Ссылки"])
@@ -763,8 +768,18 @@ def render_queue(bundle, app_config: dict[str, Any], api_secrets: dict[str, Any]
         st.write(_value(row, "Decision"))
         st.markdown("#### Направление")
         st.write(_value(row, "Editorial_Direction"))
-        st.markdown("#### Предпросмотр Telegram")
-        st.write(_value(row, "Telegram_Text"))
+        text = _value(row, "Telegram_Text", "").strip()
+        facts = _value(row, "Main_Training_Fact", "").strip()
+        if facts:
+            st.markdown("#### Исходные факты")
+            st.write(facts)
+        if not text:
+            st.info("Заготовка · текст ещё не подготовлен. Финальный предпросмотр появится после подготовки текста и комплекта фотографий.")
+        else:
+            st.markdown("#### Текст материала" if blockers and section_key == "work" else "#### Предпросмотр Telegram")
+            st.write(text)
+            if blockers and section_key == "work":
+                st.caption("Финальный предпросмотр пока недоступен: " + " ".join(blockers))
     with tab_readiness:
         issues = _value(row, "Readiness_Issues", "")
         if _value(row, "Lifecycle_State", "") in TERMINAL_PUBLICATION_STATES:
@@ -968,7 +983,7 @@ with st.sidebar:
         label_visibility="collapsed",
     )
     st.markdown("---")
-    st.caption("R/Form · Управление контентом v0.5.9")
+    st.caption("R/Form · Управление контентом v0.5.10")
     st.caption("Источник истины остаётся в Google Таблицах.")
 
 if page == "Сегодня":
