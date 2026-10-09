@@ -160,3 +160,35 @@ def material_section(row: Mapping[str, Any]) -> str:
     if normalize(row.get("Publication_Status")) == "HOLD" or _contains_any(row.get("Pipeline_Status"), ("HOLD", "ПАУЗА")):
         return "held"
     return "work"
+
+
+def preview_blockers(row: Mapping[str, Any]) -> list[str]:
+    """Explain preparation blockers without changing or approving the material."""
+    issues = []
+    if not normalize(row.get("Telegram_Text")):
+        issues.append("Текст ещё не подготовлен. Подготовьте текст в Owner Bot или задайте поручение ИИ.")
+    elif normalize(row.get("Text_Status")) != "READY":
+        issues.append("Текст ещё не готов к согласованию. Проверьте и сохраните правки.")
+    if normalize(row.get("Public_Data_Allowed")) != "YES":
+        issues.append("Не подтверждено разрешение на публичные данные.")
+    if normalize(row.get("Source_Packet_Status")) not in {"READY", "READY_FOR_SOURCE_DATA"}:
+        issues.append("Исходные данные ещё не готовы.")
+    if normalize(row.get("Blocking_Issue")):
+        issues.append("Блокировка: " + str(row["Blocking_Issue"]))
+    mode = normalize(row.get("Telegram_Post_Mode"))
+    visual = normalize(row.get("Telegram_Visual_URL"))
+    if mode not in {"TEXT_ONLY", "PHOTO_CAPTION", "ALBUM_CAPTION"}:
+        issues.append("Выберите формат публикации при сохранении текста и фотографий.")
+    elif mode == "TEXT_ONLY" and visual:
+        issues.append("В текстовом формате остались фотографии. Проверьте комплект.")
+    elif mode != "TEXT_ONLY" and not visual:
+        issues.append("Фотографии ещё не добавлены.")
+    if material_section(row) != "work" or normalize(row.get("Publication_Status")) != "PLANNED":
+        issues.append("Предпросмотр доступен для материала в работе после подготовки.")
+    if normalize(row.get("AutoPost_Allowed")) != "NO" or any(
+        normalize(row.get(field)) for field in (
+            "Publish_At", "Telegram_Message_ID", "Telegram_Post_URL", "Posted_At", "Duplicate_Flag", "Publish_Error"
+        )
+    ):
+        issues.append("Материал уже передан на публикацию или требует проверки состояния.")
+    return issues
