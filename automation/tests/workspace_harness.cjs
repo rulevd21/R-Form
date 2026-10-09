@@ -105,7 +105,7 @@ function harness(){
   const callback=data=>bot.rformOwnerBotV1WorkspaceCallback_({id:'c'+(++seq),from:{id:42},message:{chat:{id:42,type:'private'},message_id:1},data});
   const token=bot.rformOwnerBotV1ItemToken_(item());
   return{api,bot,queue,log,sessions,fields,trainingFields,item,set,request,call,props,cache,messages,files,folders,
-    addSession,callback,token,root:folders.get(cfg.assetsRootFolderId),blob};
+    addSession,callback,token,Sheet,sheets,spreadsheet,root:folders.get(cfg.assetsRootFolderId),blob};
 }
 
 
