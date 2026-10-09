@@ -1,0 +1,106 @@
+name: Runtime Manifest Governance
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'RFORM_RUNTIME_MANIFEST.json'
+      - 'docs/governance/**'
+      - '.github/workflows/runtime-manifest-governance.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'RFORM_RUNTIME_MANIFEST.json'
+      - 'docs/governance/**'
+      - '.github/workflows/runtime-manifest-governance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-runtime-manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch production ref
+        run: git fetch origin production:refs/remotes/origin/production
+
+      - name: Validate manifest and production pointer
+        shell: python
+        run: |
+          import json
+          import subprocess
+          from pathlib import Path
+
+          manifest_path = Path('RFORM_RUNTIME_MANIFEST.json')
+          if not manifest_path.exists():
+              raise SystemExit('RFORM_RUNTIME_MANIFEST.json is required')
+
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+
+          required_top = {
+              'manifest_version',
+              'generated_at',
+              'repository',
+              'governance_status',
+              'production_ref',
+              'components',
+              'promotion_rules',
+          }
+          missing = sorted(required_top - set(manifest))
+          if missing:
+              raise SystemExit(f'Missing manifest fields: {missing}')
+
+          if manifest['repository'] != 'rulevd21/R-Form':
+              raise SystemExit('Unexpected repository value')
+
+          prod = manifest['production_ref']
+          if prod.get('branch') != 'production':
+              raise SystemExit('production_ref.branch must be production')
+
+          declared = prod.get('verified_source_commit', '').strip()
+          if len(declared) != 40:
+              raise SystemExit('verified_source_commit must be a full 40-char SHA')
+
+          actual = subprocess.check_output(
+              ['git', 'rev-parse', 'origin/production'], text=True
+          ).strip()
+          if declared != actual:
+              raise SystemExit(
+                  f'Production ref drift: manifest={declared}, origin/production={actual}'
+              )
+
+          allowed_statuses = {
+              'VERIFIED_PRODUCTION',
+              'VERIFIED_PRODUCTION_WITH_OLD_EVIDENCE',
+              'RECONCILIATION_REQUIRED',
+              'ACCEPTANCE_PENDING',
+              'MERGED_NOT_PRODUCTION_VERIFIED',
+              'CANDIDATE',
+              'SUPERSEDED',
+              'ARCHIVED_EXPERIMENT',
+          }
+
+          names = []
+          for component in manifest['components']:
+              name = component.get('component')
+              status = component.get('status')
+              if not name:
+                  raise SystemExit('Every component requires component name')
+              if status not in allowed_statuses:
+                  raise SystemExit(f'Invalid status for {name}: {status}')
+              names.append(name)
+
+          duplicates = sorted({name for name in names if names.count(name) > 1})
+          if duplicates:
+              raise SystemExit(f'Duplicate component entries: {duplicates}')
+
+          verified = [
+              c['component'] for c in manifest['components']
+              if c['status'] == 'VERIFIED_PRODUCTION'
+          ]
+          print(f'Manifest OK. production={actual}. Verified components={verified}')
