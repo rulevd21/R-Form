@@ -19,7 +19,7 @@ It is intentionally manual (`workflow_dispatch`) and never runs on push, pull re
 | `detector` | `automation/content_event_detector_v0_3.gs` | `rformContentEventDetectorWriteV03` | replace guarded source only; existing triggers are not created, deleted, or edited |
 | `content-api` | `automation/content_control_api_v0_4.gs` | `RFORM_CONTENT_API_V04` | replace guarded source, then update the existing deployment in place |
 
-The workflow checks out an exact 40-character Git commit SHA. It never deploys a mutable branch name.
+The workflow itself must be dispatched from `main`. Deployment tooling is checked out from the exact workflow-run SHA on `main`; the reviewed candidate is then materialized separately from the exact 40-character `source_sha`. Historical candidate commits therefore cannot replace or remove the deployment guard/tooling.
 
 ## Security boundary
 
@@ -32,23 +32,43 @@ The public repository must never contain:
 - private spreadsheet IDs added solely for deployment configuration;
 - runtime source snapshots pulled from Google.
 
-Required secrets:
+Required GitHub Environment secrets:
 
 - `RFORM_CLASP_RC_JSON`
 - `RFORM_DETECTOR_SCRIPT_ID`
 - `RFORM_CONTENT_API_SCRIPT_ID`
 
-Store them as GitHub Environment secrets in `production-apps-script` when possible. Repository secrets are compatible with the workflow but provide a weaker separation boundary.
+Store them in the `production-apps-script` environment. `RFORM_CLASP_RC_JSON` is the authenticated clasp credential JSON normally stored at `~/.clasprc.json`. The workflow writes it only to the ephemeral runner with mode `0600`, uses it for the job, and removes it in an `always()` cleanup step.
 
-`RFORM_CLASP_RC_JSON` is the authenticated clasp credential JSON normally stored at `~/.clasprc.json`. The workflow writes it only to the ephemeral runner with mode `0600`, uses it for the job, and removes it in an `always()` cleanup step.
+The workflow itself has only `contents: read` GitHub permission. Project IDs, deployment IDs, OAuth credentials and pulled runtime source are not written to the public repository or workflow summary.
 
-Recommended GitHub Environment protection:
+## Minimal one-time bootstrap
 
-1. environment name: `production-apps-script`;
-2. required reviewer: project owner;
-3. prevent unreviewed production deployment where the account supports environment approvals.
+Preferred bootstrap path is GitHub Codespaces so no local developer setup is required.
 
-The workflow itself has only `contents: read` GitHub permission.
+1. Open a Codespace for `rulevd21/R-Form` on `main`.
+2. In its terminal run exactly:
+
+   `bash scripts/apps-script/bootstrap-codespace.sh`
+
+3. Complete only the interactive authorization prompts shown by the script:
+   - Google approval for clasp;
+   - GitHub owner approval only if the Codespace token cannot administer environment secrets.
+
+The bootstrap script then performs the remaining work automatically:
+
+1. verifies the repository and required tooling;
+2. authenticates `@google/clasp@3.4.1`;
+3. lists accessible Apps Script projects without printing their IDs;
+4. identifies Detector and Content API by pulling candidate projects and verifying unique runtime source anchors;
+5. creates/uses the `production-apps-script` GitHub Environment;
+6. installs the three protected Environment secrets without printing their values;
+7. reads the exact component `source_ref` values from `RFORM_RUNTIME_MANIFEST.json`;
+8. dispatches one read-only `inspect` for Detector and one for Content API;
+9. waits for both runs and returns `READY` only if both succeed;
+10. removes temporary discovery files and, when it created the clasp login itself, removes the local Codespace clasp credential after bootstrap.
+
+If `clasp list-scripts` reports that the Google Apps Script API is disabled, enable it once in Apps Script user settings and rerun the same bootstrap command. No project IDs or OAuth JSON should ever be pasted into chat, issues, PRs, Actions inputs or repository files.
 
 ## Two-stage release protocol
 
@@ -63,12 +83,15 @@ Run the workflow with:
 
 The workflow:
 
-1. authenticates clasp;
-2. pulls current Apps Script HEAD;
-3. finds the runtime target file by a component-specific anchor;
-4. requires exactly one anchor match;
-5. reports only SHA-256 hashes and safe version metadata;
-6. does not push or deploy anything.
+1. verifies it was dispatched from `main`;
+2. checks out the exact trusted workflow/tooling SHA;
+3. materializes only the requested candidate source file from the exact historical Git SHA;
+4. authenticates clasp;
+5. pulls current Apps Script HEAD;
+6. finds the runtime target file by a component-specific anchor;
+7. requires exactly one anchor match;
+8. reports only SHA-256 hashes and safe version metadata;
+9. does not push or deploy anything.
 
 Record `Runtime source SHA-256 before` from the workflow summary.
 
@@ -94,7 +117,7 @@ Instead it:
 1. pulls the complete current runtime project;
 2. locates exactly one `.gs`/`.js` file containing the required anchor;
 3. hashes every pulled file;
-4. copies the reviewed Git candidate over only that located file;
+4. copies the separately materialized reviewed Git candidate over only that located file;
 5. hashes the complete local runtime tree again;
 6. requires exactly one file to have changed;
 7. pushes the complete pulled project back;
@@ -105,13 +128,11 @@ Therefore unrelated Apps Script files and `appsscript.json` are preserved.
 
 ## Existing deployment only
 
-For `content-api`, a new web-app deployment is forbidden.
+For `content-api`, a new web-app deployment identity is forbidden.
 
 Before source push, the workflow obtains the deployment inventory and requires exactly one existing deployment at `expected_deployment_version`. Its deployment ID is kept only in an ephemeral `0600` file and is not printed.
 
-After source readback succeeds, clasp updates that same deployment ID. The workflow then re-reads deployment inventory and requires the same deployment to have advanced to a later version.
-
-This preserves the existing deployment identity/URL.
+After source readback succeeds, clasp updates that same deployment ID. The workflow then re-reads deployment inventory and requires the same deployment to have advanced to a later version. This preserves the existing deployment identity/URL.
 
 ## Rollback
 
@@ -151,16 +172,12 @@ Accordingly:
 - Content API additionally proves update of the existing deployment identity;
 - promotion to `VERIFIED_PRODUCTION` still requires the component-specific runtime acceptance defined by `docs/governance/VERSION_GOVERNANCE.md`.
 
-## One-time credential bootstrap
-
-Clasp 3.4.1 uses Google OAuth credentials. Authenticate clasp once with the production Google account in a trusted local or interactive environment, then store the resulting `~/.clasprc.json` content as the `RFORM_CLASP_RC_JSON` protected GitHub secret.
-
-Do not paste that JSON into an issue, PR, Actions input, chat message, repository file, or workflow log.
-
-The Google Apps Script API must be enabled for the account/project used by clasp.
-
 ## Pinned tooling
 
-The workflow pins `@google/clasp@3.4.1`.
+Production pins:
 
-Do not float to `latest` in production. Review clasp release/security notes, then update the pin through a normal PR.
+- `@google/clasp@3.4.1`;
+- `actions/checkout` to an immutable commit SHA corresponding to v4;
+- `actions/setup-node` to an immutable commit SHA corresponding to v4.
+
+Do not float production tooling to `latest`. Review release/security notes and update pins through a normal PR.
