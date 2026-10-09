@@ -1,11 +1,11 @@
 {
-  "manifest_version": "1.0.1",
+  "manifest_version": "1.0.2",
   "generated_at": "2026-10-09",
   "repository": "rulevd21/R-Form",
   "governance_status": "ACTIVE",
   "production_ref": {
     "branch": "production",
-    "verified_source_commit": "5550d3c423294fd89c980d08ce019808b735c434",
+    "verified_source_commit": "122c26290b7ddd3a096216cf47248aedd609d388",
     "policy": "Move production only after runtime acceptance. Standalone components may declare an exact verified source_ref outside the production branch."
   },
   "canonical_business_source": {
@@ -17,12 +17,12 @@
   "components": [
     {"component":"training","runtime":"Google Apps Script","production_version":"CORE 2.1.9 / UI 2.2.2","deployment_evidence":"PR #23","source_ref":"production","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-09"},
     {"component":"content_control_ui","runtime":"Streamlit","production_version":"0.5.10","deployment_evidence":"PR #22","source_ref":"production","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-09"},
-    {"component":"content_control_api","runtime":"Google Apps Script","production_version":"0.7.0","deployment_evidence":"PR #25 + runtime acceptance 2026-10-09","source_ref":"5550d3c423294fd89c980d08ce019808b735c434","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-09","notes":"Preflight and private self-check passed; publication remained disabled."},
+    {"component":"content_control_api","runtime":"Google Apps Script","production_version":"0.6.4","deployment_evidence":"PR #24 runtime acceptance","source_ref":"122c26290b7ddd3a096216cf47248aedd609d388","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-09","notes":"0.7.0 from PR #25 remains a reviewed candidate until guarded deployment and runtime acceptance complete."},
     {"component":"owner_bot","runtime":"Google Apps Script + Telegram Bot API","production_version":"1.2.4","deployment_evidence":"PR #24","source_ref":"production","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-09"},
-    {"component":"telegram_autopost","runtime":"Google Apps Script + Telegram Bot API","production_version":"0.3.2","deployment_evidence":"PR #6 production acceptance comment","source_ref":"historical release source","status":"VERIFIED_PRODUCTION_WITH_OLD_EVIDENCE","last_verified":"2026-08-25"},
-    {"component":"content_event_detector","runtime":"Google Apps Script trigger","production_version":"0.3 + observability 0.1","deployment_evidence":"PR #13 + runtime reconciliation 2026-10-09","source_ref":"1b0474f4fa2616af5c6353650246476b67981774","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-09","notes":"Single scheduled trigger verified; scheduled and manual receipts passed; repeated manual run was NO_OP."},
+    {"component":"telegram_autopost","runtime":"Google Apps Script","production_version":"0.3.2","deployment_evidence":"PR #6 production acceptance comment","source_ref":"historical release source","status":"VERIFIED_PRODUCTION_WITH_OLD_EVIDENCE","last_verified":"2026-08-25"},
+    {"component":"content_event_detector","runtime":"Google Apps Script trigger","production_version":"0.3 runtime / observability 0.1 candidate","deployment_evidence":"live runtime reconciliation 2026-10-09 + PR #13 candidate","source_ref":"1b0474f4fa2616af5c6353650246476b67981774","status":"RECONCILIATION_REQUIRED","last_verified":null,"notes":"Live project and one-minute TickV03 trigger were observed healthy, but PR #13 receipts are absent and live-only TickV03 logic is not represented in the repository candidate. Whole-file replacement is blocked until the live delta is captured and preserved."},
     {"component":"rform_operating_system","runtime":"ChatGPT project skill/orchestrator","production_version":"1.1.5 candidate","deployment_evidence":"PR #8","source_ref":"agent/rform-skill-content-v1.1.3","status":"ACCEPTANCE_PENDING","last_verified":null},
-    {"component":"automatic_training_cards","runtime":"Content API / Owner Bot content pipeline","production_version":"0.7.0","deployment_evidence":"PR #25 + private runtime self-check 2026-10-09","source_ref":"5550d3c423294fd89c980d08ce019808b735c434","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-09","notes":"Automatic cards enabled; publication disabled; private self-check passed and queue remained unchanged."}
+    {"component":"automatic_training_cards","runtime":"Content API / Owner Bot content pipeline","production_version":"0.7.0 candidate","deployment_evidence":"PR #25 source + CI + live-data preflight","source_ref":"5550d3c423294fd89c980d08ce019808b735c434","status":"MERGED_NOT_PRODUCTION_VERIFIED","last_verified":null,"notes":"Source/CI/live-data preflight passed. Production deployment, enablement and private runtime self-check remain pending. Publication must remain disabled."}
   ],
   "promotion_rules": [
     "Merged is not deployed.",
@@ -33,6 +33,8 @@
     "One component has one active production version."
   ],
   "known_governance_debt": [
+    "Capture and reconcile the live-only Detector TickV03 delta before applying PR #12/#13 observability changes.",
+    "Deploy and runtime-verify Content API / automatic training cards 0.7.0 before promotion.",
     "Complete R/Form Operating System acceptance before declaring it the canonical command router.",
     "Re-read Telegram Autopost runtime on the next publisher-affecting release."
   ]
