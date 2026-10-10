@@ -1,11 +1,11 @@
 {
-  "manifest_version": "1.0.3",
+  "manifest_version": "1.0.4",
   "generated_at": "2026-10-10",
   "repository": "rulevd21/R-Form",
   "governance_status": "ACTIVE",
   "production_ref": {
     "branch": "production",
-    "verified_source_commit": "122c26290b7ddd3a096216cf47248aedd609d388",
+    "verified_source_commit": "5550d3c423294fd89c980d08ce019808b735c434",
     "policy": "Move production only after runtime acceptance. Standalone components may declare an exact verified source_ref outside the production branch."
   },
   "canonical_business_source": {
@@ -17,12 +17,12 @@
   "components": [
     {"component":"training","runtime":"Google Apps Script","production_version":"CORE 2.1.9 / UI 2.2.2","deployment_evidence":"PR #23","source_ref":"production","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-09"},
     {"component":"content_control_ui","runtime":"Streamlit","production_version":"0.5.10","deployment_evidence":"PR #22","source_ref":"production","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-09"},
-    {"component":"content_control_api","runtime":"Google Apps Script","production_version":"0.7.0","deployment_evidence":"live runtime readback 2026-10-10 (source == PR #25; existing deployment advanced to version 19)","source_ref":"5550d3c423294fd89c980d08ce019808b735c434","status":"ACCEPTANCE_PENDING","last_verified":"2026-10-10","notes":"Runtime classification: DEPLOYED_NOT_VERIFIED. Live source is byte-identical to PR #25 0.7.0 and the existing web-app deployment is at version 19. Preflight/enablement/self-check could not be executed from the available interface; acceptance remains pending. Publication stays disabled."},
+    {"component":"content_control_api","runtime":"Google Apps Script","production_version":"0.7.0","deployment_evidence":"PR #25 runtime acceptance 2026-10-09 + authenticated source/deployment readback 2026-10-10","source_ref":"5550d3c423294fd89c980d08ce019808b735c434","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-10","notes":"PR #25 acceptance passed preflight, training-card enablement and private self-check with publication disabled. 2026-10-10 clasp readback proved the live source remains byte-identical to the accepted PR #25 source and the existing production web-app deployment is version 19."},
     {"component":"owner_bot","runtime":"Google Apps Script + Telegram Bot API","production_version":"1.2.4","deployment_evidence":"PR #24","source_ref":"production","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-09"},
     {"component":"telegram_autopost","runtime":"Google Apps Script","production_version":"0.3.2","deployment_evidence":"PR #6 production acceptance comment","source_ref":"historical release source","status":"VERIFIED_PRODUCTION_WITH_OLD_EVIDENCE","last_verified":"2026-08-25"},
-    {"component":"content_event_detector","runtime":"Google Apps Script trigger","production_version":"0.3 runtime / observability 0.1","deployment_evidence":"live runtime readback 2026-10-10 (source == PR #13 candidate)","source_ref":"1b0474f4fa2616af5c6353650246476b67981774","status":"ACCEPTANCE_PENDING","last_verified":"2026-10-10","notes":"Runtime classification: DEPLOYED_NOT_VERIFIED. Live source is byte-identical to the reviewed PR #13 candidate and contains RFORM_DETECTOR_RUN plus observability_version 0.1. rformContentEventDetectorTickV03 exists in no accessible project or Git ref, so the earlier TickV03 premise is stale. Trigger inventory/cadence is not observable from the available interface."},
+    {"component":"content_event_detector","runtime":"Google Apps Script trigger","production_version":"0.3 + observability 0.1","deployment_evidence":"PR #13 runtime acceptance 2026-10-09 + authenticated source readback 2026-10-10","source_ref":"1b0474f4fa2616af5c6353650246476b67981774","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-10","notes":"PR #13 acceptance verified one 6-hour rformContentEventDetectorWriteV03 trigger, scheduled START/FINISH receipts and controlled NO_OP behavior. 2026-10-10 clasp readback proved the live source remains byte-identical to PR #13. The later TickV03 browser premise is superseded by authenticated clasp evidence."},
     {"component":"rform_operating_system","runtime":"ChatGPT project skill/orchestrator","production_version":"1.1.5 candidate","deployment_evidence":"PR #8","source_ref":"agent/rform-skill-content-v1.1.3","status":"ACCEPTANCE_PENDING","last_verified":null},
-    {"component":"automatic_training_cards","runtime":"Content API / Owner Bot content pipeline","production_version":"0.7.0","deployment_evidence":"live runtime readback 2026-10-10 (source == PR #25; deployment version 19)","source_ref":"5550d3c423294fd89c980d08ce019808b735c434","status":"ACCEPTANCE_PENDING","last_verified":"2026-10-10","notes":"Runtime classification: DEPLOYED_NOT_VERIFIED. 0.7.0 source and deployment are live, but enablement and the private runtime self-check could not be executed. Publication must remain disabled."}
+    {"component":"automatic_training_cards","runtime":"Content API / Owner Bot content pipeline","production_version":"0.7.0","deployment_evidence":"PR #25 runtime acceptance 2026-10-09 + authenticated source/deployment readback 2026-10-10","source_ref":"5550d3c423294fd89c980d08ce019808b735c434","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-10","notes":"PR #25 acceptance enabled automatic cards with baseline preserved and publication disabled; private self-check passed for S-20261009-C at 14 sets / 5 exercises / bench 1920 / total 8610 with queue_changed=false. 2026-10-10 clasp readback proves the accepted 0.7.0 source remains live."}
   ],
   "promotion_rules": [
     "Merged is not deployed.",
@@ -33,9 +33,6 @@
     "One component has one active production version."
   ],
   "known_governance_debt": [
-    "Resolve the stale TickV03 premise: live Detector equals PR #13 and rformContentEventDetectorTickV03 exists in no project or ref; confirm real trigger inventory when an execution path is available.",
-    "Run Content API / automatic training cards 0.7.0 runtime acceptance (preflight, enablement, self-check) when an execution path is available.",
-    "Align scripts/apps-script/guard.mjs locateAnchor with the anchor-definition rule so guarded content-api writes are possible (anchor occurrence is currently non-unique).",
     "Complete R/Form Operating System acceptance before declaring it the canonical command router.",
     "Re-read Telegram Autopost runtime on the next publisher-affecting release."
   ]
