@@ -19,6 +19,9 @@ Use it for operational facts and state. Current production objects include:
 
 `CONTENT_QUEUE` is the canonical editorial / approval / publication state machine.
 `DATA_EVENTS` is source-event routing evidence, not a second publication queue.
+
+Operational diary facts follow one lifecycle: `CAPTURE → CLOSURE → DATA_EVENTS`. Capture remains in the domain-owned canonical tables. Do not create or infer a `DATA_EVENTS` row from an open/incomplete day. Day-scoped event eligibility comes only after the accepted `DAY_CLOSURE` gate; training additionally requires its session closed; comparable measurements inherit the accepted day closure. Decisions keep their existing ACTIVE/effective-window acceptance. The backend detector performs the deterministic event upsert; chat workflows must not create a parallel event writer.
+
 Backup, sandbox, migration and perf copies of MASTER_DATA are restore/test history only unless an explicit owner decision promotes one.
 
 ### Operating rules

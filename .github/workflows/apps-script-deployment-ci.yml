@@ -7,30 +7,36 @@ on:
       - '.github/workflows/apps-script-production.yml'
       - '.github/workflows/apps-script-deployment-ci.yml'
       - '.clinerules/**'
+      - 'automation/content_event_detector_v0_3.gs'
       - 'automation/owner_bot_v1.gs'
       - 'automation/owner_bot_cockpit_v1_3.gs'
       - 'scripts/apps-script/**'
       - 'scripts/cline/**'
       - 'scripts/release/apply-owner-bot-cockpit-v1-3.mjs'
       - 'tests/apps-script-deployment-guard.test.mjs'
+      - 'tests/capture-closure-events-v1.test.mjs'
       - 'tests/owner-bot-cockpit-v1-3.test.mjs'
       - 'docs/governance/APPS_SCRIPT_GITHUB_DEPLOYMENT.md'
       - 'docs/governance/CLINE_CLOUD_ONBOARDING.md'
+      - 'docs/operating-architecture/CAPTURE_CLOSURE_EVENTS_V1.md'
   push:
     branches: [main]
     paths:
       - '.github/workflows/apps-script-production.yml'
       - '.github/workflows/apps-script-deployment-ci.yml'
       - '.clinerules/**'
+      - 'automation/content_event_detector_v0_3.gs'
       - 'automation/owner_bot_v1.gs'
       - 'automation/owner_bot_cockpit_v1_3.gs'
       - 'scripts/apps-script/**'
       - 'scripts/cline/**'
       - 'scripts/release/apply-owner-bot-cockpit-v1-3.mjs'
       - 'tests/apps-script-deployment-guard.test.mjs'
+      - 'tests/capture-closure-events-v1.test.mjs'
       - 'tests/owner-bot-cockpit-v1-3.test.mjs'
       - 'docs/governance/APPS_SCRIPT_GITHUB_DEPLOYMENT.md'
       - 'docs/governance/CLINE_CLOUD_ONBOARDING.md'
+      - 'docs/operating-architecture/CAPTURE_CLOSURE_EVENTS_V1.md'
 
 permissions:
   contents: read
@@ -69,11 +75,19 @@ jobs:
       - name: Syntax check Owner Bot direct-read rollout shell
         run: bash -n scripts/apps-script/owner-bot-cockpit-v1-3-direct-read-runtime.sh
 
+      - name: Syntax check Capture Closure Events rollout shell
+        run: bash -n scripts/apps-script/capture-closure-events-v1-runtime.sh
+
       - name: Validate Cline production workflow anchors
         run: |
           grep -Fq 'rformContentEventDetectorTickV03' .clinerules/workflows/rform-one-shot-onboarding.md
           grep -Fq '5550d3c423294fd89c980d08ce019808b735c434' .clinerules/workflows/rform-one-shot-onboarding.md
           grep -Fq 'READY: R/Form Cline Cloud runtime session prepared.' scripts/cline/rform-cloud-onboard.sh
+
+      - name: Validate Capture Closure Events candidate
+        run: |
+          node --check < automation/content_event_detector_v0_3.gs
+          node --test tests/capture-closure-events-v1.test.mjs
 
       - name: Validate Owner Bot Cockpit candidate
         run: |
