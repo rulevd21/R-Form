@@ -13,6 +13,7 @@
 //   RFORM_CONTENT_API_URL
 //   RFORM_CONTENT_API_SECRET
 //   RFORM_OWNER_BOT_WEBAPP_URL   (after deploying this project as a Web App)
+//   RFORM_TG_CHAT_ID            (numeric channel id of the R/Form Telegram channel)
 //
 // Created by rformOwnerBotV1Install():
 //   RFORM_OWNER_BOT_WEBHOOK_SECRET
@@ -49,6 +50,7 @@ const RFORM_OWNER_BOT_V1 = Object.freeze({
     actionsEnabled: 'RFORM_OWNER_BOT_ACTIONS_ENABLED',
     ownerUserId: 'RFORM_OWNER_TELEGRAM_USER_ID',
     ownerChatId: 'RFORM_OWNER_TELEGRAM_CHAT_ID',
+    channelChatId: 'RFORM_TG_CHAT_ID',
     pairCodeHash: 'RFORM_OWNER_PAIR_CODE_HASH',
     pairCodeExpiresAt: 'RFORM_OWNER_PAIR_CODE_EXPIRES_AT',
     sentState: 'RFORM_OWNER_BOT_SENT_STATE'
@@ -1163,6 +1165,13 @@ function rformOwnerBotV1RequireProperty_(props, name) {
   return value;
 }
 
+function rformOwnerBotV1ChannelChatId_(props) {
+  const store = props || PropertiesService.getScriptProperties();
+  const value = String(store.getProperty(RFORM_OWNER_BOT_V1.props.channelChatId) || '').trim();
+  if (!/^-100\d+$/.test(value)) throw new Error('RFORM_TG_CHAT_ID is missing or invalid.');
+  return value;
+}
+
 function rformOwnerBotV1Headers_(sheet) {
   if (!sheet || sheet.getLastColumn() < 1) return [];
   return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0]
@@ -1833,7 +1842,7 @@ function rformOwnerBotV1WorkspaceArchived_(q) {
 
 function rformOwnerBotV1ChannelPayload_(m,origin) {
   const chat=origin?origin.chat:m.chat,id=origin?origin.message_id:m.message_id,date=origin?origin.date:m.date;
-  if(!chat || chat.type!=='channel' || String(chat.id)!=='-1004309818003') throw new Error('Это другой канал.');
+  if(!chat || chat.type!=='channel' || String(chat.id)!==rformOwnerBotV1ChannelChatId_()) throw new Error('Это другой канал.');
   const media=[];
   if(m.photo && m.photo.length) media.push({type:'photo',file_id:m.photo[m.photo.length-1].file_id});
   if(m.video) media.push({type:'video',file_id:m.video.file_id});
@@ -1846,7 +1855,8 @@ function rformOwnerBotV1ChannelPayload_(m,origin) {
 function rformOwnerBotV1ChannelCapture_(m) {
   const props=PropertiesService.getScriptProperties();
   if(props.getProperty('RFORM_OWNER_CHANNEL_SYNC_ENABLED')!=='YES') return;
-  if(!m.chat || String(m.chat.id)!=='-1004309818003' || m.chat.type!=='channel') return;
+  const channelChatId=rformOwnerBotV1ChannelChatId_(props);
+  if(!m.chat || String(m.chat.id)!==channelChatId || m.chat.type!=='channel') return;
   // Transport spool only. Canonical observations and queue changes belong to Content API.
   const p=rformOwnerBotV1ChannelPayload_(m),json=JSON.stringify(p);
   // Short transport lock is independent of Poll's ScriptLock and network calls.
@@ -1887,10 +1897,11 @@ function rformOwnerBotV1ChannelDrain_() {
 
 function rformOwnerBotV1EnableChannelSync() {
   const props=PropertiesService.getScriptProperties(),token=rformOwnerBotV1RequireProperty_(props,RFORM_OWNER_BOT_V1.props.token);
+  const channelChatId=rformOwnerBotV1ChannelChatId_(props);
   const me=rformOwnerBotV1Telegram_(token,'getMe',{});
-  const chat=rformOwnerBotV1Telegram_(token,'getChat',{chat_id:'-1004309818003'});
-  const member=rformOwnerBotV1Telegram_(token,'getChatMember',{chat_id:'-1004309818003',user_id:String(me.id)});
-  if(String(chat.id)!=='-1004309818003' || ['member','administrator','creator'].indexOf(member.status)===-1) throw new Error('Добавьте существующий Owner Bot в канал R/Form для чтения сообщений.');
+  const chat=rformOwnerBotV1Telegram_(token,'getChat',{chat_id:channelChatId});
+  const member=rformOwnerBotV1Telegram_(token,'getChatMember',{chat_id:channelChatId,user_id:String(me.id)});
+  if(String(chat.id)!==channelChatId || ['member','administrator','creator'].indexOf(member.status)===-1) throw new Error('Добавьте существующий Owner Bot в канал R/Form для чтения сообщений.');
   // Existing webhook, pairing and backlog retained. No Install/Enable rerun.
   const url=rformOwnerBotV1RequireProperty_(props,RFORM_OWNER_BOT_V1.props.webAppUrl);
   if(!/^https:\/\/script\.google\.com\/macros\/s\/[^/?]+\/exec$/.test(url)) throw new Error('Invalid existing deployment URL.');

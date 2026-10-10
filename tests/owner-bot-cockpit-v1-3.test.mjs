@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import path from 'node:path';
 import vm from 'node:vm';
+import { fileURLToPath } from 'node:url';
+import { findHardcodedChannelIds } from '../scripts/apps-script/no-hardcoded-telegram-chat-id.mjs';
 
 const code = fs.readFileSync('automation/owner_bot_cockpit_v1_3.gs', 'utf8');
 const context = {
@@ -83,4 +86,10 @@ test('rendered cockpit contains state counts but no routine work list', () => {
     [{text:'Обновить',callback_data:'oc:r'}],
     [{text:'Материалы',callback_data:'ow:menu'}]
   ]);
+});
+
+test('automation sources contain no hardcoded numeric Telegram channel IDs', () => {
+  const automationDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'automation');
+  const offenders = findHardcodedChannelIds(automationDir);
+  assert.deepEqual(offenders, [], `Hardcoded numeric Telegram channel IDs found: ${offenders.join(', ')}`);
 });

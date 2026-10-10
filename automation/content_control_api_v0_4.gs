@@ -2279,7 +2279,17 @@ function rformContentApiV04TrainingFresh_(ss,value) {
 }
 
 // Channel observations use the existing action log, never another queue or publisher.
-const RFORM_CHANNEL = Object.freeze({id:'-1004309818003', username:'r_form'});
+const RFORM_CHANNEL = Object.freeze({chatIdProperty:'RFORM_TG_CHAT_ID', username:'r_form'});
+
+function rformContentApiV04ChannelChatId_() {
+  const value = String(PropertiesService.getScriptProperties().getProperty(RFORM_CHANNEL.chatIdProperty) || '').trim();
+  if (!/^-100\d+$/.test(value)) throw new Error('RFORM_TG_CHAT_ID is missing or invalid.');
+  return value;
+}
+
+function rformContentApiV04ChannelChatIdOrEmpty_() {
+  try { return rformContentApiV04ChannelChatId_(); } catch (_) { return ''; }
+}
 
 function rformContentApiV04Archived_(value) {
   return ['ARCHIVED','CANCELLED','SUPERSEDED'].indexOf(value('Publication_Status'))!==-1 ||
@@ -2289,10 +2299,11 @@ function rformContentApiV04Archived_(value) {
 
 function rformContentApiV04ChannelPosts_(c) {
   const posts={};
+  const channelId=rformContentApiV04ChannelChatIdOrEmpty_();
   rformContentApiV04WorkspaceRecords_(c).forEach(function(r) {
     if(r.Action!=='CHANNEL_POST' || r.Result!=='APPLIED') return;
     let p;try {p=JSON.parse(r.New_Values)._meta;} catch(_) {return;}
-    if(!p || p.channel_id!==RFORM_CHANNEL.id) return;
+    if(!p || p.channel_id!==channelId) return;
     const old=posts[p.message_id];
     if(!old || p.revision>old.revision) posts[p.message_id]=p;
   });
@@ -2311,13 +2322,14 @@ function rformContentApiV04ChannelEvent_(c,p) {
 
 function rformContentApiV04ChannelRecord_(c,request) {
   const p=request.payload;
-  if(String(p.channel_id)!==RFORM_CHANNEL.id || !Number.isSafeInteger(p.message_id) || p.message_id<1 ||
+  const channelId=rformContentApiV04ChannelChatId_();
+  if(String(p.channel_id)!==channelId || !Number.isSafeInteger(p.message_id) || p.message_id<1 ||
     !Number.isSafeInteger(p.date) || p.date<1 || p.date>Date.now()/1000+300 ||
     !Number.isSafeInteger(p.revision) || p.revision<p.date || p.revision>Date.now()/1000+300 ||
     typeof p.text!=='string' || p.text.length>4096 || !Array.isArray(p.media) || p.media.length>10 ||
     p.media.some(function(m){return !m || ['photo','video','document'].indexOf(m.type)===-1 || typeof m.file_id!=='string' || m.file_id.length>200;}))
     throw new Error('Некорректное наблюдение канала.');
-  const event={channel_id:RFORM_CHANNEL.id,message_id:p.message_id,date:p.date,revision:p.revision,
+  const event={channel_id:channelId,message_id:p.message_id,date:p.date,revision:p.revision,
     text:p.text,media_group_id:String(p.media_group_id || '').slice(0,100),media:p.media,
     post_url:'https://t.me/'+RFORM_CHANNEL.username+'/'+p.message_id};
   event.hash=rformContentApiV04ChannelHash_(event);
