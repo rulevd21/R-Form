@@ -1,25 +1,43 @@
-# Weekly Workflows
+# Period and Weekly Workflows
 
-Weekly reporting is an aggregate workflow over canonical daily/training/nutrition/measurement/decision facts. It must not become a second fact store.
+Reporting is an aggregate workflow over canonical daily/training/nutrition/measurement/decision facts. A weekly report, monthly report and arbitrary-date report must use the same deterministic period engine; none of them becomes a second fact store.
+
+## PERIOD_REPORT_BUILD — Сформируй отчёт за период
+
+1. Resolve the exact inclusive start and end dates.
+2. Validate the range fail-closed:
+   - valid calendar dates;
+   - start <= end;
+   - end is not in the future;
+   - maximum 366 calendar days per report.
+3. Resolve every calendar day in the range against canonical `DAY_CLOSURE` evidence.
+4. Read only canonical sources for the selected range:
+   - `DAILY` / `DAY_CLOSURE`;
+   - `NUTRITION_DAILY`;
+   - `TRAINING_SESSIONS` / `TRAINING_SETS`;
+   - `MEASUREMENTS`;
+   - active/relevant `DECISIONS` and plan changes.
+5. If one or more selected days lack accepted closure evidence, report `DRAFT_ONLY`, list the exact missing/open dates, and do not call the period complete.
+6. If every selected day has accepted closure evidence, report `READY_FOR_REPORT_BUILD` and build/update the exact report artifact as DRAFT when an artifact was requested.
+7. Separate source facts from interpretation and the next decision.
+8. Compare with a previous comparable period only when the comparison period is explicit or unambiguous.
+9. If the report also becomes a content item, hand the exact approved report object to the content workflow; do not publish from the reporting workflow itself.
 
 ## WEEKLY_BUILD — Сформируй Weekly Report
 
-1. Resolve the exact reporting period.
-2. Confirm which days/sessions are closed and list any data gaps.
-3. Read:
-   - DAILY / DAY_CLOSURE;
-   - NUTRITION_DAILY;
-   - TRAINING_SESSIONS / TRAINING_SETS;
-   - MEASUREMENTS;
-   - active DECISIONS and plan changes.
-4. Compare the period with the previous comparable report/checkpoint.
-5. Build or update the existing versioned Weekly artifact as DRAFT.
-6. Separate source facts from interpretation and next decision.
-7. If the Weekly also becomes a content item, hand it to the content workflow; do not publish from the weekly workflow itself.
+Use `PERIOD_REPORT_BUILD` with the exact requested week. The standard Owner Bot preset is Sunday through today; a completed historical weekly report normally uses the full Sunday–Saturday interval.
 
-## WEEKLY_DIFF — Что изменилось с прошлого отчёта?
+Do not maintain separate weekly aggregation logic.
 
-Return only material deltas:
+## MONTHLY_BUILD — Сформируй отчёт за месяц
+
+Use `PERIOD_REPORT_BUILD` with the first and last included dates of the requested month. For the current unfinished month, end at today and keep readiness closure-gated.
+
+Do not maintain separate monthly aggregation logic.
+
+## PERIOD_DIFF / WEEKLY_DIFF — Что изменилось с прошлого отчёта?
+
+Return only material deltas for the requested/comparable periods:
 
 - performance/plan;
 - weight/body metrics;
