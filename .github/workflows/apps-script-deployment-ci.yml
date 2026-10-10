@@ -75,6 +75,9 @@ jobs:
       - name: Syntax check Owner Bot direct-read rollout shell
         run: bash -n scripts/apps-script/owner-bot-cockpit-v1-3-direct-read-runtime.sh
 
+      - name: Syntax check Owner Bot period-report rollout shell
+        run: bash -n scripts/apps-script/owner-bot-period-report-v1-4-runtime.sh
+
       - name: Syntax check Capture Closure Events rollout shell
         run: bash -n scripts/apps-script/capture-closure-events-v1-runtime.sh
 

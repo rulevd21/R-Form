@@ -14,9 +14,11 @@ Route semantically. Exact phrases are examples, not a parser grammar.
 | Составь следующую тренировочную неделю | TRAINING_WEEK_DRAFT | Training | workflows-training | Draft only |
 | Обнови план | TRAINING_PLAN_UPDATE | Training | workflows-training | Yes after validation |
 | Что сегодня? | TODAY_STATUS | Cross-domain | day/training + source map | No |
+| Сформируй отчёт за период / с <date> по <date> | PERIOD_REPORT_BUILD | Cross-domain reporting | workflows-weekly-content | Draft/update report |
+| Сформируй отчёт за месяц | MONTHLY_BUILD | Cross-domain reporting | workflows-weekly-content | Draft/update report |
 | Сформируй Weekly Report | WEEKLY_BUILD | Weekly | workflows-weekly-content | Draft/update report |
 | Закрой неделю | WEEKLY_CLOSE | Weekly | workflows-weekly-content | Yes after completeness checks |
-| Что изменилось с прошлого отчёта? | WEEKLY_DIFF | Weekly | workflows-weekly-content | No |
+| Что изменилось с прошлого отчёта? | PERIOD_DIFF / WEEKLY_DIFF | Cross-domain reporting | workflows-weekly-content | No |
 | Проверь корректность данных | DATA_QA | Data quality | data-quality-rules | No, except explicit non-destructive reconciliation |
 | Проверь очередь публикаций | CONTENT_QUEUE_CHECK | Content | workflows-content-production | No |
 | Обнови контент-очередь | CONTENT_QUEUE_REFRESH | Content | workflows-content-production | Non-destructive classification only |
