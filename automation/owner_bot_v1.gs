@@ -1,4 +1,4 @@
-// R/Form Owner Bot v1.2.4 · P0 Owner Inbox
+// R/Form Owner Bot v1.3.0 · Daily Cockpit + Owner Inbox
 // Standalone Google Apps Script project.
 // Purpose: private Telegram owner interface for OWNER_FINAL_PREVIEW materials.
 // Read/write contract:
@@ -24,7 +24,7 @@
 //   RFORM_OWNER_TELEGRAM_CHAT_ID
 
 const RFORM_OWNER_BOT_V1 = Object.freeze({
-  version: '1.2.4',
+  version: '1.3.0',
   spreadsheetId: '1Le-481dsy0TZ-kdaobhFZWCLQ9nPQPe3V4WynbDUHzY',
   actionLogSheet: 'CONTENT_ACTION_LOG',
   pollMinutes: 5,
@@ -704,6 +704,7 @@ function rformOwnerBotV1SendPreview_(preview, options) {
 
 // Candidate v1.0.3: errors are observable without retrying publication actions.
 function rformOwnerBotV1HandleCallback_(callback) {
+  if (/^oc:/.test(String(callback && callback.data || ''))) return rformOwnerBotV13CockpitCallback_(callback);
   if (/^ow:/.test(String(callback && callback.data || ''))) return rformOwnerBotV1WorkspaceCallback_(callback);
   try {
     return rformOwnerBotV1HandleCallbackCore_(callback);
@@ -1495,7 +1496,8 @@ function rformOwnerBotV1WorkspaceDate_(text) {
 function rformOwnerBotV1WorkspaceMessage_(message) {
   if(!rformOwnerBotV1WorkspaceTrusted_(message,message && message.from)) return false;
   const text=String(message.text || '').trim();
-  if(/^\/(start|help|queue)(?:@\w+)?$/i.test(text)) {rformOwnerBotV1WorkspaceMenu_();return true;}
+  if(/^\/(start|today)(?:@\w+)?$/i.test(text)) {rformOwnerBotV13SendCockpit_();return true;}
+  if(/^\/(help|queue)(?:@\w+)?$/i.test(text)) {rformOwnerBotV1WorkspaceMenu_();return true;}
   if(/^\/search(?:@\w+)?(?:\s+|$)/i.test(text)) {
     const query=text.replace(/^\/search(?:@\w+)?\s*/i,'').slice(0,100);
     if(!query) {rformOwnerBotV1SendOwnerText_('Введите /search и название, дату или код тренировки.');return true;}
