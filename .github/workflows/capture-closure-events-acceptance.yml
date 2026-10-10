@@ -1,0 +1,116 @@
+name: Capture Closure Events Acceptance
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  receipt-readback:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.number == 42 &&
+       github.actor == github.repository_owner &&
+       github.event.comment.body == '/capture-closure-events-log-readback')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production-apps-script
+
+    steps:
+      - name: Checkout trusted main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Install pinned clasp
+        shell: bash
+        run: npm install --global @google/clasp@3.4.1
+
+      - name: Materialize ephemeral detector credentials
+        shell: bash
+        env:
+          CLASP_RC_JSON: ${{ secrets.RFORM_CLASP_RC_JSON }}
+          DETECTOR_SCRIPT_ID: ${{ secrets.RFORM_DETECTOR_SCRIPT_ID }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ -n "${CLASP_RC_JSON:-}" ]] || { echo "::error::Missing clasp credential secret"; exit 1; }
+          [[ -n "${DETECTOR_SCRIPT_ID:-}" ]] || { echo "::error::Missing detector project secret"; exit 1; }
+          mkdir -p "$HOME" .rform-detector
+          printf '%s' "$CLASP_RC_JSON" > "$HOME/.clasprc.json"
+          chmod 600 "$HOME/.clasprc.json"
+          DETECTOR_SCRIPT_ID="$DETECTOR_SCRIPT_ID" node - <<'NODE'
+          const fs=require('fs');
+          fs.writeFileSync('.rform-detector/.clasp.json', JSON.stringify({scriptId:process.env.DETECTOR_SCRIPT_ID}, null, 2)+'\n', {mode:0o600});
+          NODE
+          unset CLASP_RC_JSON DETECTOR_SCRIPT_ID
+
+      - name: Authenticate clasp
+        shell: bash
+        working-directory: .rform-detector
+        run: |
+          set -euo pipefail
+          clasp show-authorized-user --json > auth.json 2>/dev/null
+          node -e 'const x=require("./auth.json"); if(!x || x.loggedIn!==true) process.exit(1)'
+          rm -f auth.json
+          echo "Clasp authorization: PASS"
+
+      - name: Read Cloud Logging receipts without exposing raw logs
+        id: logs
+        shell: bash
+        working-directory: .rform-detector
+        run: |
+          set -euo pipefail
+          umask 077
+          if clasp tail-logs --json > detector-logs.txt 2> detector-logs.err; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Detector Cloud Logging readback: PASS"
+          elif clasp logs --json > detector-logs.txt 2> detector-logs.err; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Detector Cloud Logging readback: PASS (compatibility alias)"
+          else
+            : > detector-logs.txt
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Detector Cloud Logging readback: UNAVAILABLE"
+          fi
+          rm -f detector-logs.err
+
+      - name: Build safe receipt summary
+        shell: bash
+        env:
+          LOGS_AVAILABLE: ${{ steps.logs.outputs.available }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [[ "$LOGS_AVAILABLE" == "true" ]]; then
+            node scripts/apps-script/parse-detector-receipts.mjs .rform-detector/detector-logs.txt receipt-summary.md > receipt-counts.json
+          else
+            cat > receipt-summary.md <<'EOF'
+          <!-- capture-closure-events-log-evidence -->
+          ### Capture → Closure → Events · scheduled receipt readback
+
+          `LOG_READBACK_UNAVAILABLE`: clasp authentication succeeded, but Cloud Logging receipts were not available through the current clasp/GCP logging surface. No production mutation was attempted.
+
+          No project IDs, trigger IDs, OAuth material or private URLs are included in this readback.
+          EOF
+          fi
+          rm -f .rform-detector/detector-logs.txt receipt-counts.json
+
+      - name: Post safe evidence to Issue 42
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/42/comments" -f body="$(cat receipt-summary.md)" >/dev/null
+          echo "Issue #42 safe receipt evidence updated via new comment."
