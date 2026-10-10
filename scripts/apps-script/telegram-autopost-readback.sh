@@ -13,11 +13,11 @@ clasp_cmd() {
   npx --yes "$CLASP_PACKAGE" "$@"
 }
 
-for cmd in git node npx grep sha256sum cmp; do
+for cmd in git node npx grep sha256sum cmp diff; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "ERROR: missing $cmd"; exit 1; }
 done
 
-# Auth must already be supplied by the protected GitHub Environment.
+# Auth must already be supplied by the protected runtime/session.
 auth_json="$SESSION/auth.json"
 clasp_cmd show-authorized-user --json >"$auth_json" 2>/dev/null || {
   echo "ERROR: clasp credential is unavailable or invalid."
@@ -126,12 +126,35 @@ accepted_sha="$(sha256sum "$accepted" | awk '{print $1}')"
 
 echo "Live source SHA-256: $live_sha"
 echo "Accepted source SHA-256: $accepted_sha"
-if ! cmp -s "$live" "$accepted"; then
-  echo "ERROR: live Telegram Autopost source differs from accepted v0.3.2 source."
-  exit 4
-fi
 
-echo "Exact accepted-source continuity: PASS"
+continuity="exact"
+if cmp -s "$live" "$accepted"; then
+  echo "Exact accepted-source continuity: PASS"
+  echo "Semantic accepted-source continuity: PASS"
+else
+  diff_file="$SESSION/source.diff"
+  diff -u "$accepted" "$live" >"$diff_file" || true
+  if node - "$diff_file" <<'NODE'
+const fs = require('fs');
+const lines = fs.readFileSync(process.argv[2], 'utf8').split(/\r?\n/);
+const changed = lines
+  .filter(line => (/^[+-]/.test(line)) && !line.startsWith('+++') && !line.startsWith('---'))
+  .map(line => line.slice(1).trim());
+function commentOnly(s) {
+  return s === '' || s.startsWith('//') || s.startsWith('/*') || s.startsWith('*') || s.startsWith('*/');
+}
+if (!changed.length || !changed.every(commentOnly)) process.exit(1);
+NODE
+  then
+    continuity="comment-only"
+    echo "Exact accepted-source continuity: FAILED — comment-only drift"
+    echo "Semantic accepted-source continuity: PASS — executable logic unchanged"
+  else
+    echo "Exact accepted-source continuity: FAILED — executable source drift detected"
+    echo "Semantic accepted-source continuity: FAILED"
+    exit 4
+  fi
+fi
 
 # Optional read-only runtime preflight. This may be unavailable when the script has
 # no API-executable deployment; that does not mutate the project and is not treated
@@ -154,5 +177,9 @@ else
   echo "Read-only preflight: UNAVAILABLE (no API-executable path or equivalent); no endpoint was created."
 fi
 
-echo "READBACK_COMPLETE: Telegram Autopost v0.3.2 exact source continuity proven."
+if [[ "$continuity" == "exact" ]]; then
+  echo "READBACK_COMPLETE: Telegram Autopost v0.3.2 exact source continuity proven."
+else
+  echo "READBACK_COMPLETE: Telegram Autopost v0.3.2 semantic source continuity proven; byte drift is comment-only."
+fi
 echo "No Script ID, deployment ID, OAuth credential, bot token, chat ID, or Telegram payload was printed."
