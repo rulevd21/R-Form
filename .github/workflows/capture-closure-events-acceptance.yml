@@ -1,6 +1,10 @@
 name: Capture Closure Events Acceptance
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'ops/capture-closure-events-acceptance.trigger'
   issue_comment:
     types: [created]
   workflow_dispatch:
@@ -12,6 +16,7 @@ permissions:
 jobs:
   receipt-readback:
     if: >-
+      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event.issue.number == 42 &&
        github.actor == github.repository_owner &&
