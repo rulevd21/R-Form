@@ -12,6 +12,10 @@ Canonical facts live in `TRAINING_PLAN`, `TRAINING_SESSIONS`, `TRAINING_SETS`, `
 6. Close/analyze only when required factual fields are sufficient.
 7. Read back session and sets.
 
+Training capture does not write `DATA_EVENTS` directly. A session dated on or after the active Capture → Closure → Events lifecycle boundary becomes event-eligible only after `Session_Status=CLOSED` and the corresponding `DAY_CLOSURE` is accepted. The backend detector owns the deterministic event upsert and preserves the established significant-training Event ID.
+
+Comparable `MEASUREMENTS` follow the same day-level closure gate before entering the event layer. Do not emit a separate chat-side measurement event.
+
 ## PREP_STATUS — Обнови статус подготовки
 
 This is an analytical read unless the owner explicitly approves a new plan/decision.
