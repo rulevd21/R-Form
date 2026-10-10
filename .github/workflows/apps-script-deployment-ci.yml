@@ -6,17 +6,23 @@ on:
     paths:
       - '.github/workflows/apps-script-production.yml'
       - '.github/workflows/apps-script-deployment-ci.yml'
+      - '.clinerules/**'
       - 'scripts/apps-script/**'
+      - 'scripts/cline/**'
       - 'tests/apps-script-deployment-guard.test.mjs'
       - 'docs/governance/APPS_SCRIPT_GITHUB_DEPLOYMENT.md'
+      - 'docs/governance/CLINE_CLOUD_ONBOARDING.md'
   push:
     branches: [main]
     paths:
       - '.github/workflows/apps-script-production.yml'
       - '.github/workflows/apps-script-deployment-ci.yml'
+      - '.clinerules/**'
       - 'scripts/apps-script/**'
+      - 'scripts/cline/**'
       - 'tests/apps-script-deployment-guard.test.mjs'
       - 'docs/governance/APPS_SCRIPT_GITHUB_DEPLOYMENT.md'
+      - 'docs/governance/CLINE_CLOUD_ONBOARDING.md'
 
 permissions:
   contents: read
@@ -37,8 +43,17 @@ jobs:
       - name: Syntax check deployment guard
         run: node --check scripts/apps-script/guard.mjs
 
-      - name: Syntax check bootstrap shell
+      - name: Syntax check Codespaces bootstrap shell
         run: bash -n scripts/apps-script/bootstrap-codespace.sh
+
+      - name: Syntax check Cline Cloud bootstrap shell
+        run: bash -n scripts/cline/rform-cloud-onboard.sh
+
+      - name: Validate Cline production workflow anchors
+        run: |
+          grep -Fq 'rformContentEventDetectorTickV03' .clinerules/workflows/rform-one-shot-onboarding.md
+          grep -Fq '5550d3c423294fd89c980d08ce019808b735c434' .clinerules/workflows/rform-one-shot-onboarding.md
+          grep -Fq 'READY: R/Form Cline Cloud runtime session prepared.' scripts/cline/rform-cloud-onboard.sh
 
       - name: Run guard unit tests
         run: node --test tests/apps-script-deployment-guard.test.mjs
