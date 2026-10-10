@@ -69,7 +69,7 @@ jobs:
       - name: Validate Owner Bot Cockpit candidate
         run: |
           node --check scripts/release/apply-owner-bot-cockpit-v1-3.mjs
-          node --check automation/owner_bot_cockpit_v1_3.gs
+          node --check < automation/owner_bot_cockpit_v1_3.gs
           node scripts/release/apply-owner-bot-cockpit-v1-3.mjs
           node --test tests/owner-bot-cockpit-v1-3.test.mjs
 
