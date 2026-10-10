@@ -15,7 +15,7 @@ CANDIDATE_CORE="automation/owner_bot_v1.gs"
 CANDIDATE_COCKPIT="automation/owner_bot_cockpit_v1_3.gs"
 CONFIRM_VALUE="APPLY OWNER BOT COCKPIT 1.3.0"
 
-for cmd in git node npx grep find sha256sum curl; do
+for cmd in git node npx grep find sha256sum curl sleep; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "ERROR: missing required command: $cmd"; exit 1; }
 done
 
@@ -82,7 +82,7 @@ fs.writeFileSync(path.join(process.env.PROBE,'.clasp.json'),JSON.stringify({scri
 NODE
   if (cd "$probe" && clasp_cmd pull >"$SESSION/pull-$idx.log" 2>&1); then
     target="$(node - "$probe/remote" <<'NODE'
-const fs=require('fs'),path=require('path'),crypto=require('crypto'); const root=process.argv[2];
+const fs=require('fs'),path=require('path'); const root=process.argv[2];
 function walk(d){let o=[];for(const e of fs.readdirSync(d,{withFileTypes:true})){const p=path.join(d,e.name);o=e.isDirectory()?o.concat(walk(p)):o.concat(p)}return o}
 const files=walk(root).filter(f=>/\.(gs|js)$/i.test(f));
 const hits=files.filter(f=>{const t=fs.readFileSync(f,'utf8');return t.includes('const RFORM_OWNER_BOT_V1 = Object.freeze') && /version\s*:\s*['\"]1\.2\.4['\"]/.test(t)});
@@ -144,6 +144,7 @@ deployment_updated=0
 rollback() {
   code=$?
   if [[ "$code" == "0" ]]; then return; fi
+  trap - ERR
   echo "ROLLBACK: restoring Owner Bot source and deployment baseline."
   rm -rf "$SESSION/runtime/remote"
   cp -R "$SESSION/backup-remote" "$SESSION/runtime/remote"
@@ -151,7 +152,7 @@ rollback() {
   if [[ "$deployment_updated" == "1" ]]; then
     dep_id="$(cat "$SESSION/deployment-id")"
     (cd "$SESSION/runtime" && clasp_cmd update-deployment "$dep_id" --versionNumber "$EXPECTED_DEPLOYMENT_VERSION" \
-      --description "Rollback Owner Bot v1.2.4" --json >/dev/null 2>&1) || true
+      --description "Rollback Owner Bot v1.2.4" --json >"$SESSION/rollback-deployment.json" 2>/dev/null) || true
   fi
   echo "ROLLBACK_ATTEMPTED: inspect runtime before any retry."
   exit "$code"
@@ -191,21 +192,68 @@ NODE
 dep_id="$(cat "$SESSION/deployment-id")"
 (cd "$SESSION/runtime" && clasp_cmd update-deployment "$dep_id" --versionNumber "$new_version" \
   --description "R/Form Owner Bot Cockpit v1.3.0" --json >"$SESSION/deploy-update.json")
+
+# The write response itself must identify the same existing deployment and the exact target version.
+node - "$SESSION/deploy-update.json" "$SESSION/deployment-id" "$new_version" <<'NODE'
+const fs=require('fs');
+const x=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+const id=fs.readFileSync(process.argv[3],'utf8').trim();
+const target=Number(process.argv[4]);
+if(String(x.deploymentId||'')!==id) process.exit(1);
+if(Number(x.versionNumber)!==target) process.exit(1);
+if(String(x.description||'')!=='R/Form Owner Bot Cockpit v1.3.0') process.exit(1);
+NODE
 deployment_updated=1
-(cd "$SESSION/runtime" && clasp_cmd list-deployments --json >"$SESSION/deployments-after.json")
-node scripts/apps-script/guard.mjs verify-deployment --file "$SESSION/deployments-after.json" \
-  --id-file "$SESSION/deployment-id" --previous-version "$EXPECTED_DEPLOYMENT_VERSION"
+echo "Owner Bot deployment update response: PASS"
 
-echo "Owner Bot deployment in-place update: PASS"
-
-# Read-only web-app smoke. The deployment ID is never printed.
+# Google Apps Script deployment metadata can lag the update response. Poll the list read-model,
+# but use the existing web-app URL as the authoritative runtime gate. No new deployment is created.
+metadata_converged=0
+runtime_converged=0
+last_deployments="$SESSION/deployments-after.json"
 status_body="$SESSION/webapp-get.txt"
-if curl --silent --show-error --fail --location "https://script.google.com/macros/s/${dep_id}/exec" >"$status_body"; then
-  grep -Fq 'R/Form Owner Bot v1.3.0' "$status_body" || { echo "ERROR: web-app version smoke mismatch"; false; }
-  echo "Owner Bot web-app version smoke: PASS"
+for attempt in $(seq 1 12); do
+  (cd "$SESSION/runtime" && clasp_cmd list-deployments --json >"$last_deployments")
+
+  # Fail if the set of deployment IDs changes; the release must remain in-place.
+  node - "$deployments" "$last_deployments" <<'NODE'
+const fs=require('fs');
+const ids=p=>JSON.parse(fs.readFileSync(p,'utf8')).map(x=>String(x.deploymentId||'')).filter(Boolean).sort();
+const a=ids(process.argv[2]), b=ids(process.argv[3]);
+if(JSON.stringify(a)!==JSON.stringify(b)) process.exit(1);
+NODE
+
+  if node - "$last_deployments" "$SESSION/deployment-id" "$new_version" <<'NODE'
+const fs=require('fs');
+const rows=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+const id=fs.readFileSync(process.argv[3],'utf8').trim();
+const target=Number(process.argv[4]);
+const row=rows.find(x=>String(x.deploymentId||'')===id);
+if(!row || Number(row.versionNumber)!==target) process.exit(1);
+NODE
+  then
+    metadata_converged=1
+  fi
+
+  if curl --silent --show-error --fail --location "https://script.google.com/macros/s/${dep_id}/exec" >"$status_body" 2>/dev/null \
+    && grep -Fq 'R/Form Owner Bot v1.3.0' "$status_body"; then
+    runtime_converged=1
+  fi
+
+  if [[ "$metadata_converged" == "1" && "$runtime_converged" == "1" ]]; then
+    break
+  fi
+  if [[ "$attempt" -lt "12" ]]; then sleep 5; fi
+done
+
+[[ "$runtime_converged" == "1" ]] || { echo "ERROR: existing Owner Bot web-app did not converge to v1.3.0 within the readback window"; false; }
+if [[ "$metadata_converged" == "1" ]]; then
+  echo "Owner Bot deployment metadata readback: PASS"
 else
-  echo "ERROR: Owner Bot web-app GET smoke failed"; false
+  echo "Owner Bot deployment metadata readback: STALE (runtime gate passed)"
 fi
+echo "Owner Bot deployment in-place update: PASS"
+echo "Owner Bot web-app version smoke: PASS"
 
 trap - ERR
 printf '%s\n' "$new_version" >"$SESSION/new-deployment-version"; chmod 600 "$SESSION/new-deployment-version"
