@@ -2,10 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { execFileSync } from 'node:child_process';
 import { applyStrengthTrendsPatch } from '../scripts/release/apply-owner-bot-strength-trends-v1-6.mjs';
 
-const base = fs.readFileSync('automation/owner_bot_cockpit_v1_3.gs', 'utf8');
-const code = applyStrengthTrendsPatch(base);
+const BASELINE_REF = '7cc56d3ef312208ef91f40d6ffa8b0c6e570c041';
+const COCKPIT_PATH = 'automation/owner_bot_cockpit_v1_3.gs';
+const pristineV15 = execFileSync('git', ['show', `${BASELINE_REF}:${COCKPIT_PATH}`], {encoding:'utf8'});
+const workingTree = fs.readFileSync(COCKPIT_PATH, 'utf8');
+const code = applyStrengthTrendsPatch(workingTree);
 const context = {
   console, Date, Set, Number, String, JSON, Math, Object, Array, RegExp,
   SpreadsheetApp: {openById(){throw new Error('not used');}},
@@ -64,7 +68,17 @@ function bundle(){
   };
 }
 
-test('patch upgrades v1.5 to v1.6, is syntactically valid and idempotent',()=>{
+test('known baseline is pristine v1.5 and patch upgrades it to v1.6',()=>{
+  assert.match(pristineV15,/version: '1\.5\.0'/);
+  assert.doesNotMatch(pristineV15,/rformOwnerBotV16StrengthTrends_/);
+  const materialized = applyStrengthTrendsPatch(pristineV15);
+  assert.match(materialized,/version: '1\.6\.0'/);
+  assert.match(materialized,/setsSheet: 'TRAINING_SETS'/);
+  assert.match(materialized,/rformOwnerBotV16StrengthTrends_/);
+  assert.doesNotThrow(()=>new Function(materialized));
+});
+
+test('working-tree source is accepted both before and after materialization',()=>{
   assert.match(code,/version: '1\.6\.0'/);
   assert.match(code,/setsSheet: 'TRAINING_SETS'/);
   assert.match(code,/rformOwnerBotV16StrengthTrends_/);
@@ -72,8 +86,9 @@ test('patch upgrades v1.5 to v1.6, is syntactically valid and idempotent',()=>{
   assert.equal(applyStrengthTrendsPatch(code),code);
 });
 
-test('partial v1.6 materialization fails closed',()=>{
-  const partial=base.replace("version: '1.5.0'","version: '1.6.0'");
+test('partial v1.6 materialization fails closed from known pristine baseline',()=>{
+  const partial=pristineV15.replace("version: '1.5.0'","version: '1.6.0'");
+  assert.notEqual(partial,pristineV15);
   assert.throws(()=>applyStrengthTrendsPatch(partial),/partial v1\.6 materialization/);
 });
 
