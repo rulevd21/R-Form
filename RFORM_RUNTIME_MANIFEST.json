@@ -1,5 +1,5 @@
 {
-  "manifest_version": "1.0.4",
+  "manifest_version": "1.0.5",
   "generated_at": "2026-10-10",
   "repository": "rulevd21/R-Form",
   "governance_status": "ACTIVE",
@@ -21,7 +21,7 @@
     {"component":"owner_bot","runtime":"Google Apps Script + Telegram Bot API","production_version":"1.2.4","deployment_evidence":"PR #24","source_ref":"production","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-09"},
     {"component":"telegram_autopost","runtime":"Google Apps Script","production_version":"0.3.2","deployment_evidence":"PR #6 production acceptance comment","source_ref":"historical release source","status":"VERIFIED_PRODUCTION_WITH_OLD_EVIDENCE","last_verified":"2026-08-25"},
     {"component":"content_event_detector","runtime":"Google Apps Script trigger","production_version":"0.3 + observability 0.1","deployment_evidence":"PR #13 runtime acceptance 2026-10-09 + authenticated source readback 2026-10-10","source_ref":"1b0474f4fa2616af5c6353650246476b67981774","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-10","notes":"PR #13 acceptance verified one 6-hour rformContentEventDetectorWriteV03 trigger, scheduled START/FINISH receipts and controlled NO_OP behavior. 2026-10-10 clasp readback proved the live source remains byte-identical to PR #13. The later TickV03 browser premise is superseded by authenticated clasp evidence."},
-    {"component":"rform_operating_system","runtime":"ChatGPT project skill/orchestrator","production_version":"1.1.5 candidate","deployment_evidence":"PR #8","source_ref":"agent/rform-skill-content-v1.1.3","status":"ACCEPTANCE_PENDING","last_verified":null},
+    {"component":"rform_operating_system","runtime":"ChatGPT project skill/orchestrator","production_version":"1.1.5","deployment_evidence":"PR #8 runtime acceptance matrix gates 00-10 (2026-08-31 to 2026-09-03) + owner authorization to complete P1 on 2026-10-10","source_ref":"02faee79713efc59ab06fe18dc69c0f3cb2b4269","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-10","notes":"Installed Skill was discoverable/callable; canonical DAY/MEAL/TRAINING write→readback paths passed; analytical/status/weekly/publication-prep/owner-decision routes passed; close-day and publish commands correctly fail-closed when canonical permission/preconditions are not satisfied. No duplicate router, datastore or publisher introduced."},
     {"component":"automatic_training_cards","runtime":"Content API / Owner Bot content pipeline","production_version":"0.7.0","deployment_evidence":"PR #25 runtime acceptance 2026-10-09 + authenticated source/deployment readback 2026-10-10","source_ref":"5550d3c423294fd89c980d08ce019808b735c434","status":"VERIFIED_PRODUCTION","last_verified":"2026-10-10","notes":"PR #25 acceptance enabled automatic cards with baseline preserved and publication disabled; private self-check passed for S-20261009-C at 14 sets / 5 exercises / bench 1920 / total 8610 with queue_changed=false. 2026-10-10 clasp readback proves the accepted 0.7.0 source remains live."}
   ],
   "promotion_rules": [
@@ -33,7 +33,6 @@
     "One component has one active production version."
   ],
   "known_governance_debt": [
-    "Complete R/Form Operating System acceptance before declaring it the canonical command router.",
     "Re-read Telegram Autopost runtime on the next publisher-affecting release."
   ]
 }
