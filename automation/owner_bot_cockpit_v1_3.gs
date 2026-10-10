@@ -1,10 +1,12 @@
 // R/Form Owner Bot Cockpit v1.3
-// Read model only. Reuses the existing Content Control API and canonical Master Data.
+// Read model only. Reads canonical Master Data directly for the daily cockpit.
+// Owner mutations still use the existing Content Control API.
 // No new datastore, publisher, router or trigger.
 
 const RFORM_OWNER_COCKPIT_V13 = Object.freeze({
   version: '1.3.0',
   timezone: 'Europe/Moscow',
+  queueSheet: 'CONTENT_QUEUE',
   closureSheet: 'DAY_CLOSURE',
   eventsSheet: 'DATA_EVENTS',
   maxOwnerDecisions: 3,
@@ -48,9 +50,9 @@ function rformOwnerBotV13CockpitSelfTest() {
 }
 
 function rformOwnerBotV13SendCockpit_() {
-  let stage = 'CONTENT_API_READ';
+  let stage = 'CONTENT_QUEUE_READ';
   try {
-    const bundle = rformOwnerBotV13QueueRead_();
+    const bundle = {queue: rformOwnerBotV13ReadQueue_()};
     stage = 'DATA_EVENTS_READ';
     bundle.events = rformOwnerBotV13ReadEvents_();
     stage = 'CLOSURE_READ';
@@ -83,40 +85,48 @@ function rformOwnerBotV13SendCockpit_() {
 }
 
 function rformOwnerBotV13BuildCockpit_() {
-  const bundle = rformOwnerBotV13QueueRead_();
-  bundle.events = rformOwnerBotV13ReadEvents_();
+  const bundle = {
+    queue: rformOwnerBotV13ReadQueue_(),
+    events: rformOwnerBotV13ReadEvents_()
+  };
   const closure = rformOwnerBotV13ReadClosure_();
   return rformOwnerBotV13CockpitModel_(closure, bundle);
 }
 
-// Reuse the proven Owner Bot read_owner transport for Content Queue. DATA_EVENTS are read
-// directly from the same canonical Master Data in read-only mode so /today does not depend
-// on the heavier full Content API read payload.
-function rformOwnerBotV13QueueRead_() {
-  return rformOwnerBotV1ApiRead_();
-}
-
-function rformOwnerBotV13ApiRead_() {
-  const bundle = rformOwnerBotV13QueueRead_();
-  bundle.events = rformOwnerBotV13ReadEvents_();
-  return bundle;
-}
-
-function rformOwnerBotV13ReadEvents_() {
+// /today is a read model. Read canonical queue/events directly from the same Master Data
+// the Owner Bot already uses for Closure/audit. All owner mutations remain behind Content API.
+function rformOwnerBotV13ReadRows_(sheetName, idField) {
   const ss = SpreadsheetApp.openById(RFORM_OWNER_BOT_V1.spreadsheetId);
-  const sheet = ss.getSheetByName(RFORM_OWNER_COCKPIT_V13.eventsSheet);
-  if (!sheet) throw new Error('DATA_EVENTS sheet unavailable.');
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) throw new Error(sheetName + ' sheet unavailable.');
   if (sheet.getLastRow() < 2) return [];
   const values = sheet.getDataRange().getDisplayValues();
   const headers = values[0].map(function (x) { return String(x || '').trim(); });
-  if (headers.indexOf('Event_ID') === -1) throw new Error('DATA_EVENTS schema mismatch.');
+  if (headers.indexOf(idField) === -1) throw new Error(sheetName + ' schema mismatch.');
   return values.slice(1).map(function (row) {
     const out = {};
     headers.forEach(function (name, index) {
       if (name) out[name] = String(row[index] || '').trim();
     });
     return out;
-  }).filter(function (row) { return !!row.Event_ID; });
+  }).filter(function (row) { return !!row[idField]; });
+}
+
+function rformOwnerBotV13ReadQueue_() {
+  return rformOwnerBotV13ReadRows_(RFORM_OWNER_COCKPIT_V13.queueSheet, 'Content_ID');
+}
+
+function rformOwnerBotV13ReadEvents_() {
+  return rformOwnerBotV13ReadRows_(RFORM_OWNER_COCKPIT_V13.eventsSheet, 'Event_ID');
+}
+
+// Compatibility helper used by existing cockpit callbacks: read side is direct/canonical,
+// mutation side remains Content Control API.
+function rformOwnerBotV13ApiRead_() {
+  return {
+    queue: rformOwnerBotV13ReadQueue_(),
+    events: rformOwnerBotV13ReadEvents_()
+  };
 }
 
 function rformOwnerBotV13ReadClosure_() {

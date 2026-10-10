@@ -8,6 +8,38 @@ import { findHardcodedChannelIds } from '../scripts/apps-script/no-hardcoded-tel
 
 const code = fs.readFileSync('automation/owner_bot_cockpit_v1_3.gs', 'utf8');
 const sent = [];
+let sheetData = {
+  CONTENT_QUEUE: [
+    ['Content_ID','Date','Publication_Status','Current_Stage','Public_Data_Allowed','Duplicate_Flag','Publish_Error','Blocking_Issue','Telegram_Post_Mode','Telegram_Text','Telegram_Visual_URL','Updated_At'],
+    ['CNT-Q1','10.10.2026','PLANNED','OWNER_FINAL_PREVIEW','YES','','','','TEXT_ONLY','Тест','','10.10.2026 10:00']
+  ],
+  DATA_EVENTS: [
+    ['Event_ID','Date','Fact','Content_Value_Score','Manual_Gate','Status','Owner_Action','Owner_Review_Status'],
+    ['EVT-Q1','10.10.2026','Факт','80','NO','DATA_READY','NONE','']
+  ],
+  DAY_CLOSURE: [
+    ['Day_ID','Date','Close_Request','Close_Readiness','Blocking_Issues','Closed_At'],
+    ['D-20261010','10.10.2026','','OPEN','','']
+  ]
+};
+
+function spreadsheetService() {
+  return {
+    openById() {
+      return {
+        getSheetByName(name) {
+          const values = sheetData[name];
+          if (!values) return null;
+          return {
+            getLastRow() { return values.length; },
+            getDataRange() { return {getDisplayValues() { return values; }}; }
+          };
+        }
+      };
+    }
+  };
+}
+
 const context = {
   console,
   Date,
@@ -19,6 +51,7 @@ const context = {
   Object,
   Array,
   RegExp,
+  SpreadsheetApp: spreadsheetService(),
   Utilities: {
     formatDate() { return '10.10.2026'; }
   },
@@ -31,7 +64,6 @@ const context = {
   rformOwnerBotV1Sha256Hex_(value) {
     return String(value).includes('EVT-GATE') ? 'bbbbbbbbbbbbbbbb' : 'cccccccccccccccc';
   },
-  rformOwnerBotV1ApiRead_() { return {queue: []}; },
   rformOwnerBotV1SendOwnerText_(text, extra) {
     sent.push({text: String(text), extra: extra || null});
     return {ok: true};
@@ -94,20 +126,24 @@ test('rendered cockpit contains state counts but no routine work list', () => {
   ]);
 });
 
-test('/today build failure is owner-visible and does not leak upstream error text', () => {
-  sent.length = 0;
-  context.rformOwnerBotV1ApiRead_ = () => { throw new Error('secret https://private.example/token'); };
-  assert.doesNotThrow(() => call(`rformOwnerBotV13SendCockpit_()`));
-  assert.equal(sent.length, 1);
-  assert.match(sent[0].text, /Код: CONTENT_API_READ/);
-  assert.match(sent[0].text, /Данные не изменены/);
-  assert.doesNotMatch(sent[0].text, /private\.example|secret|token/i);
-  context.rformOwnerBotV1ApiRead_ = () => ({queue: []});
+test('cockpit reads Content Queue directly from canonical Master Data', () => {
+  const rows = call(`rformOwnerBotV13ReadQueue_()`);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].Content_ID, 'CNT-Q1');
+  assert.equal(rows[0].Current_Stage, 'OWNER_FINAL_PREVIEW');
+  assert.doesNotMatch(code, /rformOwnerBotV1ApiRead_\(\)/);
 });
 
-test('cockpit queue read reuses the proven read_owner transport and does not construct full read signing', () => {
-  assert.match(code, /return rformOwnerBotV1ApiRead_\(\);/);
-  assert.doesNotMatch(code, /operation:\s*['"]read['"]/);
+test('/today queue read failure is owner-visible and does not leak upstream error text', () => {
+  sent.length = 0;
+  const original = context.SpreadsheetApp;
+  context.SpreadsheetApp = {openById() { throw new Error('secret https://private.example/token'); }};
+  assert.doesNotThrow(() => call(`rformOwnerBotV13SendCockpit_()`));
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /Код: CONTENT_QUEUE_READ/);
+  assert.match(sent[0].text, /Данные не изменены/);
+  assert.doesNotMatch(sent[0].text, /private\.example|secret|token/i);
+  context.SpreadsheetApp = original;
 });
 
 test('automation sources contain no hardcoded numeric Telegram channel IDs', () => {
