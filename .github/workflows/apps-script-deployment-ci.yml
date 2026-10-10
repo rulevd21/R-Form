@@ -63,6 +63,9 @@ jobs:
       - name: Syntax check Owner Bot runtime rollout shell
         run: bash -n scripts/apps-script/owner-bot-cockpit-v1-3-runtime.sh
 
+      - name: Syntax check Owner Bot /today hotfix rollout shell
+        run: bash -n scripts/apps-script/owner-bot-cockpit-v1-3-hotfix-runtime.sh
+
       - name: Validate Cline production workflow anchors
         run: |
           grep -Fq 'rformContentEventDetectorTickV03' .clinerules/workflows/rform-one-shot-onboarding.md
