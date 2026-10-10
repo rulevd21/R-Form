@@ -49,6 +49,9 @@ jobs:
       - name: Syntax check Cline Cloud bootstrap shell
         run: bash -n scripts/cline/rform-cloud-onboard.sh
 
+      - name: Syntax check Telegram Autopost readback shell
+        run: bash -n scripts/apps-script/telegram-autopost-readback.sh
+
       - name: Validate Cline production workflow anchors
         run: |
           grep -Fq 'rformContentEventDetectorTickV03' .clinerules/workflows/rform-one-shot-onboarding.md
