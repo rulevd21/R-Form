@@ -6,6 +6,7 @@ const RFORM_OWNER_COCKPIT_V13 = Object.freeze({
   version: '1.3.0',
   timezone: 'Europe/Moscow',
   closureSheet: 'DAY_CLOSURE',
+  eventsSheet: 'DATA_EVENTS',
   maxOwnerDecisions: 3,
   terminalEventStatuses: Object.freeze([
     'PUBLISHED', 'ALREADY_IN_PIPELINE', 'FILTERED_OUT_V03', 'AGGREGATE_TO_WEEKLY',
@@ -47,33 +48,75 @@ function rformOwnerBotV13CockpitSelfTest() {
 }
 
 function rformOwnerBotV13SendCockpit_() {
-  const model = rformOwnerBotV13BuildCockpit_();
-  const rendered = rformOwnerBotV13RenderCockpit_(model);
-  return rformOwnerBotV1SendOwnerText_(rendered.text, {
-    disable_notification: true,
-    reply_markup: JSON.stringify({inline_keyboard: rendered.keyboard})
-  });
+  let stage = 'CONTENT_API_READ';
+  try {
+    const bundle = rformOwnerBotV13QueueRead_();
+    stage = 'DATA_EVENTS_READ';
+    bundle.events = rformOwnerBotV13ReadEvents_();
+    stage = 'CLOSURE_READ';
+    const closure = rformOwnerBotV13ReadClosure_();
+    stage = 'MODEL_RENDER';
+    const model = rformOwnerBotV13CockpitModel_(closure, bundle);
+    const rendered = rformOwnerBotV13RenderCockpit_(model);
+    stage = 'TELEGRAM_SEND';
+    return rformOwnerBotV1SendOwnerText_(rendered.text, {
+      disable_notification: true,
+      reply_markup: JSON.stringify({inline_keyboard: rendered.keyboard})
+    });
+  } catch (error) {
+    try {
+      console.warn(JSON.stringify({
+        event: 'OWNER_COCKPIT_FAILED',
+        version: RFORM_OWNER_COCKPIT_V13.version,
+        stage: stage
+      }));
+    } catch (_) {}
+    if (stage !== 'TELEGRAM_SEND') {
+      try {
+        return rformOwnerBotV1SendOwnerText_(
+          'Не удалось открыть «Сегодня». Код: ' + stage + '. Данные не изменены.'
+        );
+      } catch (_) {}
+    }
+    throw error;
+  }
 }
 
 function rformOwnerBotV13BuildCockpit_() {
-  const bundle = rformOwnerBotV13ApiRead_();
+  const bundle = rformOwnerBotV13QueueRead_();
+  bundle.events = rformOwnerBotV13ReadEvents_();
   const closure = rformOwnerBotV13ReadClosure_();
   return rformOwnerBotV13CockpitModel_(closure, bundle);
 }
 
-// Existing Content API operation `read` already returns CONTENT_QUEUE + DATA_EVENTS.
+// Reuse the proven Owner Bot read_owner transport for Content Queue. DATA_EVENTS are read
+// directly from the same canonical Master Data in read-only mode so /today does not depend
+// on the heavier full Content API read payload.
+function rformOwnerBotV13QueueRead_() {
+  return rformOwnerBotV1ApiRead_();
+}
+
 function rformOwnerBotV13ApiRead_() {
-  const props = PropertiesService.getScriptProperties();
-  const secret = rformOwnerBotV1RequireProperty_(props, RFORM_OWNER_BOT_V1.props.apiSecret);
-  const timestamp = Math.floor(Date.now() / 1000);
-  const nonce = rformOwnerBotV1RandomHex_(16);
-  const request = {
-    timestamp: timestamp,
-    nonce: nonce,
-    signature: rformOwnerBotV1HmacBase64Url_(String(timestamp) + '.' + nonce, secret),
-    operation: 'read'
-  };
-  return rformOwnerBotV1ApiPost_(request);
+  const bundle = rformOwnerBotV13QueueRead_();
+  bundle.events = rformOwnerBotV13ReadEvents_();
+  return bundle;
+}
+
+function rformOwnerBotV13ReadEvents_() {
+  const ss = SpreadsheetApp.openById(RFORM_OWNER_BOT_V1.spreadsheetId);
+  const sheet = ss.getSheetByName(RFORM_OWNER_COCKPIT_V13.eventsSheet);
+  if (!sheet) throw new Error('DATA_EVENTS sheet unavailable.');
+  if (sheet.getLastRow() < 2) return [];
+  const values = sheet.getDataRange().getDisplayValues();
+  const headers = values[0].map(function (x) { return String(x || '').trim(); });
+  if (headers.indexOf('Event_ID') === -1) throw new Error('DATA_EVENTS schema mismatch.');
+  return values.slice(1).map(function (row) {
+    const out = {};
+    headers.forEach(function (name, index) {
+      if (name) out[name] = String(row[index] || '').trim();
+    });
+    return out;
+  }).filter(function (row) { return !!row.Event_ID; });
 }
 
 function rformOwnerBotV13ReadClosure_() {
