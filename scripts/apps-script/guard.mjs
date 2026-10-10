@@ -52,17 +52,39 @@ function fileHashes(root) {
   return map;
 }
 
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function definesAnchor(text, anchor) {
+  const escaped = escapeRegex(anchor);
+  return [
+    new RegExp(`\\b(?:const|let|var)\\s+${escaped}\\b`),
+    new RegExp(`\\bfunction\\s+${escaped}\\s*\\(`),
+    new RegExp(`\\b${escaped}\\s*=`)
+  ].some(pattern => pattern.test(text));
+}
+
 function locateAnchor(root, anchor) {
   const candidates = walk(root).filter(file => /\.(?:gs|js)$/i.test(file));
   const matches = [];
   for (const file of candidates) {
     const text = fs.readFileSync(file, 'utf8');
-    if (text.includes(anchor)) matches.push(file);
+    if (text.includes(anchor)) matches.push({file, text});
   }
-  if (matches.length !== 1) {
-    fail(`Expected exactly one runtime source file containing anchor ${JSON.stringify(anchor)}; found ${matches.length}`);
+
+  if (matches.length === 1) return matches[0].file;
+
+  if (matches.length > 1) {
+    const defining = matches.filter(item => definesAnchor(item.text, anchor));
+    if (defining.length === 1) {
+      console.log(`Anchor text appears in ${matches.length} files; selected the single defining source file.`);
+      return defining[0].file;
+    }
+    fail(`Anchor ${JSON.stringify(anchor)} appears in ${matches.length} runtime source files and has ${defining.length} defining files; refusing ambiguous target.`);
   }
-  return matches[0];
+
+  fail(`Expected at least one runtime source file containing anchor ${JSON.stringify(anchor)}; found 0`);
 }
 
 function appendOutput(outputFile, key, value) {

@@ -102,6 +102,52 @@ test('runtime drift blocks apply before replacement', () => {
   assert.equal(fs.readFileSync(runtime, 'utf8'), before);
 });
 
+test('multiple anchor references select the single defining source file', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rform-anchor-definition-'));
+  const remote = path.join(dir, 'remote');
+  fs.mkdirSync(remote);
+  fs.writeFileSync(path.join(remote, 'Canonical.js'), "const RFORM_CONTENT_API_V04 = Object.freeze({version:'0.7.0'});\n");
+  fs.writeFileSync(path.join(remote, 'ReferenceA.js'), "function a(){ return RFORM_CONTENT_API_V04.version; }\n");
+  fs.writeFileSync(path.join(remote, 'ReferenceB.js'), "function b(){ return !!RFORM_CONTENT_API_V04; }\n");
+  fs.writeFileSync(path.join(dir, 'candidate.gs'), "const RFORM_CONTENT_API_V04 = Object.freeze({version:'0.7.1'});\n");
+  const out = path.join(dir, 'out');
+
+  const result = run([
+    'prepare', '--root', remote,
+    '--anchor', 'RFORM_CONTENT_API_V04',
+    '--candidate', path.join(dir, 'candidate.gs'),
+    '--operation', 'inspect',
+    '--expected-runtime', '',
+    '--backup', path.join(dir, 'rollback-target'),
+    '--output', out
+  ], dir);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /selected the single defining source file/);
+  assert.match(fs.readFileSync(out, 'utf8'), /target_relative_path=Canonical\.js/);
+});
+
+test('multiple anchor definitions fail closed', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rform-anchor-ambiguous-'));
+  const remote = path.join(dir, 'remote');
+  fs.mkdirSync(remote);
+  fs.writeFileSync(path.join(remote, 'One.js'), "const RFORM_CONTENT_API_V04 = Object.freeze({version:'one'});\n");
+  fs.writeFileSync(path.join(remote, 'Two.js'), "let RFORM_CONTENT_API_V04 = {version:'two'};\n");
+  fs.writeFileSync(path.join(dir, 'candidate.gs'), "const RFORM_CONTENT_API_V04 = Object.freeze({version:'candidate'});\n");
+
+  const result = run([
+    'prepare', '--root', remote,
+    '--anchor', 'RFORM_CONTENT_API_V04',
+    '--candidate', path.join(dir, 'candidate.gs'),
+    '--operation', 'inspect',
+    '--expected-runtime', '',
+    '--backup', path.join(dir, 'rollback-target')
+  ], dir);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /refusing ambiguous target/);
+});
+
 test('deployment selector withholds deployment ID from stdout', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rform-deployments-'));
   const file = path.join(dir, 'deployments.json');

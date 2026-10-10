@@ -151,8 +151,16 @@ function walk(dir) {
 function locate(project, anchor) {
   const base = path.join(root, project, 'remote');
   const matches = walk(base).filter(f => /\.(gs|js)$/i.test(f) && fs.readFileSync(f, 'utf8').includes(anchor));
-  if (matches.length !== 1) throw new Error(`${project}: expected exactly one anchor match, got ${matches.length}`);
-  return matches[0];
+  if (matches.length === 1) return matches[0];
+  if (matches.length > 1) {
+    // The anchor may also be referenced by ancillary files; the canonical
+    // component source is the single file that defines the anchor object.
+    const def = new RegExp('\\b' + anchor + '\\s*=');
+    const defining = matches.filter(f => def.test(fs.readFileSync(f, 'utf8')));
+    if (defining.length === 1) return defining[0];
+    throw new Error(`${project}: anchor ${anchor} matched ${matches.length} files and ${defining.length} definitions; cannot disambiguate`);
+  }
+  throw new Error(`${project}: expected at least one anchor match, got ${matches.length}`);
 }
 function sha(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
