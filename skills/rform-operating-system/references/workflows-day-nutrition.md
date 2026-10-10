@@ -11,6 +11,8 @@ Use `RFORM_MASTER_DATA_v1` and the existing ingest/closure contracts. Do not cre
 5. Preserve plan values and source provenance.
 6. Read back the day and return its exact status.
 
+An open/captured day is not event-eligible yet. Do not create a parallel `DATA_EVENTS` write from chat.
+
 ## MEAL_ADD — Добавь приём пищи
 
 1. Resolve current day and meal type/time.
@@ -21,7 +23,7 @@ Use `RFORM_MASTER_DATA_v1` and the existing ingest/closure contracts. Do not cre
 6. Check record key/duplicate protection.
 7. Read back and report the updated day total.
 
-Do not manufacture exact macros from uncertain food data.
+Do not manufacture exact macros from uncertain food data. Meal capture does not directly emit an event; the closed daily nutrition aggregate becomes event-eligible only after the accepted day closure.
 
 ## NUTRITION_REMAINING — Сколько осталось КБЖУ?
 
@@ -53,4 +55,4 @@ If checks pass, perform the predefined closure write, update the existing canoni
 
 If source data changed after a previous closure, route to revision rather than creating a second day.
 
-Closing a day does not automatically create or publish a standalone content item. Content routing is a separate editorial decision.
+A successful closure makes the closed day/nutrition facts eligible for the backend `Capture → Closure → DATA_EVENTS` detector. The chat workflow itself does not write `DATA_EVENTS`, create a standalone content item or publish. Event routing and editorial routing remain separate downstream steps.
