@@ -150,7 +150,7 @@ rollback() {
   (cd "$SESSION/runtime" && clasp_cmd push --force >/dev/null 2>&1) || true
   if [[ "$deployment_updated" == "1" ]]; then
     dep_id="$(cat "$SESSION/deployment-id")"
-    (cd "$SESSION/runtime" && clasp_cmd update-deployment "$dep_id" --version-number "$EXPECTED_DEPLOYMENT_VERSION" \
+    (cd "$SESSION/runtime" && clasp_cmd update-deployment "$dep_id" --versionNumber "$EXPECTED_DEPLOYMENT_VERSION" \
       --description "Rollback Owner Bot v1.2.4" --json >/dev/null 2>&1) || true
   fi
   echo "ROLLBACK_ATTEMPTED: inspect runtime before any retry."
@@ -189,7 +189,7 @@ NODE
 [[ "$new_version" -gt "$EXPECTED_DEPLOYMENT_VERSION" ]] || { echo "ERROR: new version did not advance"; false; }
 
 dep_id="$(cat "$SESSION/deployment-id")"
-(cd "$SESSION/runtime" && clasp_cmd update-deployment "$dep_id" --version-number "$new_version" \
+(cd "$SESSION/runtime" && clasp_cmd update-deployment "$dep_id" --versionNumber "$new_version" \
   --description "R/Form Owner Bot Cockpit v1.3.0" --json >"$SESSION/deploy-update.json")
 deployment_updated=1
 (cd "$SESSION/runtime" && clasp_cmd list-deployments --json >"$SESSION/deployments-after.json")
