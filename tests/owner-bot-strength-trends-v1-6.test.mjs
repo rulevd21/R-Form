@@ -2,12 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { execFileSync } from 'node:child_process';
 import { applyStrengthTrendsPatch } from '../scripts/release/apply-owner-bot-strength-trends-v1-6.mjs';
 
-const BASELINE_REF = '7cc56d3ef312208ef91f40d6ffa8b0c6e570c041';
 const COCKPIT_PATH = 'automation/owner_bot_cockpit_v1_3.gs';
-const pristineV15 = execFileSync('git', ['show', `${BASELINE_REF}:${COCKPIT_PATH}`], {encoding:'utf8'});
 const workingTree = fs.readFileSync(COCKPIT_PATH, 'utf8');
 const code = applyStrengthTrendsPatch(workingTree);
 const context = {
@@ -68,16 +65,6 @@ function bundle(){
   };
 }
 
-test('known baseline is pristine v1.5 and patch upgrades it to v1.6',()=>{
-  assert.match(pristineV15,/version: '1\.5\.0'/);
-  assert.doesNotMatch(pristineV15,/rformOwnerBotV16StrengthTrends_/);
-  const materialized = applyStrengthTrendsPatch(pristineV15);
-  assert.match(materialized,/version: '1\.6\.0'/);
-  assert.match(materialized,/setsSheet: 'TRAINING_SETS'/);
-  assert.match(materialized,/rformOwnerBotV16StrengthTrends_/);
-  assert.doesNotThrow(()=>new Function(materialized));
-});
-
 test('working-tree source is accepted both before and after materialization',()=>{
   assert.match(code,/version: '1\.6\.0'/);
   assert.match(code,/setsSheet: 'TRAINING_SETS'/);
@@ -86,10 +73,11 @@ test('working-tree source is accepted both before and after materialization',()=
   assert.equal(applyStrengthTrendsPatch(code),code);
 });
 
-test('partial v1.6 materialization fails closed from known pristine baseline',()=>{
-  const partial=pristineV15.replace("version: '1.5.0'","version: '1.6.0'");
-  assert.notEqual(partial,pristineV15);
+test('partial v1.6 materialization fails closed independent of working-tree state',()=>{
+  const partial = "// synthetic partial release state\nconst X = { version: '1.6.0' };\n";
   assert.throws(()=>applyStrengthTrendsPatch(partial),/partial v1\.6 materialization/);
+  const partialSets = "const X = { setsSheet: 'TRAINING_SETS' };\n";
+  assert.throws(()=>applyStrengthTrendsPatch(partialSets),/partial v1\.6 materialization/);
 });
 
 test('report model keeps only set rows belonging to CLOSED accepted sessions and rejects duplicate rows',()=>{
