@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { findHardcodedChannelIds } from '../scripts/apps-script/no-hardcoded-telegram-chat-id.mjs';
 
 const code = fs.readFileSync('automation/owner_bot_cockpit_v1_3.gs', 'utf8');
+const sent = [];
 const context = {
   console,
   Date,
@@ -29,6 +30,11 @@ const context = {
   rformOwnerBotV1DateSort_() { return 0; },
   rformOwnerBotV1Sha256Hex_(value) {
     return String(value).includes('EVT-GATE') ? 'bbbbbbbbbbbbbbbb' : 'cccccccccccccccc';
+  },
+  rformOwnerBotV1ApiRead_() { return {queue: []}; },
+  rformOwnerBotV1SendOwnerText_(text, extra) {
+    sent.push({text: String(text), extra: extra || null});
+    return {ok: true};
   }
 };
 vm.createContext(context);
@@ -86,6 +92,22 @@ test('rendered cockpit contains state counts but no routine work list', () => {
     [{text:'Обновить',callback_data:'oc:r'}],
     [{text:'Материалы',callback_data:'ow:menu'}]
   ]);
+});
+
+test('/today build failure is owner-visible and does not leak upstream error text', () => {
+  sent.length = 0;
+  context.rformOwnerBotV1ApiRead_ = () => { throw new Error('secret https://private.example/token'); };
+  assert.doesNotThrow(() => call(`rformOwnerBotV13SendCockpit_()`));
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /Код: CONTENT_API_READ/);
+  assert.match(sent[0].text, /Данные не изменены/);
+  assert.doesNotMatch(sent[0].text, /private\.example|secret|token/i);
+  context.rformOwnerBotV1ApiRead_ = () => ({queue: []});
+});
+
+test('cockpit queue read reuses the proven read_owner transport and does not construct full read signing', () => {
+  assert.match(code, /return rformOwnerBotV1ApiRead_\(\);/);
+  assert.doesNotMatch(code, /operation:\s*['"]read['"]/);
 });
 
 test('automation sources contain no hardcoded numeric Telegram channel IDs', () => {
