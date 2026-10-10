@@ -7,9 +7,13 @@ on:
       - '.github/workflows/apps-script-production.yml'
       - '.github/workflows/apps-script-deployment-ci.yml'
       - '.clinerules/**'
+      - 'automation/owner_bot_v1.gs'
+      - 'automation/owner_bot_cockpit_v1_3.gs'
       - 'scripts/apps-script/**'
       - 'scripts/cline/**'
+      - 'scripts/release/apply-owner-bot-cockpit-v1-3.mjs'
       - 'tests/apps-script-deployment-guard.test.mjs'
+      - 'tests/owner-bot-cockpit-v1-3.test.mjs'
       - 'docs/governance/APPS_SCRIPT_GITHUB_DEPLOYMENT.md'
       - 'docs/governance/CLINE_CLOUD_ONBOARDING.md'
   push:
@@ -18,9 +22,13 @@ on:
       - '.github/workflows/apps-script-production.yml'
       - '.github/workflows/apps-script-deployment-ci.yml'
       - '.clinerules/**'
+      - 'automation/owner_bot_v1.gs'
+      - 'automation/owner_bot_cockpit_v1_3.gs'
       - 'scripts/apps-script/**'
       - 'scripts/cline/**'
+      - 'scripts/release/apply-owner-bot-cockpit-v1-3.mjs'
       - 'tests/apps-script-deployment-guard.test.mjs'
+      - 'tests/owner-bot-cockpit-v1-3.test.mjs'
       - 'docs/governance/APPS_SCRIPT_GITHUB_DEPLOYMENT.md'
       - 'docs/governance/CLINE_CLOUD_ONBOARDING.md'
 
@@ -52,11 +60,21 @@ jobs:
       - name: Syntax check Telegram Autopost readback shell
         run: bash -n scripts/apps-script/telegram-autopost-readback.sh
 
+      - name: Syntax check Owner Bot runtime rollout shell
+        run: bash -n scripts/apps-script/owner-bot-cockpit-v1-3-runtime.sh
+
       - name: Validate Cline production workflow anchors
         run: |
           grep -Fq 'rformContentEventDetectorTickV03' .clinerules/workflows/rform-one-shot-onboarding.md
           grep -Fq '5550d3c423294fd89c980d08ce019808b735c434' .clinerules/workflows/rform-one-shot-onboarding.md
           grep -Fq 'READY: R/Form Cline Cloud runtime session prepared.' scripts/cline/rform-cloud-onboard.sh
+
+      - name: Validate Owner Bot Cockpit candidate
+        run: |
+          node --check scripts/release/apply-owner-bot-cockpit-v1-3.mjs
+          node --check < automation/owner_bot_cockpit_v1_3.gs
+          node scripts/release/apply-owner-bot-cockpit-v1-3.mjs
+          node --test tests/owner-bot-cockpit-v1-3.test.mjs
 
       - name: Run guard unit tests
         run: node --test tests/apps-script-deployment-guard.test.mjs
