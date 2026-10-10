@@ -12,8 +12,23 @@ function replaceOnce(source, before, after, label) {
   return source.slice(0, first) + after + source.slice(first + before.length);
 }
 
+function materializationState(source) {
+  const markers = [
+    '// R/Form Owner Bot Cockpit v1.5 · Daily Cockpit + Period Report + Build Report',
+    "version: '1.5.0'",
+    "callback_data: buildCallback",
+    'rformOwnerBotV15ShowAnalyticalReport_'
+  ];
+  const hits = markers.filter(function (marker) { return source.includes(marker); }).length;
+  if (hits === 0) return 'PRISTINE';
+  if (hits === markers.length) return 'MATERIALIZED';
+  throw new Error('BUILD_REPORT_PATCH: partial v1.5 materialization');
+}
+
 export function applyBuildReportPatch(input) {
   let source = String(input || '');
+  const state = materializationState(source);
+  if (state === 'MATERIALIZED') return source;
 
   source = replaceOnce(
     source,
