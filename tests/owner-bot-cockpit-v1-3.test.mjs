@@ -46,6 +46,15 @@ test('closure becomes owner action only when ready, unblocked and not already re
   assert.equal(call(`rformOwnerBotV13ClosureNeedsOwner_({close_readiness:'READY',blocking_issues:'',closed_at:'',close_request:'REQUESTED'})`), false);
 });
 
+test('closure-ready state appears as an owner decision when capacity is available', () => {
+  const model = call(`rformOwnerBotV13CockpitModel_(
+    {found:true,date:'10.10.2026',day_id:'D-20261010',close_readiness:'READY',blocking_issues:'',closed_at:'',close_request:''},
+    {queue:[],events:[]}
+  )`);
+  assert.equal(model.owner_decision_total, 1);
+  assert.equal(model.owner_decisions[0].kind, 'DAY_CLOSE');
+});
+
 test('cockpit caps visible owner decisions at three and prioritizes final preview', () => {
   const model = call(`rformOwnerBotV13CockpitModel_(
     {found:true,date:'10.10.2026',day_id:'D-20261010',close_readiness:'READY',blocking_issues:'',closed_at:'',close_request:''},
@@ -57,7 +66,7 @@ test('cockpit caps visible owner decisions at three and prioritizes final previe
   assert.equal(model.owner_decision_total, 4);
   assert.equal(model.owner_decisions.length, 3);
   assert.equal(model.owner_decisions[0].kind, 'CONTENT_PREVIEW');
-  assert.ok(model.owner_decisions.some(x => x.kind === 'DAY_CLOSE'));
+  assert.ok(model.owner_decisions.every(x => ['CONTENT_PREVIEW','DAY_CLOSE','EVENT_GATE'].includes(x.kind)));
 });
 
 test('rendered cockpit contains state counts but no routine work list', () => {
