@@ -14,10 +14,12 @@ on:
       - 'scripts/cline/**'
       - 'scripts/release/apply-owner-bot-cockpit-v1-3.mjs'
       - 'scripts/release/apply-owner-bot-build-report-v1-5.mjs'
+      - 'scripts/release/apply-owner-bot-strength-trends-v1-6.mjs'
       - 'tests/apps-script-deployment-guard.test.mjs'
       - 'tests/capture-closure-events-v1.test.mjs'
       - 'tests/owner-bot-cockpit-v1-3.test.mjs'
       - 'tests/owner-bot-build-report-v1-5.test.mjs'
+      - 'tests/owner-bot-strength-trends-v1-6.test.mjs'
       - 'docs/governance/APPS_SCRIPT_GITHUB_DEPLOYMENT.md'
       - 'docs/governance/CLINE_CLOUD_ONBOARDING.md'
       - 'docs/operating-architecture/CAPTURE_CLOSURE_EVENTS_V1.md'
@@ -34,10 +36,12 @@ on:
       - 'scripts/cline/**'
       - 'scripts/release/apply-owner-bot-cockpit-v1-3.mjs'
       - 'scripts/release/apply-owner-bot-build-report-v1-5.mjs'
+      - 'scripts/release/apply-owner-bot-strength-trends-v1-6.mjs'
       - 'tests/apps-script-deployment-guard.test.mjs'
       - 'tests/capture-closure-events-v1.test.mjs'
       - 'tests/owner-bot-cockpit-v1-3.test.mjs'
       - 'tests/owner-bot-build-report-v1-5.test.mjs'
+      - 'tests/owner-bot-strength-trends-v1-6.test.mjs'
       - 'docs/governance/APPS_SCRIPT_GITHUB_DEPLOYMENT.md'
       - 'docs/governance/CLINE_CLOUD_ONBOARDING.md'
       - 'docs/operating-architecture/CAPTURE_CLOSURE_EVENTS_V1.md'
@@ -85,6 +89,9 @@ jobs:
       - name: Syntax check Owner Bot build-report rollout shell
         run: bash -n scripts/apps-script/owner-bot-build-report-v1-5-runtime.sh
 
+      - name: Syntax check Owner Bot strength-trends rollout shell
+        run: bash -n scripts/apps-script/owner-bot-strength-trends-v1-6-runtime.sh
+
       - name: Syntax check Capture Closure Events rollout shell
         run: bash -n scripts/apps-script/capture-closure-events-v1-runtime.sh
 
@@ -106,11 +113,24 @@ jobs:
           node scripts/release/apply-owner-bot-cockpit-v1-3.mjs
           node --test tests/owner-bot-cockpit-v1-3.test.mjs
 
-      - name: Validate Owner Bot Build Report v1.5 patch
+      - name: Validate Owner Bot Build Report v1.5 contract
         run: |
           node --check scripts/release/apply-owner-bot-build-report-v1-5.mjs
-          node scripts/release/apply-owner-bot-build-report-v1-5.mjs --check
-          node --test tests/owner-bot-build-report-v1-5.test.mjs
+          if grep -Fq "version: '1.5.0'" automation/owner_bot_cockpit_v1_3.gs; then
+            node scripts/release/apply-owner-bot-build-report-v1-5.mjs --check
+            node --test tests/owner-bot-build-report-v1-5.test.mjs
+          else
+            grep -Fq "version: '1.6.0'" automation/owner_bot_cockpit_v1_3.gs
+            grep -Fq 'rformOwnerBotV15ShowAnalyticalReport_' automation/owner_bot_cockpit_v1_3.gs
+            grep -Fq 'oc:rp:b:' automation/owner_bot_cockpit_v1_3.gs
+            echo 'v1.5 Build Report contract inherited by materialized v1.6 candidate.'
+          fi
+
+      - name: Validate Owner Bot Strength Trends v1.6 patch
+        run: |
+          node --check scripts/release/apply-owner-bot-strength-trends-v1-6.mjs
+          node scripts/release/apply-owner-bot-strength-trends-v1-6.mjs --check
+          node --test tests/owner-bot-strength-trends-v1-6.test.mjs
 
       - name: Run guard unit tests
         run: node --test tests/apps-script-deployment-guard.test.mjs

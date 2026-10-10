@@ -1,10 +1,10 @@
-// R/Form Owner Bot Cockpit v1.5 · Daily Cockpit + Period Report + Build Report
+// R/Form Owner Bot Cockpit v1.6 · Daily Cockpit + Period Report + Strength Trends
 // Read model only. Reads canonical Master Data directly for the daily cockpit and reports.
 // Owner mutations still use the existing Content Control API.
 // No new datastore, publisher, router or trigger.
 
 const RFORM_OWNER_COCKPIT_V13 = Object.freeze({
-  version: '1.5.0',
+  version: '1.6.0',
   timezone: 'Europe/Moscow',
   queueSheet: 'CONTENT_QUEUE',
   closureSheet: 'DAY_CLOSURE',
@@ -12,8 +12,10 @@ const RFORM_OWNER_COCKPIT_V13 = Object.freeze({
   dailySheet: 'DAILY',
   nutritionDailySheet: 'NUTRITION_DAILY',
   sessionsSheet: 'TRAINING_SESSIONS',
+  setsSheet: 'TRAINING_SETS',
   measurementsSheet: 'MEASUREMENTS',
   maxOwnerDecisions: 3,
+  strengthMaxExercises: 4,
   reportMaxDays: 366,
   terminalEventStatuses: Object.freeze([
     'PUBLISHED', 'ALREADY_IN_PIPELINE', 'FILTERED_OUT_V03', 'AGGREGATE_TO_WEEKLY',
@@ -131,6 +133,7 @@ function rformOwnerBotV13ReadReportBundle_() {
     daily: rformOwnerBotV13ReadRows_(RFORM_OWNER_COCKPIT_V13.dailySheet, 'Day_ID'),
     nutrition: rformOwnerBotV13ReadRows_(RFORM_OWNER_COCKPIT_V13.nutritionDailySheet, 'Day_ID'),
     sessions: rformOwnerBotV13ReadRows_(RFORM_OWNER_COCKPIT_V13.sessionsSheet, 'Session_ID'),
+    sets: rformOwnerBotV13ReadRows_(RFORM_OWNER_COCKPIT_V13.setsSheet, 'Set_ID'),
     measurements: rformOwnerBotV13ReadRows_(RFORM_OWNER_COCKPIT_V13.measurementsSheet, 'Measurement_ID')
   };
 }
@@ -429,6 +432,7 @@ function rformOwnerBotV13ReportModel_(startText, endText, bundle, todayText) {
   const daily = Array.isArray(bundle && bundle.daily) ? bundle.daily : [];
   const nutrition = Array.isArray(bundle && bundle.nutrition) ? bundle.nutrition : [];
   const sessions = Array.isArray(bundle && bundle.sessions) ? bundle.sessions : [];
+  const sets = Array.isArray(bundle && bundle.sets) ? bundle.sets : [];
   const measurements = Array.isArray(bundle && bundle.measurements) ? bundle.measurements : [];
 
   const closureByDate = {};
@@ -461,6 +465,11 @@ function rformOwnerBotV13ReportModel_(startText, endText, bundle, todayText) {
     const p = rformOwnerBotV13DateParts_(row.Date);
     return !!(p && accepted[p.text] && String(row.Session_Status || '').trim().toUpperCase() === 'CLOSED' && !String(row.Duplicate_Flag || '').trim());
   }).sort(function (a, b) { return rformOwnerBotV13DateParts_(a.Date).key.localeCompare(rformOwnerBotV13DateParts_(b.Date).key); });
+  const closedSessionIds = {};
+  closedSessions.forEach(function (row) { closedSessionIds[String(row.Session_ID || '').trim()] = true; });
+  const periodSets = sets.filter(function (row) {
+    return !!closedSessionIds[String(row.Session_ID || '').trim()] && !String(row.Duplicate_Flag || '').trim();
+  });
 
   const periodMeasurements = measurements.filter(function (row) {
     return rformOwnerBotV13InRange_(row.Date, range) && !String(row.Duplicate_Flag || '').trim() &&
@@ -494,7 +503,8 @@ function rformOwnerBotV13ReportModel_(startText, endText, bundle, todayText) {
     training: {
       sessions: closedSessions.length,
       durationMinutes: duration.reduce(function (a, b) { return a + b; }, 0),
-      rows: closedSessions
+      rows: closedSessions,
+      sets: periodSets
     },
     weight: weights.length ? {
       first: weights[0], last: weights[weights.length - 1], average: rformOwnerBotV13Average_(weights.map(function (x) { return x.value; }))
@@ -595,6 +605,173 @@ function rformOwnerBotV15PainMax_(rows) {
   return max;
 }
 
+function rformOwnerBotV16StrengthSetEligible_(row) {
+  const type = String(row && row.Set_Type || '').trim().toUpperCase();
+  const category = String(row && row.Exercise_Category || '').trim().toUpperCase();
+  if (['WORKING','TOP_SET','BACKOFF'].indexOf(type) === -1) return false;
+  if (['BENCH','SQUAT','HINGE','PRESS','PULL'].indexOf(category) === -1) return false;
+  const weight = rformOwnerBotV13Number_(row && row.Weight_Kg);
+  const reps = rformOwnerBotV13Number_(row && row.Reps);
+  return weight !== null && weight > 0 && reps !== null && reps > 0;
+}
+
+function rformOwnerBotV16ExerciseKey_(row) {
+  const catalog = String(row && row.Exercise_Catalog_ID || '').trim().toUpperCase();
+  if (catalog) return catalog;
+  const normalized = String(row && row.Exercise_Name_Normalized || '').trim().toUpperCase();
+  if (normalized && !/^FREE_/.test(normalized)) return normalized;
+  const original = String(row && row.Exercise_Name_Original || '').trim().toUpperCase();
+  return normalized || original.replace(/[^A-ZА-ЯЁ0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+function rformOwnerBotV16ExerciseLabel_(key, rows) {
+  const labels = {
+    COMPETITION_BENCH_PRESS: 'Соревновательный жим',
+    COMPETITION_BENCH_PRESS_2S_PAUSE: 'Жим с паузой 2 с',
+    LARSEN_PRESS: 'Жим Ларсена',
+    BARBELL_BACK_SQUAT: 'Присед со штангой',
+    ROMANIAN_DEADLIFT: 'Румынская тяга',
+    OVERHEAD_PRESS: 'Жим стоя',
+    BARBELL_ROW: 'Тяга штанги'
+  };
+  if (labels[key]) return labels[key];
+  const named = (rows || []).map(function (row) { return String(row.Exercise_Name_Original || '').trim(); }).filter(Boolean);
+  return named.length ? named[0] : key;
+}
+
+function rformOwnerBotV16CategoryPriority_(category) {
+  return {BENCH: 50, SQUAT: 40, HINGE: 30, PRESS: 20, PULL: 10}[String(category || '').toUpperCase()] || 0;
+}
+
+function rformOwnerBotV16Estimated1RM_(row) {
+  const weight = rformOwnerBotV13Number_(row && row.Weight_Kg);
+  const reps = rformOwnerBotV13Number_(row && row.Reps);
+  if (weight === null || reps === null || weight <= 0 || reps <= 0) return null;
+  const rawRir = rformOwnerBotV13Number_(row && row.RIR);
+  const reserve = rawRir === null ? 0 : Math.max(0, Math.min(5, rawRir));
+  const effectiveReps = Math.min(12, reps + reserve);
+  return weight * (1 + effectiveReps / 30);
+}
+
+function rformOwnerBotV16TopSet_(rows) {
+  const candidates = (rows || []).map(function (row) {
+    return {row: row, e1rm: rformOwnerBotV16Estimated1RM_(row)};
+  }).filter(function (x) { return Number.isFinite(x.e1rm); });
+  candidates.sort(function (a, b) {
+    if (b.e1rm !== a.e1rm) return b.e1rm - a.e1rm;
+    const bw = rformOwnerBotV13Number_(b.row.Weight_Kg) || 0;
+    const aw = rformOwnerBotV13Number_(a.row.Weight_Kg) || 0;
+    if (bw !== aw) return bw - aw;
+    return (rformOwnerBotV13Number_(b.row.Reps) || 0) - (rformOwnerBotV13Number_(a.row.Reps) || 0);
+  });
+  return candidates.length ? candidates[0] : null;
+}
+
+function rformOwnerBotV16BestExposure_(rows) {
+  const copy = (rows || []).filter(function (x) { return Number.isFinite(x.e1rm); }).slice();
+  copy.sort(function (a, b) { return b.e1rm - a.e1rm || String(a.date || '').localeCompare(String(b.date || '')); });
+  return copy.length ? copy[0] : null;
+}
+
+function rformOwnerBotV16StrengthTrends_(model) {
+  const sessionRows = model && model.training && Array.isArray(model.training.rows) ? model.training.rows : [];
+  const setRows = model && model.training && Array.isArray(model.training.sets) ? model.training.sets : [];
+  const sessionDate = {};
+  sessionRows.forEach(function (row) {
+    const p = rformOwnerBotV13DateParts_(row.Date);
+    if (p) sessionDate[String(row.Session_ID || '').trim()] = p;
+  });
+  const eligible = setRows.filter(rformOwnerBotV16StrengthSetEligible_).filter(function (row) {
+    return !!sessionDate[String(row.Session_ID || '').trim()];
+  });
+  const exerciseMap = {};
+  eligible.forEach(function (row) {
+    const key = rformOwnerBotV16ExerciseKey_(row);
+    if (!key) return;
+    const sid = String(row.Session_ID || '').trim();
+    if (!exerciseMap[key]) exerciseMap[key] = {key: key, category: String(row.Exercise_Category || '').trim().toUpperCase(), rows: [], sessions: {}};
+    exerciseMap[key].rows.push(row);
+    if (!exerciseMap[key].sessions[sid]) exerciseMap[key].sessions[sid] = [];
+    exerciseMap[key].sessions[sid].push(row);
+  });
+
+  const trends = Object.keys(exerciseMap).map(function (key) {
+    const group = exerciseMap[key];
+    const exposures = Object.keys(group.sessions).map(function (sid) {
+      const rows = group.sessions[sid];
+      const top = rformOwnerBotV16TopSet_(rows);
+      const date = sessionDate[sid];
+      const rirValues = rows.map(function (row) { return rformOwnerBotV13Number_(row.RIR); }).filter(function (x) { return x !== null; });
+      const volume = rows.reduce(function (sum, row) {
+        return sum + (rformOwnerBotV13Number_(row.Weight_Kg) || 0) * (rformOwnerBotV13Number_(row.Reps) || 0);
+      }, 0);
+      return {
+        sessionId: sid, date: date.text, dateKey: date.key, rows: rows,
+        top: top ? top.row : null, e1rm: top ? top.e1rm : null, volume: volume,
+        averageRir: rformOwnerBotV13Average_(rirValues)
+      };
+    }).filter(function (x) { return x.top; }).sort(function (a, b) { return a.dateKey.localeCompare(b.dateKey); });
+    if (!exposures.length) return null;
+
+    const split = Math.max(1, Math.floor(exposures.length / 2));
+    const earlyBest = rformOwnerBotV16BestExposure_(exposures.slice(0, split));
+    const lateBest = rformOwnerBotV16BestExposure_(exposures.slice(split));
+    const allBest = rformOwnerBotV16BestExposure_(exposures);
+    const deltaPct = earlyBest && lateBest && earlyBest.e1rm > 0 ? ((lateBest.e1rm - earlyBest.e1rm) / earlyBest.e1rm) * 100 : null;
+    const allRir = group.rows.map(function (row) { return rformOwnerBotV13Number_(row.RIR); }).filter(function (x) { return x !== null; });
+    const peakWeight = Math.max.apply(null, group.rows.map(function (row) { return rformOwnerBotV13Number_(row.Weight_Kg) || 0; }));
+    const totalVolume = exposures.reduce(function (sum, x) { return sum + x.volume; }, 0);
+    const trend = deltaPct === null ? 'INSUFFICIENT' : deltaPct >= 2 ? 'UP' : deltaPct <= -2 ? 'DOWN' : 'STABLE';
+    return {
+      key: key, label: rformOwnerBotV16ExerciseLabel_(key, group.rows), category: group.category,
+      exposures: exposures, first: exposures[0], last: exposures[exposures.length - 1], best: allBest,
+      earlyBest: earlyBest, lateBest: lateBest, deltaPct: deltaPct, trend: trend, peakWeight: peakWeight,
+      totalVolume: totalVolume, averageRir: rformOwnerBotV13Average_(allRir), setCount: group.rows.length,
+      score: exposures.length * 1000 + rformOwnerBotV16CategoryPriority_(group.category) * 10 + Math.min(99, group.rows.length)
+    };
+  }).filter(Boolean);
+
+  trends.sort(function (a, b) {
+    const aComparable = a.exposures.length >= 2 ? 1 : 0;
+    const bComparable = b.exposures.length >= 2 ? 1 : 0;
+    return bComparable - aComparable || b.score - a.score || a.label.localeCompare(b.label);
+  });
+  return trends.slice(0, RFORM_OWNER_COCKPIT_V13.strengthMaxExercises || 4);
+}
+
+function rformOwnerBotV16SetText_(row) {
+  if (!row) return '—';
+  const weight = rformOwnerBotV13Number_(row.Weight_Kg);
+  const reps = rformOwnerBotV13Number_(row.Reps);
+  const rir = rformOwnerBotV13Number_(row.RIR);
+  let text = rformOwnerBotV13Round_(weight, 1) + '×' + rformOwnerBotV13Round_(reps, 0);
+  if (rir !== null) text += ' @RIR ' + rformOwnerBotV13Round_(rir, 1);
+  return text;
+}
+
+function rformOwnerBotV16RenderStrengthTrends_(trends) {
+  const lines = ['', 'СИЛОВЫЕ ТРЕНДЫ'];
+  if (!trends || !trends.length) {
+    lines.push('Недостаточно сопоставимых рабочих подходов в TRAINING_SETS.');
+    return lines;
+  }
+  lines.push('e1RM≈ — оценка по весу, повторам и RIR; тренд = лучший показатель ранней vs поздней половины экспозиций.');
+  trends.forEach(function (trend, index) {
+    const arrow = trend.trend === 'UP' ? '↑' : trend.trend === 'DOWN' ? '↓' : trend.trend === 'STABLE' ? '→' : '·';
+    lines.push((index + 1) + '. ' + trend.label + ' · ' + trend.exposures.length + ' сесс.');
+    lines.push('   ' + trend.first.date + ' ' + rformOwnerBotV16SetText_(trend.first.top) + ' → ' + trend.last.date + ' ' + rformOwnerBotV16SetText_(trend.last.top));
+    if (trend.deltaPct !== null && trend.earlyBest && trend.lateBest) {
+      const sign = trend.deltaPct > 0 ? '+' : '';
+      lines.push('   e1RM≈ ' + rformOwnerBotV13Round_(trend.earlyBest.e1rm, 1) + ' → ' + rformOwnerBotV13Round_(trend.lateBest.e1rm, 1) + ' кг · ' + arrow + ' ' + sign + rformOwnerBotV13Round_(trend.deltaPct, 1) + '%');
+    } else {
+      lines.push('   e1RM≈ ' + rformOwnerBotV13Round_(trend.best && trend.best.e1rm, 1) + ' кг · тренд: недостаточно точек');
+    }
+    lines.push('   пик веса ' + rformOwnerBotV13Round_(trend.peakWeight, 1) + ' кг · тоннаж ' + rformOwnerBotV13Round_(trend.totalVolume, 0) + ' кг' +
+      (Number.isFinite(trend.averageRir) ? ' · RIR ср. ' + rformOwnerBotV13Round_(trend.averageRir, 1) : ''));
+  });
+  return lines;
+}
+
 function rformOwnerBotV15AnalysisModel_(model) {
   const dailyRows = model && model.daily && Array.isArray(model.daily.rows) ? model.daily.rows : [];
   const trainingRows = model && model.training && Array.isArray(model.training.rows) ? model.training.rows : [];
@@ -605,6 +782,7 @@ function rformOwnerBotV15AnalysisModel_(model) {
   const weightDelta = model && model.weight ? model.weight.last.value - model.weight.first.value : null;
   const weightPct = model && model.weight && model.weight.first.value ? (weightDelta / model.weight.first.value) * 100 : null;
   const avgTrainingDuration = model && model.training && model.training.sessions ? model.training.durationMinutes / model.training.sessions : null;
+  const strength = rformOwnerBotV16StrengthTrends_(model);
   const checks = [];
 
   if (model.status !== 'READY_FOR_REPORT_BUILD') {
@@ -631,7 +809,8 @@ function rformOwnerBotV15AnalysisModel_(model) {
     trends: {
       weightDelta: weightDelta, weightPct: weightPct,
       sleepAverage: sleepAvg, readinessAverage: readinessAvg, painMax: painMax,
-      trainingPlan: statusCounts, averageTrainingDuration: avgTrainingDuration
+      trainingPlan: statusCounts, averageTrainingDuration: avgTrainingDuration,
+      strength: strength
     },
     checks: checks
   };
@@ -673,6 +852,8 @@ function rformOwnerBotV15RenderAnalyticalReport_(analysis) {
       rformOwnerBotV13Round_(model.nutrition.average.protein, 1) + ' · Ж ' + rformOwnerBotV13Round_(model.nutrition.average.fat, 1) +
       ' · У ' + rformOwnerBotV13Round_(model.nutrition.average.carbs, 1));
   }
+
+  rformOwnerBotV16RenderStrengthTrends_(t.strength || []).forEach(function (line) { lines.push(line); });
 
   lines.push('', 'ПРОБЕЛЫ');
   if (!model.data_gaps) lines.push('Нет по Closure / DAILY / Nutrition.');
