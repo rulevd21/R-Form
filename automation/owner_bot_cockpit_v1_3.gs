@@ -1,10 +1,10 @@
-// R/Form Owner Bot Cockpit v1.4 · Daily Cockpit + Period Report
+// R/Form Owner Bot Cockpit v1.5 · Daily Cockpit + Period Report + Build Report
 // Read model only. Reads canonical Master Data directly for the daily cockpit and reports.
 // Owner mutations still use the existing Content Control API.
 // No new datastore, publisher, router or trigger.
 
 const RFORM_OWNER_COCKPIT_V13 = Object.freeze({
-  version: '1.4.0',
+  version: '1.5.0',
   timezone: 'Europe/Moscow',
   queueSheet: 'CONTENT_QUEUE',
   closureSheet: 'DAY_CLOSURE',
@@ -484,10 +484,11 @@ function rformOwnerBotV13ReportModel_(startText, endText, bundle, todayText) {
     range: range,
     status: missingClosure.length ? 'DRAFT_ONLY' : 'READY_FOR_REPORT_BUILD',
     closure: {closed: acceptedDates.length, total: days.length, missing: missingClosure},
-    daily: {closed: closedDaily.length, missing: missingDaily},
+    daily: {closed: closedDaily.length, missing: missingDaily, rows: closedDaily},
     nutrition: {
       closed: Object.keys(nutritionDates).length,
       missing: missingNutrition,
+      rows: closedNutrition,
       average: {calories: calorieAvg, protein: proteinAvg, fat: fatAvg, carbs: carbsAvg}
     },
     training: {
@@ -553,13 +554,167 @@ function rformOwnerBotV13RenderReport_(model) {
   lines.push('', model.status === 'READY_FOR_REPORT_BUILD'
     ? 'Все дни периода прошли canonical Closure. Период готов к аналитическому отчёту.'
     : 'Черновой режим: финальный отчёт нельзя считать полным до закрытия всех дней периода.');
+  const buildLabel = model.status === 'READY_FOR_REPORT_BUILD' ? 'Сформировать отчёт' : 'Сформировать черновик';
+  const buildCallback = 'oc:rp:b:' + r.startKey + ':' + r.endKey;
   return {
     text: lines.join('\n').slice(0, 3900),
     keyboard: [
+      [{text: buildLabel, callback_data: buildCallback}],
       [{text: 'Выбрать другой период', callback_data: 'oc:rp:m'}],
       [{text: 'Сегодня', callback_data: 'oc:r'}]
     ]
   };
+}
+
+function rformOwnerBotV15PlanStatusCounts_(rows) {
+  const out = {above: 0, below: 0, on: 0, other: 0};
+  (rows || []).forEach(function (row) {
+    const status = String(row && row.Plan_Status || '').trim().toUpperCase();
+    if (status === 'ABOVE_PLAN') out.above++;
+    else if (status === 'BELOW_PLAN') out.below++;
+    else if (status === 'ON_PLAN' || status === 'AS_PLANNED') out.on++;
+    else out.other++;
+  });
+  return out;
+}
+
+function rformOwnerBotV15DailyAverage_(rows, field) {
+  return rformOwnerBotV13Average_((rows || []).map(function (row) {
+    return rformOwnerBotV13Number_(row && row[field]);
+  }));
+}
+
+function rformOwnerBotV15PainMax_(rows) {
+  let max = null;
+  (rows || []).forEach(function (row) {
+    ['Shoulder_Pain','Elbow_Pain','Other_Pain'].forEach(function (field) {
+      const value = rformOwnerBotV13Number_(row && row[field]);
+      if (value !== null && (max === null || value > max)) max = value;
+    });
+  });
+  return max;
+}
+
+function rformOwnerBotV15AnalysisModel_(model) {
+  const dailyRows = model && model.daily && Array.isArray(model.daily.rows) ? model.daily.rows : [];
+  const trainingRows = model && model.training && Array.isArray(model.training.rows) ? model.training.rows : [];
+  const statusCounts = rformOwnerBotV15PlanStatusCounts_(trainingRows);
+  const sleepAvg = rformOwnerBotV15DailyAverage_(dailyRows, 'Sleep_Hours');
+  const readinessAvg = rformOwnerBotV15DailyAverage_(dailyRows, 'Readiness');
+  const painMax = rformOwnerBotV15PainMax_(dailyRows);
+  const weightDelta = model && model.weight ? model.weight.last.value - model.weight.first.value : null;
+  const weightPct = model && model.weight && model.weight.first.value ? (weightDelta / model.weight.first.value) * 100 : null;
+  const avgTrainingDuration = model && model.training && model.training.sessions ? model.training.durationMinutes / model.training.sessions : null;
+  const checks = [];
+
+  if (model.status !== 'READY_FOR_REPORT_BUILD') {
+    checks.push('Закрыть или сверить ' + model.closure.missing.length + ' дней без accepted Closure до финального вывода.');
+  }
+  if (model.daily.missing.length) checks.push('Сверить DAILY для ' + model.daily.missing.length + ' закрытых дней.');
+  if (model.nutrition.missing.length) checks.push('Сверить питание для ' + model.nutrition.missing.length + ' закрытых дней.');
+  if (statusCounts.below > 0) checks.push('Разобрать причины ' + statusCounts.below + ' тренировок BELOW_PLAN перед изменением следующего микроцикла.');
+  if (painMax !== null && painMax >= 2) checks.push('Проверить болевой сигнал max ' + rformOwnerBotV13Round_(painMax, 0) + '/10 до прогрессии нагрузки.');
+  if ((readinessAvg !== null && readinessAvg <= 7) || (sleepAvg !== null && sleepAvg < 7)) {
+    checks.push('Сверить восстановление: средние сон/готовность вышли из рабочего ориентира.');
+  }
+  if (weightPct !== null && Math.abs(weightPct) >= 1.5) {
+    checks.push('Сверить изменение веса ' + rformOwnerBotV13Round_(weightPct, 1) + '% с текущей целью питания и композиции тела.');
+  }
+  if (model.range.days >= 28 && !model.measurements.length) {
+    checks.push('Добавить контрольные замеры для периода ≥28 дней.');
+  }
+  if (!checks.length) checks.push('Обязательных корректировок из данных периода не выявлено; сравнить следующий сопоставимый период.');
+
+  return {
+    mode: model.status === 'READY_FOR_REPORT_BUILD' ? 'FINAL' : 'DRAFT',
+    source: model,
+    trends: {
+      weightDelta: weightDelta, weightPct: weightPct,
+      sleepAverage: sleepAvg, readinessAverage: readinessAvg, painMax: painMax,
+      trainingPlan: statusCounts, averageTrainingDuration: avgTrainingDuration
+    },
+    checks: checks
+  };
+}
+
+function rformOwnerBotV15RenderAnalyticalReport_(analysis) {
+  const model = analysis.source;
+  const r = model.range;
+  const t = analysis.trends;
+  const lines = [
+    'R/Form · Аналитический отчёт',
+    r.start + ' – ' + r.end + ' · ' + r.days + ' дн.',
+    'Режим: ' + (analysis.mode === 'FINAL' ? 'полный' : 'черновик · неполное покрытие'),
+    '',
+    'ФАКТЫ',
+    'Closure: ' + model.closure.closed + '/' + model.closure.total,
+    'Тренировки: ' + model.training.sessions + ' · ' + rformOwnerBotV13Round_(model.training.durationMinutes, 0) + ' мин',
+    'Питание: ' + model.nutrition.closed + '/' + model.closure.total + ' дней',
+    'Замеры: ' + model.measurements.length + ' записей'
+  ];
+  if (model.weight) {
+    lines.push('Вес: ' + rformOwnerBotV13Round_(model.weight.first.value, 2) + ' → ' + rformOwnerBotV13Round_(model.weight.last.value, 2) + ' кг');
+  } else lines.push('Вес: данных недостаточно');
+
+  lines.push('', 'ТРЕНДЫ');
+  if (t.weightDelta !== null) {
+    lines.push('Вес: ' + (t.weightDelta >= 0 ? '+' : '') + rformOwnerBotV13Round_(t.weightDelta, 2) + ' кг · ' +
+      (t.weightPct >= 0 ? '+' : '') + rformOwnerBotV13Round_(t.weightPct, 1) + '%');
+  }
+  if (Number.isFinite(t.sleepAverage) || Number.isFinite(t.readinessAverage) || t.painMax !== null) {
+    lines.push('Состояние: сон ' + rformOwnerBotV13Round_(t.sleepAverage, 1) + ' ч · готовность ' +
+      rformOwnerBotV13Round_(t.readinessAverage, 1) + '/10 · боль max ' + rformOwnerBotV13Round_(t.painMax, 0) + '/10');
+  }
+  lines.push('Тренировки план/факт: ABOVE ' + t.trainingPlan.above + ' · ON ' + t.trainingPlan.on + ' · BELOW ' + t.trainingPlan.below +
+    (t.trainingPlan.other ? ' · OTHER ' + t.trainingPlan.other : '') +
+    (Number.isFinite(t.averageTrainingDuration) ? ' · средняя ' + rformOwnerBotV13Round_(t.averageTrainingDuration, 0) + ' мин' : ''));
+  if (Number.isFinite(model.nutrition.average.calories)) {
+    lines.push('Питание среднее: ≈' + rformOwnerBotV13Round_(model.nutrition.average.calories, 0) + ' ккал · Б ' +
+      rformOwnerBotV13Round_(model.nutrition.average.protein, 1) + ' · Ж ' + rformOwnerBotV13Round_(model.nutrition.average.fat, 1) +
+      ' · У ' + rformOwnerBotV13Round_(model.nutrition.average.carbs, 1));
+  }
+
+  lines.push('', 'ПРОБЕЛЫ');
+  if (!model.data_gaps) lines.push('Нет по Closure / DAILY / Nutrition.');
+  else {
+    if (model.closure.missing.length) lines.push('• Closure: ' + rformOwnerBotV13CompactDates_(model.closure.missing, 8));
+    if (model.daily.missing.length) lines.push('• DAILY: ' + rformOwnerBotV13CompactDates_(model.daily.missing, 8));
+    if (model.nutrition.missing.length) lines.push('• Nutrition: ' + rformOwnerBotV13CompactDates_(model.nutrition.missing, 8));
+  }
+
+  lines.push('', 'СЛЕДУЮЩИЕ ПРОВЕРКИ');
+  analysis.checks.slice(0, 5).forEach(function (check, index) { lines.push((index + 1) + '. ' + check); });
+  return {
+    text: lines.join('\n').slice(0, 3900),
+    keyboard: [
+      [{text: 'К сводке периода', callback_data: 'oc:rp:v:' + r.startKey + ':' + r.endKey}],
+      [{text: 'Выбрать другой период', callback_data: 'oc:rp:m'}],
+      [{text: 'Сегодня', callback_data: 'oc:r'}]
+    ]
+  };
+}
+
+function rformOwnerBotV15ShowAnalyticalReport_(startText, endText) {
+  let stage = 'ANALYSIS_SOURCE_READ';
+  try {
+    const bundle = rformOwnerBotV13ReadReportBundle_();
+    stage = 'ANALYSIS_MODEL';
+    const periodModel = rformOwnerBotV13ReportModel_(startText, endText, bundle, rformOwnerBotV13Today_());
+    const analysis = rformOwnerBotV15AnalysisModel_(periodModel);
+    stage = 'ANALYSIS_RENDER';
+    const rendered = rformOwnerBotV15RenderAnalyticalReport_(analysis);
+    stage = 'TELEGRAM_SEND';
+    return rformOwnerBotV1SendOwnerText_(rendered.text, {
+      disable_notification: true,
+      reply_markup: JSON.stringify({inline_keyboard: rendered.keyboard})
+    });
+  } catch (error) {
+    try { console.warn(JSON.stringify({event:'OWNER_BUILD_REPORT_FAILED',version:RFORM_OWNER_COCKPIT_V13.version,stage:stage})); } catch (_) {}
+    if (stage !== 'TELEGRAM_SEND') {
+      return rformOwnerBotV1SendOwnerText_('Не удалось построить аналитический отчёт. Код: ' + stage + '. Данные не изменены.');
+    }
+    throw error;
+  }
 }
 
 function rformOwnerBotV13SendReportMenu_() {
@@ -669,6 +824,16 @@ function rformOwnerBotV13ReportCallback_(data) {
   if (data === 'oc:rp:c') {
     const p = rformOwnerBotV13DateParts_(today);
     rformOwnerBotV13SendCalendar_('s', p.key.slice(0,6), ''); return;
+  }
+  const build = data.match(/^oc:rp:b:(\d{8}):(\d{8})$/);
+  if (build) {
+    rformOwnerBotV15ShowAnalyticalReport_(rformOwnerBotV13DateTextFromKey_(build[1]), rformOwnerBotV13DateTextFromKey_(build[2]));
+    return;
+  }
+  const view = data.match(/^oc:rp:v:(\d{8}):(\d{8})$/);
+  if (view) {
+    rformOwnerBotV13ShowReport_(rformOwnerBotV13DateTextFromKey_(view[1]), rformOwnerBotV13DateTextFromKey_(view[2]));
+    return;
   }
   let m = data.match(/^oc:rp:cal:([se]):(\d{6})(?::(\d{8}))?$/);
   if (m) {
