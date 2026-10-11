@@ -1267,6 +1267,11 @@ function rformContentApiV04PromoteEvent_(spreadsheet, events, row, eventMap, fac
     if (existingRow) return existingCandidate;
   }
 
+  if(PropertiesService.getScriptProperties().getProperty('RFORM_CLOSED_LOOP_ENABLED')==='YES' &&
+    /^S-/.test(eventValue('Entity') || String(eventValue('Source')).split(' / ').pop())) {
+    const approvedEvent={};Object.keys(eventMap).forEach(function(f){approvedEvent[f]=eventValue(f);});
+    return rformContentApiV11PromoteTraining_(spreadsheet,approvedEvent);
+  }
   const eventId = eventValue('Event_ID');
   const eventDate = eventValue('Date');
   const contentId = rformContentApiV04CandidateId_(eventId, eventDate);
@@ -2165,7 +2170,7 @@ function rformContentApiV04TrainingText_(s) {
   return text;
 }
 
-function rformContentApiV04TrainingDrafts_(c,request) {
+function rformContentApiV04TrainingDrafts_(c,request,ownerEditorialEvent) {
   const props=PropertiesService.getScriptProperties();
   if(props.getProperty('RFORM_AUTO_DRAFT_ENABLED')!=='YES') return {ok:true,status:'DISABLED',created:[]};
   const baselineRaw=props.getProperty('RFORM_AUTO_DRAFT_BASELINE');
@@ -2178,7 +2183,7 @@ function rformContentApiV04TrainingDrafts_(c,request) {
   const created=[],blocked=[];
   const unique={};
   sessions.forEach(function(s) {unique[s.Session_ID]=(unique[s.Session_ID]||0)+1;});
-  sessions.filter(function(s) {return s.Session_Status==='CLOSED' && baseline.indexOf(s.Session_ID)===-1;})
+  sessions.filter(function(s) {return s.Session_Status==='CLOSED' && (ownerEditorialEvent ? String(ownerEditorialEvent.Source || '').split(' / ').pop()===s.Session_ID : baseline.indexOf(s.Session_ID)===-1);})
     .forEach(function(s) {
     if(created.length>=3) return;
     if(unique[s.Session_ID]!==1) {blocked.push({session_id:s.Session_ID,reason:'DUPLICATE_SESSION'});return;}
@@ -2198,7 +2203,7 @@ function rformContentApiV04TrainingDrafts_(c,request) {
         .filter(function(e){return String(e.Source || '').split(' / ').pop()===s.Session_ID;});
       if(events.length!==1) {blocked.push({session_id:s.Session_ID,reason:'WAIT_UNIQUE_CANONICAL_EVENT'});return;}
       editorialEvent=events[0];
-      const selection=rformClosedLoopEditorialV11(editorialEvent);
+      const selection=ownerEditorialEvent && ownerEditorialEvent.Event_ID===editorialEvent.Event_ID ? {outcome:'PREPARE',reason:'OWNER_EDITORIAL_PUBLICATION'} : rformClosedLoopEditorialV11(editorialEvent);
       if(selection.outcome!=='PREPARE') {if(selection.outcome==='OWNER_GATE') blocked.push({session_id:s.Session_ID,reason:selection.reason});return;}
     }
     const cardsEnabled=props.getProperty('RFORM_AUTO_CARDS_ENABLED')==='YES';
@@ -2208,8 +2213,8 @@ function rformContentApiV04TrainingDrafts_(c,request) {
         text=cardsEnabled?rformContentApiV04CardCaption_(packet):rformContentApiV04TrainingText_(s);
         if(closedLoop) {
           contentPacket=rformContentApiV11TrainingPacket_(s,packet,editorialEvent);
-          rformClosedLoopPacketQaV11(contentPacket);
-          text=cardsEnabled?rformContentApiV04CardCaption_(packet):contentPacket.telegram_text;
+          rformClosedLoopPacketQaV11(contentPacket,{cards:cardsEnabled});
+          text=cardsEnabled?rformContentApiV11Caption_(s,packet):contentPacket.telegram_text;
         }
       } else text=rformContentApiV04TrainingText_(s);
     } catch(error) {blocked.push({session_id:s.Session_ID,code:'FACT_PACKET_NOT_READY',reason:'Проверьте подходы: '+String(error.message).slice(0,160),detail:String(error.message).slice(0,200)});return;}
@@ -2254,6 +2259,12 @@ function rformContentApiV04TrainingDrafts_(c,request) {
         item.Telegram_Visual_URL=manifest.url;item.Visual_URL=manifest.url;
         item.Telegram_Post_Mode=manifest.count===1?'PHOTO_CAPTION':'ALBUM_CAPTION';
         c.log.getRange(lr,c.lm.New_Values).setValue(JSON.stringify(Object.assign({},item,{_meta:{training_hash:rformContentApiV04TrainingHash_(s),sets_hash:packet.sets_hash,content_packet:contentPacket || null}})));
+      }
+      if(contentPacket && !cardsEnabled) {
+        if(packet.sets_hash!==rformContentApiV04CardHash_(rformContentApiV04CardRows_(c.ss,s.Session_ID)))throw new Error('Подходы изменились при подготовке пакета.');
+        const fresh=rformContentApiV04ReadRows_(rformContentApiV04RequireSheet_(c.ss,RFORM_CONTENT_API_V04.trainingSessionsSheet),
+          RFORM_CONTENT_API_V04.trainingSessionFields.concat(['Completed_At','Duplicate_Flag']),'Session_ID').filter(function(r){return r.Session_ID===s.Session_ID;});
+        if(fresh.length!==1 || rformContentApiV04TrainingHash_(fresh[0])!==rformContentApiV04TrainingHash_(s))throw new Error('Тренировка изменилась при подготовке пакета.');
       }
       const row=new Array(c.queue.getLastColumn()).fill('');
       Object.keys(item).forEach(function(f) {row[c.map[f]-1]="'"+String(item[f]);});
@@ -2966,18 +2977,18 @@ function rformClosedLoopNullableFinite_(value) {
 function rformClosedLoopEditorialV11(event) {
   if(!event) return {outcome:'WAIT_EVENT',reason:'CANONICAL_EVENT_REQUIRED'};
   var status=String(event.Status || '').toUpperCase(), trigger=String(event.Editorial_Trigger || '').toUpperCase();
-  if(['AGGREGATE_ONLY','AGGREGATE_TO_WEEKLY','FILTERED_OUT_V03','FILTERED_OUT_V04','DISMISSED','WEEKLY'].indexOf(status)!==-1 ||
-    ['NONE','FACT_CLOSED'].indexOf(trigger)!==-1) return {outcome:'NO_POST',reason:status || 'NO_EDITORIAL_TRIGGER'};
   if(['PUBLISHED','ALREADY_IN_PIPELINE','ARCHIVED','SUPERSEDED'].indexOf(status)!==-1) return {outcome:'COVERED',reason:status};
   if(/^YES/.test(String(event.Manual_Gate || '')) || status==='OWNER_GATE') return {outcome:'OWNER_GATE',reason:'EXPLICIT_EDITORIAL_DECISION_REQUIRED'};
+  if(['AGGREGATE_ONLY','AGGREGATE_TO_WEEKLY','FILTERED_OUT_V03','FILTERED_OUT_V04','DISMISSED','WEEKLY'].indexOf(status)!==-1 ||
+    ['NONE','FACT_CLOSED'].indexOf(trigger)!==-1) return {outcome:'NO_POST',reason:status || 'NO_EDITORIAL_TRIGGER'};
   if(['DATA_READY','CONTENT_CANDIDATE','PRIORITY_CANDIDATE','PUBLICATION'].indexOf(status)===-1 ||
     !trigger || Number(event.Content_Value_Score || 0)<65) return {outcome:'NO_POST',reason:'EDITORIAL_THRESHOLD'};
   return {outcome:'PREPARE',reason:trigger};
 }
-function rformClosedLoopPacketQaV11(packet) {
+function rformClosedLoopPacketQaV11(packet,options) {
   var f=packet && packet.facts, e=packet && packet.editorial, p=packet && packet.publication;
   if(!f || !e || !p || !packet.canonical_json || !packet.telegram_text ||
-    packet.telegram_text.length>4096 || !f.exercises.length || f.set_count<=0 ||
+    packet.telegram_text.length>((options && options.cards)?20000:4096) || !f.exercises.length || f.set_count<=0 ||
     ['audience_problem','reader_value','success_metric','editorial_trigger'].some(function(k){return !String(e[k] || '').trim();}) ||
     p.current_stage!=='OWNER_FINAL_PREVIEW' || p.approval_status!=='NOT_READY' || p.publication_status!=='PLANNED' ||
     p.autopost_allowed!=='NO' || p.preview_review_status!=='NOT_REVIEWED') throw new Error('CLOSED_LOOP:PACKET_QA_FAILED');
@@ -3185,4 +3196,22 @@ function rformContentApiV11RunClosedLoop() {
 }
 function rformContentApiV11DisableClosedLoop() {
   PropertiesService.getScriptProperties().setProperty('RFORM_CLOSED_LOOP_ENABLED','NO');
+}
+
+function rformContentApiV11Caption_(session,cardPacket) {
+  const control=[];
+  if(session.Technique_Status)control.push('Техника: '+session.Technique_Status+'.');
+  if(session.Pain_After)control.push('Боль после: '+session.Pain_After+'.');
+  const text=rformContentApiV04CardCaption_(cardPacket).replace('\n\n#RForm_Training',
+    '\n\n'+control.join(' ')+'\nСледующий шаг — только через действующий gate и отдельное решение владельца.\n\n#RForm_Training');
+  if(text.length>1024)throw new Error('CLOSED_LOOP:CAPTION_QA_FAILED');
+  return text;
+}
+function rformContentApiV11PromoteTraining_(ss,approvedEvent) {
+  const sessionId=String(approvedEvent.Source || '').split(' / ').pop();
+  const c=rformContentApiV04WorkspaceContext_(ss);
+  const result=rformContentApiV04TrainingDrafts_(c,{nonce:'OWNER_EDITORIAL_PUBLICATION'},approvedEvent);
+  const rows=rformContentApiV11Rows_(ss,'CONTENT_QUEUE','Content_ID').filter(function(q){return q.Session_ID===sessionId;});
+  if(rows.length!==1 || (result.blocked || []).length)throw new Error('CLOSED_LOOP:OWNER_SELECTED_PACKET_NOT_READY');
+  return rows[0].Content_ID;
 }

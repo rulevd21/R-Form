@@ -51,7 +51,7 @@ function runtime() {
   add('DATA_EVENTS',{Event_ID:'EVT-NO-POST',Date:'11.10.2026',Source:'DAILY + DAY_CLOSURE / D-TEST',Status:'AGGREGATE_ONLY',Editorial_Trigger:'FACT_CLOSED'});
   add('DECISIONS',{Decision_ID:'DEC-TEST',Status:'ACTIVE',Area:'TEST',New_Rule:'Unstructured target'});
   add('CONTENT_EXPERIMENTS',{Hypothesis_ID:'H02',Primary_Metric:'Saves / Views',Start_Date:'08.08.2026',End_Date:'05.09.2026',Status:'ACTIVE'});
-  return {ctx,data,props,add,cycle:()=>ctx.rformContentApiV11Cycle_(ctx.rformContentApiV04WorkspaceContext_(ss),{nonce:'TEST'})};
+  return {ctx,ss,data,props,add,cycle:()=>ctx.rformContentApiV11Cycle_(ctx.rformContentApiV04WorkspaceContext_(ss),{nonce:'TEST'})};
 }
 test('closed fact flows through selection, complete packet and QA exactly once; owner gates remain closed',()=>{
   const r=runtime(),first=r.cycle();
@@ -78,4 +78,28 @@ test('incomplete set packet fails QA before a queue write',()=>{
   const r=runtime();r.ctx.rformContentApiV04CardRows_=()=>[];
   const result=r.cycle();assert.equal(result.created.length,0);assert.equal(r.data.CONTENT_QUEUE.length,1);
   assert.equal(result.blocked[0].code,'FACT_PACKET_NOT_READY');
+});
+
+test('owner editorial selection materializes a complete packet without bypassing final approval',()=>{
+  const r=runtime(),h=r.data.DATA_EVENTS[0],row=r.data.DATA_EVENTS[1];
+  row[h.indexOf('Status')]='OWNER_GATE';row[h.indexOf('Manual_Gate')]='YES';
+  r.props.RFORM_AUTO_DRAFT_BASELINE='["S-TEST"]';
+  assert.equal(r.cycle().created.length,0);
+  const map=Object.fromEntries(h.map((f,i)=>[f,i+1]));
+  const id=r.ctx.rformContentApiV04PromoteEvent_(r.ss,r.ss.getSheetByName('DATA_EVENTS'),2,map,'Full fact','Owner angle','');
+  assert.equal(id,'CNT-20261011-S-TEST');
+  const q=Object.fromEntries(r.data.CONTENT_QUEUE[0].map((f,i)=>[f,r.data.CONTENT_QUEUE[1][i]]));
+  assert.equal(q.Current_Stage,'OWNER_FINAL_PREVIEW');assert.equal(q.AutoPost_Allowed,'NO');assert.equal(q.Approval_Status,'NOT_READY');
+  assert.match(q.Telegram_Text,/Test bench/);
+  assert.equal(r.ctx.rformContentApiV04PromoteEvent_(r.ss,r.ss.getSheetByName('DATA_EVENTS'),2,map,'Full fact','Owner angle',''),id);
+  assert.equal(r.data.CONTENT_QUEUE.length,2);
+});
+test('automatic cards preserve control facts and stay within caption limit',()=>{
+  const r=runtime();r.props.RFORM_AUTO_CARDS_ENABLED='YES';
+  r.ctx.rformContentApiV04CardAssets_=()=>({url:'https://drive.google.com/drive/folders/TEST',count:1});
+  assert.equal(r.cycle().created.length,1);
+  const q=Object.fromEntries(r.data.CONTENT_QUEUE[0].map((f,i)=>[f,r.data.CONTENT_QUEUE[1][i]]));
+  assert.match(q.Telegram_Text,/Техника: 9\/10/);assert.match(q.Telegram_Text,/Боль после: 0\/10/);
+  assert.ok(q.Telegram_Text.length<=1024);assert.equal(q.Telegram_Post_Mode,'PHOTO_CAPTION');
+  assert.equal(r.cycle().mutation_count,0);
 });

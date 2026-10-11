@@ -191,3 +191,21 @@ function rformContentApiV11RunClosedLoop() {
 function rformContentApiV11DisableClosedLoop() {
   PropertiesService.getScriptProperties().setProperty('RFORM_CLOSED_LOOP_ENABLED','NO');
 }
+
+function rformContentApiV11Caption_(session,cardPacket) {
+  const control=[];
+  if(session.Technique_Status)control.push('Техника: '+session.Technique_Status+'.');
+  if(session.Pain_After)control.push('Боль после: '+session.Pain_After+'.');
+  const text=rformContentApiV04CardCaption_(cardPacket).replace('\n\n#RForm_Training',
+    '\n\n'+control.join(' ')+'\nСледующий шаг — только через действующий gate и отдельное решение владельца.\n\n#RForm_Training');
+  if(text.length>1024)throw new Error('CLOSED_LOOP:CAPTION_QA_FAILED');
+  return text;
+}
+function rformContentApiV11PromoteTraining_(ss,approvedEvent) {
+  const sessionId=String(approvedEvent.Source || '').split(' / ').pop();
+  const c=rformContentApiV04WorkspaceContext_(ss);
+  const result=rformContentApiV04TrainingDrafts_(c,{nonce:'OWNER_EDITORIAL_PUBLICATION'},approvedEvent);
+  const rows=rformContentApiV11Rows_(ss,'CONTENT_QUEUE','Content_ID').filter(function(q){return q.Session_ID===sessionId;});
+  if(rows.length!==1 || (result.blocked || []).length)throw new Error('CLOSED_LOOP:OWNER_SELECTED_PACKET_NOT_READY');
+  return rows[0].Content_ID;
+}

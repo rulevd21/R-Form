@@ -248,18 +248,18 @@ function rformClosedLoopNullableFinite_(value) {
 function rformClosedLoopEditorialV11(event) {
   if(!event) return {outcome:'WAIT_EVENT',reason:'CANONICAL_EVENT_REQUIRED'};
   var status=String(event.Status || '').toUpperCase(), trigger=String(event.Editorial_Trigger || '').toUpperCase();
-  if(['AGGREGATE_ONLY','AGGREGATE_TO_WEEKLY','FILTERED_OUT_V03','FILTERED_OUT_V04','DISMISSED','WEEKLY'].indexOf(status)!==-1 ||
-    ['NONE','FACT_CLOSED'].indexOf(trigger)!==-1) return {outcome:'NO_POST',reason:status || 'NO_EDITORIAL_TRIGGER'};
   if(['PUBLISHED','ALREADY_IN_PIPELINE','ARCHIVED','SUPERSEDED'].indexOf(status)!==-1) return {outcome:'COVERED',reason:status};
   if(/^YES/.test(String(event.Manual_Gate || '')) || status==='OWNER_GATE') return {outcome:'OWNER_GATE',reason:'EXPLICIT_EDITORIAL_DECISION_REQUIRED'};
+  if(['AGGREGATE_ONLY','AGGREGATE_TO_WEEKLY','FILTERED_OUT_V03','FILTERED_OUT_V04','DISMISSED','WEEKLY'].indexOf(status)!==-1 ||
+    ['NONE','FACT_CLOSED'].indexOf(trigger)!==-1) return {outcome:'NO_POST',reason:status || 'NO_EDITORIAL_TRIGGER'};
   if(['DATA_READY','CONTENT_CANDIDATE','PRIORITY_CANDIDATE','PUBLICATION'].indexOf(status)===-1 ||
     !trigger || Number(event.Content_Value_Score || 0)<65) return {outcome:'NO_POST',reason:'EDITORIAL_THRESHOLD'};
   return {outcome:'PREPARE',reason:trigger};
 }
-function rformClosedLoopPacketQaV11(packet) {
+function rformClosedLoopPacketQaV11(packet,options) {
   var f=packet && packet.facts, e=packet && packet.editorial, p=packet && packet.publication;
   if(!f || !e || !p || !packet.canonical_json || !packet.telegram_text ||
-    packet.telegram_text.length>4096 || !f.exercises.length || f.set_count<=0 ||
+    packet.telegram_text.length>((options && options.cards)?20000:4096) || !f.exercises.length || f.set_count<=0 ||
     ['audience_problem','reader_value','success_metric','editorial_trigger'].some(function(k){return !String(e[k] || '').trim();}) ||
     p.current_stage!=='OWNER_FINAL_PREVIEW' || p.approval_status!=='NOT_READY' || p.publication_status!=='PLANNED' ||
     p.autopost_allowed!=='NO' || p.preview_review_status!=='NOT_REVIEWED') throw new Error('CLOSED_LOOP:PACKET_QA_FAILED');
