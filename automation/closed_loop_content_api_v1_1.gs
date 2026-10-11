@@ -174,6 +174,13 @@ function rformContentApiV11EnableClosedLoop() {
   ['DATA_EVENTS','CONTENT_REGISTRY','CONTENT_EXPERIMENTS','DECISIONS','DECISION_REVIEWS'].forEach(function(name){rformContentApiV04RequireSheet_(c.ss,name);});
   if(props.getProperty('RFORM_AUTO_DRAFT_ENABLED')!=='YES' || !props.getProperty('RFORM_AUTO_DRAFT_BASELINE'))
     throw new Error('Existing training draft worker/baseline must already be enabled.');
+  if(!props.getProperty('RFORM_TG_CHAT_ID')) {
+    const ids=Array.from(new Set(rformContentApiV04WorkspaceRecords_(c).filter(function(r){return r.Action==='CHANNEL_POST' && r.Result==='APPLIED';})
+      .map(function(r){try{return String(JSON.parse(r.New_Values)._meta.channel_id || '');}catch(_){return '';}})
+      .filter(function(id){return /^-100\d+$/.test(id);})));
+    if(ids.length!==1)throw new Error('Existing channel property migration requires one canonical channel identity.');
+    props.setProperty('RFORM_TG_CHAT_ID',ids[0]);
+  }
   if(!props.getProperty('RFORM_CLOSED_LOOP_EVENT_FROM'))props.setProperty('RFORM_CLOSED_LOOP_EVENT_FROM','2026-10-10');
   props.setProperty('RFORM_CLOSED_LOOP_ENABLED','YES');
   console.log(JSON.stringify({version:'1.1.0',enabled:true,new_trigger:false,owner_approval_required:true}));
