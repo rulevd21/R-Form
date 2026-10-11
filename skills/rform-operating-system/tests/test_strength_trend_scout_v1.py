@@ -1,10 +1,13 @@
 import importlib.util
+import json
 import sys
 import unittest
 from pathlib import Path
 
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / "strength_trend_scout_v1.py"
+SKILL_ROOT = Path(__file__).resolve().parents[1]
+MODULE_PATH = SKILL_ROOT / "scripts" / "strength_trend_scout_v1.py"
+FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "strength_trend_watch_64_54.json"
 SPEC = importlib.util.spec_from_file_location("strength_trend_scout_v1", MODULE_PATH)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
@@ -65,6 +68,7 @@ class StrengthTrendScoutTests(unittest.TestCase):
         }
         result = MODULE.score_payload({"now": NOW, "clusters": [cluster]})["clusters"][0]
         self.assertNotIn(result["trend_class"], {"TREND", "BREAKOUT"})
+        self.assertNotEqual(result["editorial_disposition"], "CONTENT_CANDIDATE")
 
     def test_source_key_collapses_cross_platform_syndication(self):
         cluster = {
@@ -83,6 +87,7 @@ class StrengthTrendScoutTests(unittest.TestCase):
         self.assertEqual(result["independent_sources"], 1)
         self.assertEqual(result["platforms"], ["web"])
         self.assertNotIn(result["trend_class"], {"TREND", "BREAKOUT"})
+        self.assertNotEqual(result["editorial_disposition"], "CONTENT_CANDIDATE")
 
     def test_primary_evidence_can_be_watch_before_diffusion(self):
         cluster = {
@@ -96,6 +101,15 @@ class StrengthTrendScoutTests(unittest.TestCase):
         result = MODULE.score_payload({"now": NOW, "clusters": [cluster]})["clusters"][0]
         self.assertEqual(result["trend_class"], "WATCH")
         self.assertEqual(result["editorial_disposition"], "WATCH")
+
+    def test_runtime_regression_watch_64_54_never_becomes_candidate(self):
+        fixture = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+        result = MODULE.score_payload(fixture)["clusters"][0]
+        self.assertAlmostEqual(result["trend_score"], 64.54, places=2)
+        self.assertEqual(result["platforms"], ["web"])
+        self.assertEqual(result["trend_class"], "WATCH")
+        self.assertEqual(result["editorial_disposition"], "WATCH")
+        self.assertEqual(MODULE.score_payload(fixture)["top_editorial_candidates"], [])
 
     def test_top_candidates_are_capped_at_three(self):
         clusters = []
