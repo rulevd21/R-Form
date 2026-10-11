@@ -1,9 +1,9 @@
 ---
 name: rform-operating-system
-description: Operates the R/Form personal training, nutrition, competition-preparation, analytics, and content system from short natural-language commands. Use for commands such as "Закрой день", "План/факт по дню", "Сколько осталось КБЖУ?", "Обнови статус подготовки", "Сформируй Weekly Report", "Что публикуем сегодня?", "Обнови контент-очередь", "Подготовь публикацию", "Покажи предпросмотр", "Утверждаю публикацию", "Опубликуй", content analytics, queue checks, R/Form data QA, training-week planning, and R/Form application diagnostics. Resolve context from the current R/Form Source of Truth instead of relying on chat memory.
-compatibility: Requires a skills-compatible agent with authenticated Google Drive/Sheets access to R/Form Source of Truth. GitHub access is required only for code/repository workflows; web access only for external current facts. Notion is optional. No paid API is required.
+description: Operates the R/Form personal training, nutrition, competition-preparation, analytics, content, and external-intelligence system from short natural-language commands. Use for commands such as "Закрой день", "План/факт по дню", "Сколько осталось КБЖУ?", "Обнови статус подготовки", "Сформируй Weekly Report", "Что публикуем сегодня?", "Собери R/Form Radar", "Что сейчас в тренде по силовым тренировкам?", "Обнови контент-очередь", "Подготовь публикацию", "Покажи предпросмотр", "Утверждаю публикацию", "Опубликуй", content analytics, queue checks, R/Form data QA, training-week planning, external trend scouting, and R/Form application diagnostics. Resolve context from the current R/Form Source of Truth instead of relying on chat memory.
+compatibility: Requires a skills-compatible agent with authenticated Google Drive/Sheets access to R/Form Source of Truth. GitHub access is required only for code/repository workflows; web access only for external current facts. Agent Reach is optional and may be used as a subordinate multi-platform external-research capability. Notion is optional. No paid API is required.
 metadata:
-  version: "1.1.5"
+  version: "1.1.6"
   product: "R/Form"
   owner-mode: "minimal-involvement"
   source-of-truth: "RFORM_MASTER_DATA_v1"
@@ -59,6 +59,7 @@ Important distinctions:
 - `Составь следующую тренировочную неделю` creates or updates a DRAFT plan only.
 - `Обнови план` may activate an already prepared plan after state validation.
 - `План/факт по дню` never closes the day automatically.
+- `Что сейчас в тренде по силовым тренировкам?` / `Собери R/Form Radar` is a read-only external-intelligence scan. A trend or `CONTENT_CANDIDATE` does not create, approve, schedule, or publish a `CONTENT_QUEUE` object by itself.
 
 ## Minimal user involvement
 
@@ -81,6 +82,7 @@ Load the relevant reference before execution:
 - Day and nutrition: [references/workflows-day-nutrition.md](references/workflows-day-nutrition.md)
 - Training and competition preparation: [references/workflows-training.md](references/workflows-training.md)
 - Weekly reports: [references/workflows-weekly-content.md](references/workflows-weekly-content.md)
+- External intelligence / Strength Trend Scout: [references/workflows-external-intelligence.md](references/workflows-external-intelligence.md)
 - Content production: [references/workflows-content-production.md](references/workflows-content-production.md)
 - Application diagnosis and releases: [references/workflows-code-release.md](references/workflows-code-release.md)
 - Data quality and reconciliation: [references/data-quality-rules.md](references/data-quality-rules.md)
@@ -126,6 +128,14 @@ Validate units, dates, missing values, outliers, methodology changes, and compar
 
 For food calculations preserve product-data provenance and confidence when R/Form already provides those fields.
 
+## External intelligence operating mode
+
+External intelligence is a read-only evidence layer. It never becomes canonical business state.
+
+For `STRENGTH_TREND_SCAN`, load [references/workflows-external-intelligence.md](references/workflows-external-intelligence.md), use Agent Reach as the preferred subordinate multi-platform acquisition layer when available, normalize and deduplicate source signals, apply the deterministic `TREND_SCORE` contract, and then apply an editorial gate.
+
+Agent Reach does not become a second user-facing router. Channel failure is a coverage limitation, not permission to bypass authentication. A trend classification is not publication approval.
+
 ## GitHub/code boundary
 
 When the issue concerns an R/Form application or a command such as `Публикуй v0.5.4` resolves to an application/release version:
@@ -152,7 +162,7 @@ The Skill should reduce the owner task to one decision whenever possible: approv
 
 Load [references/workflows-content-production.md](references/workflows-content-production.md) for any content-selection, queue-refresh, publication-preparation, preview, edit, approval, weekly content-plan, or performance-review command.
 
-A valid editorial outcome may be `NO_POST`. Never manufacture a post merely because a new training, nutrition, or data event exists.
+A valid editorial outcome may be `NO_POST`. Never manufacture a post merely because a new training, nutrition, data event, or external trend exists.
 
 ### TEXT_ONLY preview routing contract
 
@@ -228,13 +238,13 @@ Before returning a result, verify:
 - readback confirms any write;
 - response follows the relevant short output contract.
 
-
 ## Content production guardrails
 
 - `CONTENT_QUEUE` remains the production editorial/publication state machine.
 - Current Content Calendar is a management/commitment view, not a second Source of Truth.
 - `DATA_EVENTS` provides source-event and aggregation/coverage signals.
 - Series commitments and `WEEKLY_CONTROL` may justify publication by calendar obligation; routine training/nutrition/AI_CHECK events require a meaningful editorial trigger or they become Weekly input.
+- External `TREND` / `BREAKOUT` classifications remain evidence only until the existing content editorial gate accepts a distinct reader-value candidate.
 - If a published/approved aggregate already covers an event, do not re-offer the obsolete standalone item.
 - When content text or visual payload changes after preview review, treat the old preview/review hash as stale and require a new preview/review before scheduling.
 - For exact data/typography cards, prefer the existing deterministic R/Form visual pipeline/template. Do not substitute approximate AI-generated text graphics when that could introduce factual or typographic errors.
