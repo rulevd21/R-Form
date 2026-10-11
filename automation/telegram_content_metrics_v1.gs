@@ -76,7 +76,8 @@ function rformTelegramMetricsParsePostHtmlV1(html, channel, messageId) {
   }, 0);
   let comments = null;
   if (replyTexts.length) {
-    const parsedReply = rformTelegramMetricsParseCountV1(replyTexts[0].replace(/[^0-9.,KMB]/gi, ''));
+    const token = replyTexts[0].match(/[0-9]+(?:[.,][0-9]+)?\s*[KMB]?/i);
+    const parsedReply = token ? rformTelegramMetricsParseCountV1(token[0]) : null;
     if (parsedReply != null) comments = parsedReply;
   }
   if (views == null) throw new Error('VIEWS_NOT_OBSERVED:' + channel + '/' + messageId);
