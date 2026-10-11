@@ -1,0 +1,75 @@
+name: R/Form Required PR Gate
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  required:
+    name: R/Form required PR gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Git integrity checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
+
+      - name: Run stable production contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test \
+            tests/apps-script-deployment-guard.test.mjs \
+            tests/capture-closure-events-v1.test.mjs \
+            tests/closed-loop-v1.test.mjs \
+            tests/no-hardcoded-telegram-channel-id.test.mjs \
+            tests/owner-bot-cockpit-v1-3.test.mjs \
+            tests/owner-bot-strength-trends-v1-6.test.mjs \
+            tests/telegram-content-metrics-v1.test.mjs
+
+      - name: Syntax check privileged closure scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/cline/apply-rform-rulesets.sh
+          bash -n scripts/cline/migrate-commercial-wines.sh
+          bash -n scripts/cline/deploy-telegram-metrics-v1.sh
+          bash -n scripts/cline/verify-capture-closure-events-v1.sh
+
+      - name: Validate governed Apps Script sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in \
+            automation/content_event_detector_v0_3.gs \
+            automation/content_control_api_v0_4.gs \
+            automation/telegram_content_metrics_v1.gs
+          do
+            if [[ -f "$file" ]]; then
+              node --check < "$file"
+            fi
+          done
+
+      - name: Verify runtime governance files exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s RFORM_RUNTIME_MANIFEST.json
+          test -s docs/governance/VERSION_GOVERNANCE.md
+          test -s docs/operating-architecture/CLOSED_LOOP_V1.md
