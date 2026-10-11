@@ -9,6 +9,8 @@ import { findHardcodedChannelIds } from '../scripts/apps-script/no-hardcoded-tel
 const code = fs.readFileSync('automation/owner_bot_cockpit_v1_3.gs', 'utf8');
 const sent = [];
 let sheetData = {
+  DECISION_REVIEWS: [['Review_ID']],
+  CONTENT_EXPERIMENTS: [['Hypothesis_ID']],
   CONTENT_QUEUE: [
     ['Content_ID','Date','Publication_Status','Current_Stage','Public_Data_Allowed','Duplicate_Flag','Publish_Error','Blocking_Issue','Telegram_Post_Mode','Telegram_Text','Telegram_Visual_URL','Updated_At'],
     ['CNT-Q1','10.10.2026','PLANNED','OWNER_FINAL_PREVIEW','YES','','','','TEXT_ONLY','Тест','','10.10.2026 10:00']
@@ -267,4 +269,19 @@ test('automation sources contain no hardcoded numeric Telegram channel IDs', () 
   const automationDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'automation');
   const offenders = findHardcodedChannelIds(automationDir);
   assert.deepEqual(offenders, [], `Hardcoded numeric Telegram channel IDs found: ${offenders.join(', ')}`);
+});
+
+test('cockpit includes only sufficiently observed experiment/decision actions and caps across types',()=>{
+  const bundle={queue:[],events:[],decision_reviews:[
+    {Review_ID:'R-MISSING',Outcome:'INSUFFICIENT_DATA',Next_Decision_Required:'YES',Status:'OPEN'},
+    {Review_ID:'R-FAILED',Decision_ID:'D',Outcome:'REJECTED',Next_Decision_Required:'YES',Status:'CLOSED'}],
+    experiments:[
+      {Hypothesis_ID:'H01',Status:'REVIEW_REQUIRED',Decision:'DO_NOT_CONCLUDE'},
+      {Hypothesis_ID:'H02',Status:'READY_FOR_REVIEW',Result:'OBSERVED_METRICS_READY: {}',Decision:'OWNER_REVIEW_REQUIRED'},
+      {Hypothesis_ID:'H03',Status:'READY_FOR_REVIEW',Result:'OBSERVED_METRICS_READY: {}',Decision:'OWNER_REVIEW_REQUIRED'},
+      {Hypothesis_ID:'H04',Status:'READY_FOR_REVIEW',Result:'OBSERVED_METRICS_READY: {}',Decision:'OWNER_REVIEW_REQUIRED'}]};
+  const model=context.rformOwnerBotV13CockpitModel_({found:false},bundle);
+  assert.equal(model.owner_decision_total,4);assert.equal(model.owner_decisions.length,3);
+  assert.equal(model.owner_decisions[0].kind,'DECISION_REVIEW');
+  assert.ok(model.owner_decisions.every(x=>x.id!=='R-MISSING' && x.id!=='H01'));
 });

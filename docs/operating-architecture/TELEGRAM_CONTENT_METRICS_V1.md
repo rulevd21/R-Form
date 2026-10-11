@@ -1,6 +1,6 @@
 # R/Form Telegram Content Metrics v1
 
-Status: CANDIDATE  
+Status: VERIFIED_PRODUCTION / accepted 2026-10-11  
 Canonical destination: `RFORM_MASTER_DATA_v1 / CONTENT_REGISTRY`  
 Source: public Telegram web preview for `@r_form`
 
@@ -90,3 +90,7 @@ Production is verified only after all of the following:
 7. experiment state changes only when its own metric/sample contract is satisfied.
 
 Until those conditions pass, classify the collector as `CANDIDATE`, not `VERIFIED_PRODUCTION`.
+
+## Accepted runtime evidence, 2026-10-11
+
+Issue #57 is closed. The existing collector trigger is active and source matches PR #61. A natural 72H checkpoint recorded nine observed views, with TELEGRAM_PUBLIC_WEB_PREVIEW and actual observation time read back from CONTENT_REGISTRY. Immediate rerun returned written=0, seeded=0 with an identical row. Unavailable counters remain blank. This acceptance covers metrics ingestion; it does not supply the primary metric/control/sample evidence required by H01–H04.

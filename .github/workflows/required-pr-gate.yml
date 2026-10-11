@@ -38,6 +38,7 @@ jobs:
             tests/apps-script-deployment-guard.test.mjs \
             tests/capture-closure-events-v1.test.mjs \
             tests/closed-loop-v1.test.mjs \
+            tests/closed-loop-content-api-v1-1.test.mjs \
             tests/no-hardcoded-telegram-channel-id.test.mjs \
             tests/owner-bot-cockpit-v1-3.test.mjs \
             tests/owner-bot-strength-trends-v1-6.test.mjs \
@@ -70,6 +71,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          sha256sum automation/content_control_api_v0_4.gs automation/owner_bot_cockpit_v1_3.gs
           test -s RFORM_RUNTIME_MANIFEST.json
           test -s docs/governance/VERSION_GOVERNANCE.md
           test -s docs/operating-architecture/CLOSED_LOOP_V1.md
