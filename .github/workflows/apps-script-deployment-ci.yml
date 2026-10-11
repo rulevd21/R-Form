@@ -10,6 +10,7 @@ on:
       - 'automation/content_event_detector_v0_3.gs'
       - 'automation/owner_bot_v1.gs'
       - 'automation/owner_bot_cockpit_v1_3.gs'
+      - 'automation/closed_loop_v1.gs'
       - 'scripts/apps-script/**'
       - 'scripts/cline/**'
       - 'scripts/release/apply-owner-bot-cockpit-v1-3.mjs'
@@ -20,9 +21,12 @@ on:
       - 'tests/owner-bot-cockpit-v1-3.test.mjs'
       - 'tests/owner-bot-build-report-v1-5.test.mjs'
       - 'tests/owner-bot-strength-trends-v1-6.test.mjs'
+      - 'tests/closed-loop-v1.test.mjs'
       - 'docs/governance/APPS_SCRIPT_GITHUB_DEPLOYMENT.md'
       - 'docs/governance/CLINE_CLOUD_ONBOARDING.md'
+      - 'docs/governance/VERSION_GOVERNANCE.md'
       - 'docs/operating-architecture/CAPTURE_CLOSURE_EVENTS_V1.md'
+      - 'docs/operating-architecture/CLOSED_LOOP_V1.md'
   push:
     branches: [main]
     paths:
@@ -32,6 +36,7 @@ on:
       - 'automation/content_event_detector_v0_3.gs'
       - 'automation/owner_bot_v1.gs'
       - 'automation/owner_bot_cockpit_v1_3.gs'
+      - 'automation/closed_loop_v1.gs'
       - 'scripts/apps-script/**'
       - 'scripts/cline/**'
       - 'scripts/release/apply-owner-bot-cockpit-v1-3.mjs'
@@ -42,9 +47,12 @@ on:
       - 'tests/owner-bot-cockpit-v1-3.test.mjs'
       - 'tests/owner-bot-build-report-v1-5.test.mjs'
       - 'tests/owner-bot-strength-trends-v1-6.test.mjs'
+      - 'tests/closed-loop-v1.test.mjs'
       - 'docs/governance/APPS_SCRIPT_GITHUB_DEPLOYMENT.md'
       - 'docs/governance/CLINE_CLOUD_ONBOARDING.md'
+      - 'docs/governance/VERSION_GOVERNANCE.md'
       - 'docs/operating-architecture/CAPTURE_CLOSURE_EVENTS_V1.md'
+      - 'docs/operating-architecture/CLOSED_LOOP_V1.md'
 
 permissions:
   contents: read
@@ -105,6 +113,11 @@ jobs:
         run: |
           node --check < automation/content_event_detector_v0_3.gs
           node --test tests/capture-closure-events-v1.test.mjs
+
+      - name: Validate Closed Loop v1 contracts
+        run: |
+          node --check < automation/closed_loop_v1.gs
+          node --test tests/closed-loop-v1.test.mjs
 
       - name: Validate Owner Bot Cockpit candidate
         run: |
