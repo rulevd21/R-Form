@@ -1,6 +1,6 @@
 # R/Form Closed Loop v1
 
-Status: v1.1 implementation candidate / runtime acceptance pending
+Status: v1.1 installed; data-worker acceptance passed; signed owner connection and natural positive-path acceptance blocked (#69)
 Version: 1.1
 Owner interface: Owner Bot
 Canonical business state: `RFORM_MASTER_DATA_v1`
@@ -152,7 +152,7 @@ On 2026-10-11 H01–H03 were moved from stale `ACTIVE` to `REVIEW_REQUIRED / INS
 
 ## 8. Runtime boundaries
 
-`automation/closed_loop_v1.gs` is a deterministic contract candidate. It contains no Telegram credentials and no publishing call.
+`automation/closed_loop_v1.gs` is the installed deterministic contract. It contains no Telegram credentials and no publishing call.
 
 It provides pure functions for:
 
@@ -199,12 +199,14 @@ PASS only when:
 
 ## 10. Current rollout state
 
-- Runtime/version governance cleanup: core issue closed; admin branch-protection gate tracked separately.
-- Owner Bot single cockpit: production v1.6 verified; no replacement introduced.
-- Capture → Closure → Events: business behavior observed in production; native receipt/no-op acceptance remains open.
-- Content Packet v1: first canonical packet materialized in `CONTENT_QUEUE`; owner gate preserved.
-- Decision → Result: `DECISION_REVIEWS` created and first review closed as `CONFIRMED`.
-- Content → Metrics: canonical metric owner established as `CONTENT_REGISTRY`; stale experiments gated; automatic external metric ingestion remains dependent on an authenticated metrics source and must not be simulated.
+- Production Manifest and GitHub rulesets reconciled; branch-protection Issue #56 closed.
+- Owner Bot Cockpit 1.7.0 installed in the existing deployment (version 20), exact source readback and self-test passed. Signed Content API connection is BLOCKED by existing paired authentication mismatch, tracked in Issue #69.
+- Capture → Closure → Events: VERIFIED_PRODUCTION; detector Issue #42 closed after native scheduled/no-op acceptance.
+- Content API 0.8.0 / closed loop 1.1.0 installed in the existing deployment (version 21), exact source readback and preflight passed. Existing poll/queue/publisher reused.
+- Native data-worker run 2026-10-11 16:27:23–16:31:01 Europe/Moscow passed: 2 natural NO_POST audits, 39 INSUFFICIENT_DATA reviews, 3 hypothesis-specific insufficient-metrics checks, no new queue row. All 44 audits APPLIED with no PENDING; retained manual CONFIRMED review untouched.
+- Telegram public metrics collector 1.0.0: VERIFIED_PRODUCTION; Issue #57 closed after natural 72H source observation and zero-write repeat. This source cannot provide saves, subscriber attribution, retention, production time or product activation.
+- Positive Stage 4 acceptance remains pending: a new natural selected fact must yield a complete QA-passed packet and private BOT_PREVIEW_SENT receipt without manual assembly, followed by an unchanged repeat. The reference packet from 9 October is not this acceptance.
+- Owner-only credential reconciliation is required before signed poll/private cockpit acceptance. No credential, permission, publisher or trigger changes were performed. Last stored successful poll predates this rollout.
 
 ## v1.1 runtime connection and acceptance
 
@@ -225,3 +227,9 @@ Acceptance remains pending until runtime readback and a new naturally selected f
 For H03, each observation also requires an ISO `period_id` matching its publication week; repeated observations in one group/week do not count as independent weeks. Previous-period controls require explicit `control_start_date_iso` and `control_end_date_iso` in an `EXPERIMENT_CONTRACT_V1:` JSON line in the existing CONTENT_EXPERIMENTS Notes. Controls outside that declared window do not count.
 
 Owner `TO_PUBLICATION` for a training event uses the same complete packet worker under the existing lock, including an explicitly selected baseline session; it does not create an empty BRIEF needing manual assembly. Automatic card captions retain available technique/pain facts and the final owner gate; full exercises remain on the existing cards. Text-only packets recheck canonical session/set hashes before appending.
+
+## Rollback and acceptance evidence
+
+Reviewed source: PR #68 head `e55d2c9e1b2c33cbf5f7b7c3fa799be0cc82bcb6`; required CI 60 passed / 0 failed. Content API SHA-256 `87482c45f4c08582e181abfe675d34e76f0208fe5851e335e57321e666a277f3`; cockpit SHA-256 `5918d2500acf75d70693b8b74cf4d1a7730125578b45e482da756657bd3797b9`. Existing API rollback is deployment version 19 at source `5550d3c423294fd89c980d08ce019808b735c434`; cockpit rollback is version 19 / 1.6.0. The cross-component production ref remains unchanged. Keep installed components DEPLOYED_NOT_VERIFIED until signed connection/private cockpit and natural positive preview gates pass. Update manifest/docs after each observed acceptance, preserving partial outcomes rather than marking the whole loop verified.
+
+Repeat check: the existing runtime repeat was invoked at 16:31:36 Europe/Moscow. Later canonical queue/reviews/experiments/audit readback is unchanged with no duplicates or PENDING. The browser environment disconnected before the native completion receipt could be read; canonical stability is not proof of native mutation_count=0. Retain that observability caveat.

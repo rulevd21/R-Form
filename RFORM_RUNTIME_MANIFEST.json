@@ -1,5 +1,5 @@
 {
-  "manifest_version": "1.0.12",
+  "manifest_version": "1.0.13",
   "generated_at": "2026-10-11",
   "repository": "rulevd21/R-Form",
   "governance_status": "ACTIVE",
@@ -36,22 +36,35 @@
     {
       "component": "content_control_api",
       "runtime": "Google Apps Script",
-      "production_version": "0.7.0",
-      "deployment_evidence": "PR #25 runtime acceptance 2026-10-09 + authenticated source/deployment readback 2026-10-10",
-      "source_ref": "5550d3c423294fd89c980d08ce019808b735c434",
-      "status": "VERIFIED_PRODUCTION",
-      "last_verified": "2026-10-10",
-      "notes": "PR #25 acceptance passed preflight, training-card enablement and private self-check with publication disabled. 2026-10-10 clasp readback proved the live source remains byte-identical to the accepted PR #25 source and the existing production web-app deployment is version 19."
+      "production_version": "0.8.0 / closed loop 1.1.0",
+      "deployment_evidence": "PRs #67–#68; existing deployment version 21; exact source readback; native data-cycle acceptance; signed owner connection blocked in Issue #69",
+      "source_ref": "e55d2c9e1b2c33cbf5f7b7c3fa799be0cc82bcb6",
+      "status": "DEPLOYED_NOT_VERIFIED",
+      "last_verified": "2026-10-11",
+      "notes": "Installed in place on 2026-10-11 at 16:22 Europe/Moscow. Preflight passed. Native closed-loop run 16:27:23–16:31:01 produced 2 NO_POST audits, 39 INSUFFICIENT_DATA reviews and 3 hypothesis-specific INSUFFICIENT_METRICS checks; no content created. Existing Owner Bot URL matches this deployment but signed read is rejected because configured authentication credentials differ. Owner must reconcile existing paired credentials; no credential or permission changes performed. Natural selected fact to private preview acceptance remains pending.",
+      "source_sha256": "87482c45f4c08582e181abfe675d34e76f0208fe5851e335e57321e666a277f3",
+      "rollback": {
+        "deployment_version": 19,
+        "source_ref": "5550d3c423294fd89c980d08ce019808b735c434",
+        "source_sha256": "a959a62056004042e58b02723ff8c57c59b4fcbd1c86c2a7fbdf743455c1bf5c"
+      }
     },
     {
       "component": "owner_bot",
       "runtime": "Google Apps Script + Telegram Bot API",
-      "production_version": "1.6.0",
-      "deployment_evidence": "PR #35 v1.3 acceptance + PR #45 Period Report v1.4 acceptance + PR #48 Build Report v1.5 acceptance + PR #50 Strength Trends v1.6 guarded in-place rollout/readback + private owner analytical-report acceptance smoke 2026-10-10",
-      "source_ref": "d53ec880bc91d96a55c45ff9e658d97eb4edd8d4",
-      "status": "VERIFIED_PRODUCTION",
-      "last_verified": "2026-10-10",
-      "notes": "Owner Bot Cockpit v1.6 remains on the existing private web-app deployment. Owner rebuilt 10.09.2026–09.10.2026 in FULL mode and verified a distinct strength-trends section from canonical TRAINING_SETS with competition bench, back squat, Larsen press and Romanian deadlift. The report showed repeated-session exposure counts, first/latest top sets, RIR-aware e1RM estimate/trend, peak load, working tonnage and average RIR. No canonical rows, Content Queue or publication state were mutated."
+      "production_version": "1.7.0",
+      "deployment_evidence": "PRs #67–#68; exact cockpit source readback; existing deployment version 20; cockpit self-test passed; existing poll trigger retained; signed API preflight blocked in Issue #69",
+      "source_ref": "e55d2c9e1b2c33cbf5f7b7c3fa799be0cc82bcb6",
+      "status": "DEPLOYED_NOT_VERIFIED",
+      "last_verified": "2026-10-11",
+      "notes": "Only the cockpit file changed. Existing transport, pairing, deployment URL and sole rformOwnerBotV1Poll clock trigger retained. Signed API preflight at 16:29:39–16:29:46 Europe/Moscow rejected the read. Stored last successful poll is 2026-10-09T15:42:11.508Z. No secrets disclosed/changed. Source/tests establish global cap of three true actions; private /today runtime acceptance remains pending restored connection.",
+      "source_sha256": "5918d2500acf75d70693b8b74cf4d1a7730125578b45e482da756657bd3797b9",
+      "rollback": {
+        "deployment_version": 19,
+        "cockpit_version": "1.6.0",
+        "source_ref": "d53ec880bc91d96a55c45ff9e658d97eb4edd8d4",
+        "source_sha256": "14991f7d3d348652b0f5867df0114da9d2582344cd80ec5d001edd3bc3b8055d"
+      }
     },
     {
       "component": "telegram_autopost",
@@ -86,12 +99,12 @@
     {
       "component": "automatic_training_cards",
       "runtime": "Content API / Owner Bot content pipeline",
-      "production_version": "0.7.0",
-      "deployment_evidence": "PR #25 runtime acceptance 2026-10-09 + authenticated source/deployment readback 2026-10-10",
-      "source_ref": "5550d3c423294fd89c980d08ce019808b735c434",
-      "status": "VERIFIED_PRODUCTION",
-      "last_verified": "2026-10-10",
-      "notes": "PR #25 acceptance enabled automatic cards with baseline preserved and publication disabled; private self-check passed for S-20261009-C at 14 sets / 5 exercises / bench 1920 / total 8610 with queue_changed=false. 2026-10-10 clasp readback proves the accepted 0.7.0 source remains live."
+      "production_version": "0.8.0 / Content Packet 1.1.0",
+      "deployment_evidence": "PRs #67–#68 source/runtime readback; exact positive-path acceptance pending Issue #69",
+      "source_ref": "e55d2c9e1b2c33cbf5f7b7c3fa799be0cc82bcb6",
+      "status": "DEPLOYED_NOT_VERIFIED",
+      "last_verified": "2026-10-11",
+      "notes": "Complete packet/QA worker is enabled under the existing preserved training baseline and signed sync_training path. Final publication approval remains owner-only. The previously manually materialized training packet remains untouched and is reference evidence, not new automatic fact-to-preview acceptance."
     },
     {
       "component": "telegram_content_metrics",
@@ -112,19 +125,46 @@
     "Runtime secrets and private identifiers must not be added to the public repository.",
     "One component has one active production version."
   ],
-  "known_governance_debt": [],
+  "known_governance_debt": [
+    {
+      "issue": "#69",
+      "scope": "Existing Owner Bot signed Content API pairing and natural positive-path acceptance",
+      "status": "OPEN",
+      "owner_action": "Reconcile existing shared authentication configuration securely; do not put credentials in repository or chat."
+    }
+  ],
   "candidate_connections": [
     {
       "component": "closed_loop_content_api",
       "version": "0.8.0 / closed loop 1.1.0",
-      "status": "CANDIDATE",
-      "production_acceptance": "Pending exact runtime source/deployment readback; natural selected fact to Owner Bot preview and zero-mutation repeat. Existing accepted packet was manually materialized and is not end-to-end automation acceptance."
+      "status": "DEPLOYED_NOT_VERIFIED",
+      "production_acceptance": "Exact source/deployment readback passed; full signed private Owner Bot acceptance blocked by Issue #69. New natural selected fact and idempotent preview delivery remain pending."
     },
     {
       "component": "owner_bot_closed_loop",
       "version": "1.7.0",
-      "status": "CANDIDATE",
-      "production_acceptance": "Pending exact cockpit source/deployment readback and private owner cockpit smoke. Maximum three true actions."
+      "status": "DEPLOYED_NOT_VERIFIED",
+      "production_acceptance": "Exact source/deployment readback passed; full signed private Owner Bot acceptance blocked by Issue #69. New natural selected fact and idempotent preview delivery remain pending."
     }
-  ]
+  ],
+  "acceptance_checks": {
+    "closed_loop_data_worker": {
+      "status": "PASS",
+      "date": "2026-10-11",
+      "natural_no_post": 2,
+      "insufficient_data_reviews": 39,
+      "experiment_checks": 3,
+      "content_rows_created": 0,
+      "canonical_action_readback": "44 APPLIED; no PENDING; 40 unique Decision Reviews including retained manual CONFIRMED review",
+      "repeat": "Existing repeat invoked at 16:31:36 Europe/Moscow. Subsequent canonical readback shows unchanged queue/reviews/experiments/action log, no duplicates or PENDING. Native completion receipt unavailable after browser environment disconnect; do not infer mutation_count=0 runtime receipt."
+    },
+    "signed_owner_connection": {
+      "status": "BLOCKED",
+      "issue": "#69"
+    },
+    "natural_positive_preview": {
+      "status": "PENDING",
+      "issue": "#69"
+    }
+  }
 }
