@@ -1,4 +1,5 @@
 import importlib.util
+import sys
 import unittest
 from pathlib import Path
 
@@ -7,6 +8,7 @@ MODULE_PATH = Path(__file__).resolve().parents[1] / "strength_trend_scout_v1.py"
 SPEC = importlib.util.spec_from_file_location("strength_trend_scout_v1", MODULE_PATH)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
+sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 
