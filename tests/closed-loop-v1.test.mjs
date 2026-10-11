@@ -137,6 +137,6 @@ test('Owner Bot remains the only cockpit and receives at most three true owner a
   });
 
   assert.equal(signals.length, 3);
-  assert.deepEqual(signals.map(x => x.type), ['CONTENT_PREVIEW', 'DECISION_REVIEW', 'EXPERIMENT_REVIEW']);
+  assert.deepEqual(Array.from(signals, x => x.type), ['CONTENT_PREVIEW', 'DECISION_REVIEW', 'EXPERIMENT_REVIEW']);
   assert.equal(signals[0].id, 'CNT-1');
 });
