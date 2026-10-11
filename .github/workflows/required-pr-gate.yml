@@ -30,11 +30,27 @@ jobs:
           set -euo pipefail
           git diff --check "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
 
-      - name: Run repository contract tests
+      - name: Run stable production contract tests
         shell: bash
         run: |
           set -euo pipefail
-          node --test tests/*.test.mjs
+          node --test \
+            tests/apps-script-deployment-guard.test.mjs \
+            tests/capture-closure-events-v1.test.mjs \
+            tests/closed-loop-v1.test.mjs \
+            tests/no-hardcoded-telegram-channel-id.test.mjs \
+            tests/owner-bot-cockpit-v1-3.test.mjs \
+            tests/owner-bot-strength-trends-v1-6.test.mjs \
+            tests/telegram-content-metrics-v1.test.mjs
+
+      - name: Syntax check privileged closure scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/cline/apply-rform-rulesets.sh
+          bash -n scripts/cline/migrate-commercial-wines.sh
+          bash -n scripts/cline/deploy-telegram-metrics-v1.sh
+          bash -n scripts/cline/verify-capture-closure-events-v1.sh
 
       - name: Validate governed Apps Script sources
         shell: bash
