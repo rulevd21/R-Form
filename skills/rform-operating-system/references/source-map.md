@@ -68,6 +68,21 @@ Persist durable operational facts to the canonical store when the intent authori
 
 Use web/external sources only when the task depends on current external facts. Keep external evidence separate from R/Form internal state.
 
+For `STRENGTH_TREND_SCAN` and other External Intelligence work, Agent Reach may be used as a subordinate multi-platform acquisition layer when available. It does not become a Source of Truth or a competing command router.
+
+External source roles include:
+
+- Web/search: broad discovery, primary-source lookup and current context;
+- YouTube: training explanations, coach/researcher discussions and transcripts;
+- Reddit: audience questions, recurring problems and community discussion;
+- Twitter/X: rapid expert/researcher/coach discussion and early signals;
+- RSS: repeatable monitoring of selected sources;
+- GitHub: training-tech / AI / data tooling when relevant.
+
+External evidence must retain source provenance. Syndication/reposts of the same underlying material must not be counted as independent corroboration. Login-backed source unavailability is a coverage limitation, not permission to bypass authentication or browser-session boundaries.
+
+See `workflows-external-intelligence.md` for Strength Trend Scout scoring and editorial handoff.
+
 ## Conflict rule
 
 1. Identify the conflicting fact and both sources.

@@ -20,6 +20,7 @@ Route semantically. Exact phrases are examples, not a parser grammar.
 | Закрой неделю | WEEKLY_CLOSE | Weekly | workflows-weekly-content | Yes after completeness checks |
 | Что изменилось с прошлого отчёта? | PERIOD_DIFF / WEEKLY_DIFF | Cross-domain reporting | workflows-weekly-content | No |
 | Проверь корректность данных | DATA_QA | Data quality | data-quality-rules | No, except explicit non-destructive reconciliation |
+| Что сейчас в тренде по силовым тренировкам? / Собери R/Form Radar / Найди трендовые темы | STRENGTH_TREND_SCAN | External Intelligence / Content | workflows-external-intelligence | No |
 | Проверь очередь публикаций | CONTENT_QUEUE_CHECK | Content | workflows-content-production | No |
 | Обнови контент-очередь | CONTENT_QUEUE_REFRESH | Content | workflows-content-production | Non-destructive classification only |
 | Убери устаревший материал из очереди | CONTENT_SUPERSEDE | Content | workflows-content-production | Yes; supersede/hold, never delete history |

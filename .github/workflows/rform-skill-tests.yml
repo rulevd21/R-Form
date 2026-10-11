@@ -4,10 +4,14 @@ on:
   push:
     paths:
       - "skills/rform-operating-system/**"
+      - "automation/strength_trend_scout_v1.py"
+      - "automation/tests/test_strength_trend_scout_v1.py"
       - ".github/workflows/rform-skill-tests.yml"
   pull_request:
     paths:
       - "skills/rform-operating-system/**"
+      - "automation/strength_trend_scout_v1.py"
+      - "automation/tests/test_strength_trend_scout_v1.py"
       - ".github/workflows/rform-skill-tests.yml"
 
 jobs:
@@ -20,6 +24,8 @@ jobs:
           python-version: "3.12"
       - name: Verify SKILL.md local references
         run: python skills/rform-operating-system/tests/test_reference_integrity.py
+      - name: Test Strength Trend Scout scoring contract
+        run: python -m unittest automation/tests/test_strength_trend_scout_v1.py -v
       - name: Build installable skill package
         run: |
           mkdir -p dist
