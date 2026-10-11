@@ -1,8 +1,8 @@
 # R/Form Closed Loop v1
 
-Status: v1.1 implementation candidate / runtime acceptance pending  
-Version: 1.1  
-Owner interface: Owner Bot  
+Status: v1.1 implementation candidate / runtime acceptance pending
+Version: 1.1
+Owner interface: Owner Bot
 Canonical business state: `RFORM_MASTER_DATA_v1`
 
 ## 1. Goal

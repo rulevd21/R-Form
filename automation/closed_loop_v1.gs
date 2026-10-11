@@ -155,7 +155,7 @@ function rformClosedLoopEvaluateExperimentV1(experiment, registryRows, todayIso)
     var values={}; contract.fields.forEach(function(f){values[f]=Number(metrics[f].value);});
     if((id==='H01'||id==='H02') && values.views_24h<=0 || id==='H03' && values.subscriber_base<=0 ||
       id==='H04' && (values.starts<=0 || values.completions>values.starts || values.returned_after_3_trainings>values.completions)) return;
-    if(id==='H03' && (!/^\\d{4}-W\\d{2}$/.test(String(row.period_id || '')) || row.period_id!==rformClosedLoopIsoWeekV11_(date))) return;
+    if(id==='H03' && (!/^\d{4}-W\d{2}$/.test(String(row.period_id || '')) || row.period_id!==rformClosedLoopIsoWeekV11_(date))) return;
     if((id==='H01'||id==='H03') && values.retention_7d>1) return;
     var x={id:key,key:String(row.comparison_key),period:String(row.period_id || ''),v:values};
     (group==='CONTROL'?control:treatment).push(x);

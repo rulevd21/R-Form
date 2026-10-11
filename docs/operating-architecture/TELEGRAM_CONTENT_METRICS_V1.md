@@ -1,7 +1,7 @@
 # R/Form Telegram Content Metrics v1
 
-Status: VERIFIED_PRODUCTION / accepted 2026-10-11  
-Canonical destination: `RFORM_MASTER_DATA_v1 / CONTENT_REGISTRY`  
+Status: VERIFIED_PRODUCTION / accepted 2026-10-11
+Canonical destination: `RFORM_MASTER_DATA_v1 / CONTENT_REGISTRY`
 Source: public Telegram web preview for `@r_form`
 
 ## Purpose
