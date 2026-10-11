@@ -4,14 +4,10 @@ on:
   push:
     paths:
       - "skills/rform-operating-system/**"
-      - "automation/strength_trend_scout_v1.py"
-      - "automation/tests/test_strength_trend_scout_v1.py"
       - ".github/workflows/rform-skill-tests.yml"
   pull_request:
     paths:
       - "skills/rform-operating-system/**"
-      - "automation/strength_trend_scout_v1.py"
-      - "automation/tests/test_strength_trend_scout_v1.py"
       - ".github/workflows/rform-skill-tests.yml"
 
 jobs:
@@ -25,7 +21,9 @@ jobs:
       - name: Verify SKILL.md local references
         run: python skills/rform-operating-system/tests/test_reference_integrity.py
       - name: Test Strength Trend Scout scoring contract
-        run: python -m unittest automation/tests/test_strength_trend_scout_v1.py -v
+        run: python -m unittest skills/rform-operating-system/tests/test_strength_trend_scout_v1.py -v
+      - name: Verify installable contains deterministic scout
+        run: test -f skills/rform-operating-system/scripts/strength_trend_scout_v1.py
       - name: Build installable skill package
         run: |
           mkdir -p dist
@@ -33,6 +31,8 @@ jobs:
           zip -r ../dist/rform-operating-system.zip rform-operating-system \
             -x "rform-operating-system/tests/*" \
                "rform-operating-system/releases/*"
+      - name: Verify packaged scout
+        run: unzip -l dist/rform-operating-system.zip | grep -q "rform-operating-system/scripts/strength_trend_scout_v1.py"
       - name: Upload installable skill package
         uses: actions/upload-artifact@v4
         with:

@@ -86,7 +86,7 @@ Do not force every result into a seed cluster. Emerging topics may create a new 
 
 Use:
 
-`QUERY PLAN → CHANNEL HEALTH → MULTI-PLATFORM COLLECTION → NORMALIZE → DEDUPLICATE → CLUSTER → SCORE → TREND CLASS → EDITORIAL GATE → OWNER OUTPUT`
+`QUERY PLAN → CHANNEL HEALTH → MULTI-PLATFORM COLLECTION → NORMALIZE → DEDUPLICATE → CLUSTER → DETERMINISTIC SCORE → TREND CLASS → EDITORIAL GATE → OWNER OUTPUT`
 
 ### 1. Query plan
 
@@ -171,6 +171,35 @@ Definitions:
 
 These fields are editorial inputs, not measures of internet popularity.
 
+## Deterministic scorer contract
+
+The packaged implementation is:
+
+`scripts/strength_trend_scout_v1.py`
+
+After collection/normalization, execute this script with normalized cluster JSON. Its result is authoritative for:
+
+- `trend_score`;
+- score breakdown;
+- `trend_class`;
+- `editorial_disposition` at the trend gate;
+- independent-source/platform counts;
+- `top_editorial_candidates`.
+
+Do not manually recreate or override those outputs when the script is executable.
+
+### Fail-closed behavior
+
+If deterministic script execution is unavailable or fails:
+
+1. report `SCORER_UNAVAILABLE` and the exact execution blocker;
+2. do not present a numeric `TREND_SCORE` as deterministic;
+3. do not emit `CONTENT_CANDIDATE`;
+4. manual qualitative review may return only provisional `WATCH` or `NO_POST`;
+5. preserve source coverage/provenance and continue non-blocked research work.
+
+This prevents free-form reasoning from silently changing scoring or editorial gates.
+
 ## TREND_SCORE v1
 
 Score 0..100 using:
@@ -181,8 +210,6 @@ Score 0..100 using:
 - Authority: 15;
 - Audience fit: 10;
 - R/Form fit: 10.
-
-The reference deterministic implementation is `automation/strength_trend_scout_v1.py`.
 
 ### Score components
 
@@ -224,15 +251,15 @@ Deterministic minimum gates:
 - `WATCH`: score >= 45, or strong primary evidence with clear R/Form relevance but insufficient diffusion;
 - `NOISE`: everything else.
 
-Do not promote a one-source viral item to `TREND` only because engagement is large.
+Do not promote a one-source or one-platform viral item to `TREND` only because the score/engagement is large.
 
-A new high-quality paper can be `WATCH` even before broad discussion; its publication worth is decided by Editorial Gate, not by artificially inflating trend score.
+A new high-quality paper can be `WATCH` even before broad discussion. `WATCH` means observe/research; it is not a publication candidate state.
 
 ## Editorial Gate after trend detection
 
-Trend detection is not publication selection.
+Trend detection is not publication approval.
 
-For every `TREND` / `BREAKOUT` and high-value `WATCH`, ask:
+For scorer-confirmed `TREND` / `BREAKOUT`, ask:
 
 1. Is there a real audience problem/question?
 2. Is there transferable reader value?
@@ -240,11 +267,13 @@ For every `TREND` / `BREAKOUT` and high-value `WATCH`, ask:
 4. Is the topic materially distinct from recent R/Form publications?
 5. Is source confidence sufficient for the strength of the claim?
 
-Outcome:
+Scorer-level outcome:
 
-- `CONTENT_CANDIDATE` — useful and R/Form adds distinct value;
-- `WATCH` — potentially useful, evidence/discussion not mature enough;
-- `NO_POST` — popular but low-value, duplicative, weakly evidenced, or off-brand.
+- `CONTENT_CANDIDATE` — permitted only when `trend_class` is `TREND` or `BREAKOUT`, reader value and R/Form fit meet the scorer threshold, and R/Form has a distinct position;
+- `WATCH` — insufficient diffusion/maturity or useful but not yet eligible;
+- `NO_POST` — low-value, duplicative, weakly evidenced, or off-brand.
+
+**Invariant:** `trend_class=WATCH` must never have `editorial_disposition=CONTENT_CANDIDATE`, regardless of numeric score. The 1.1.7 regression fixture reproduces the observed `64.54`, one-platform case and requires `WATCH → WATCH`.
 
 `CONTENT_CANDIDATE` is still not a `CONTENT_QUEUE` write. Only the existing content workflow may materialize/update a canonical content object under its normal permission and owner-gate rules.
 
@@ -278,15 +307,17 @@ Default scan response:
 
 - coverage line: platforms used / unavailable;
 - top three clusters maximum;
-- each cluster: `Trend Class`, `TREND_SCORE`, one-sentence reason, source mix, editorial disposition;
+- each cluster: `Trend Class`, deterministic `TREND_SCORE` when scorer ran, one-sentence reason, source mix, editorial disposition;
 - one recommended R/Form Radar candidate maximum;
 - one owner action: `разобрать`, `наблюдать`, or `пропустить`.
+
+If scorer did not run, clearly replace numeric score/candidate output with `SCORER_UNAVAILABLE` and provisional qualitative observation only.
 
 Do not dump all raw URLs unless requested. Preserve enough source provenance to retrieve them when preparing the actual article/post.
 
 ## Publication handoff
 
-When the owner chooses a candidate:
+When the owner chooses a scorer-confirmed candidate:
 
 1. route to `workflows-content-production.md`;
 2. re-read relevant current R/Form state and recent publication history;

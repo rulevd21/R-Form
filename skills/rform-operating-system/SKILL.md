@@ -3,7 +3,7 @@ name: rform-operating-system
 description: Operates the R/Form personal training, nutrition, competition-preparation, analytics, content, and external-intelligence system from short natural-language commands. Use for commands such as "Закрой день", "План/факт по дню", "Сколько осталось КБЖУ?", "Обнови статус подготовки", "Сформируй Weekly Report", "Что публикуем сегодня?", "Собери R/Form Radar", "Что сейчас в тренде по силовым тренировкам?", "Обнови контент-очередь", "Подготовь публикацию", "Покажи предпросмотр", "Утверждаю публикацию", "Опубликуй", content analytics, queue checks, R/Form data QA, training-week planning, external trend scouting, and R/Form application diagnostics. Resolve context from the current R/Form Source of Truth instead of relying on chat memory.
 compatibility: Requires a skills-compatible agent with authenticated Google Drive/Sheets access to R/Form Source of Truth. GitHub access is required only for code/repository workflows; web access only for external current facts. Agent Reach is optional and may be used as a subordinate multi-platform external-research capability. Notion is optional. No paid API is required.
 metadata:
-  version: "1.1.6"
+  version: "1.1.7"
   product: "R/Form"
   owner-mode: "minimal-involvement"
   source-of-truth: "RFORM_MASTER_DATA_v1"
@@ -132,7 +132,11 @@ For food calculations preserve product-data provenance and confidence when R/For
 
 External intelligence is a read-only evidence layer. It never becomes canonical business state.
 
-For `STRENGTH_TREND_SCAN`, load [references/workflows-external-intelligence.md](references/workflows-external-intelligence.md), use Agent Reach as the preferred subordinate multi-platform acquisition layer when available, normalize and deduplicate source signals, apply the deterministic `TREND_SCORE` contract, and then apply an editorial gate.
+For `STRENGTH_TREND_SCAN`, load [references/workflows-external-intelligence.md](references/workflows-external-intelligence.md), use Agent Reach as the preferred subordinate multi-platform acquisition layer when available, normalize and deduplicate source signals, and execute the packaged deterministic scorer [scripts/strength_trend_scout_v1.py](scripts/strength_trend_scout_v1.py) for `TREND_SCORE`, trend class and scorer-level editorial disposition.
+
+Do not reproduce the scorer mentally when the script can be executed. The script result is authoritative for `trend_score`, `trend_class`, `editorial_disposition`, independent source count and top editorial candidates.
+
+Fail closed when deterministic execution is unavailable: report `SCORER_UNAVAILABLE`, keep any manual assessment explicitly provisional, and do not emit `CONTENT_CANDIDATE` or a numeric `TREND_SCORE` as if it were deterministic. A `WATCH` classification may never be promoted to `CONTENT_CANDIDATE`; only scorer-confirmed `TREND` or `BREAKOUT` can reach that disposition.
 
 Agent Reach does not become a second user-facing router. Channel failure is a coverage limitation, not permission to bypass authentication. A trend classification is not publication approval.
 
@@ -245,6 +249,7 @@ Before returning a result, verify:
 - `DATA_EVENTS` provides source-event and aggregation/coverage signals.
 - Series commitments and `WEEKLY_CONTROL` may justify publication by calendar obligation; routine training/nutrition/AI_CHECK events require a meaningful editorial trigger or they become Weekly input.
 - External `TREND` / `BREAKOUT` classifications remain evidence only until the existing content editorial gate accepts a distinct reader-value candidate.
+- External `WATCH` is never a `CONTENT_CANDIDATE`; it remains observation/research input until independent diffusion satisfies the deterministic `TREND` or `BREAKOUT` gate.
 - If a published/approved aggregate already covers an event, do not re-offer the obsolete standalone item.
 - When content text or visual payload changes after preview review, treat the old preview/review hash as stale and require a new preview/review before scheduling.
 - For exact data/typography cards, prefer the existing deterministic R/Form visual pipeline/template. Do not substitute approximate AI-generated text graphics when that could introduce factual or typographic errors.

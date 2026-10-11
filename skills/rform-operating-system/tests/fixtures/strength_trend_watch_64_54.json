@@ -1,0 +1,32 @@
+{
+  "now": "2026-10-11T12:00:00Z",
+  "clusters": [
+    {
+      "cluster_key": "frequency-vs-volume-runtime-regression",
+      "audience_fit": 1.0,
+      "rform_fit": 1.0,
+      "reader_value": 1.0,
+      "rform_position_available": true,
+      "signals": [
+        {
+          "signal_id": "web-1",
+          "platform": "web",
+          "url": "https://example.com/primary-1",
+          "published_at": "2026-10-10T12:00:00Z",
+          "discovered_at": "2026-10-11T12:00:00Z",
+          "authority": 0.775,
+          "primary_evidence": true
+        },
+        {
+          "signal_id": "web-2",
+          "platform": "web",
+          "url": "https://example.com/expert-2",
+          "published_at": "2026-10-10T12:00:00Z",
+          "discovered_at": "2026-10-11T12:00:00Z",
+          "authority": 0.775,
+          "primary_evidence": false
+        }
+      ]
+    }
+  ]
+}
