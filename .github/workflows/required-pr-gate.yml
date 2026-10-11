@@ -71,5 +71,5 @@ jobs:
         run: |
           set -euo pipefail
           test -s RFORM_RUNTIME_MANIFEST.json
-          test -s VERSION_GOVERNANCE.md
+          test -s docs/governance/VERSION_GOVERNANCE.md
           test -s docs/operating-architecture/CLOSED_LOOP_V1.md
