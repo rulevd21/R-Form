@@ -1,10 +1,10 @@
-// R/Form Owner Bot Cockpit v1.6 · Daily Cockpit + Period Report + Strength Trends
+// R/Form Owner Bot Cockpit v1.7 · Daily Cockpit + Period Report + Strength Trends
 // Read model only. Reads canonical Master Data directly for the daily cockpit and reports.
 // Owner mutations still use the existing Content Control API.
 // No new datastore, publisher, router or trigger.
 
 const RFORM_OWNER_COCKPIT_V13 = Object.freeze({
-  version: '1.6.0',
+  version: '1.7.0',
   timezone: 'Europe/Moscow',
   queueSheet: 'CONTENT_QUEUE',
   closureSheet: 'DAY_CLOSURE',
@@ -94,7 +94,9 @@ function rformOwnerBotV13SendCockpit_() {
 function rformOwnerBotV13BuildCockpit_() {
   const bundle = {
     queue: rformOwnerBotV13ReadQueue_(),
-    events: rformOwnerBotV13ReadEvents_()
+    events: rformOwnerBotV13ReadEvents_(),
+    decision_reviews:rformOwnerBotV13ReadRows_('DECISION_REVIEWS','Review_ID'),
+    experiments:rformOwnerBotV13ReadRows_('CONTENT_EXPERIMENTS','Hypothesis_ID')
   };
   const closure = rformOwnerBotV13ReadClosure_();
   return rformOwnerBotV13CockpitModel_(closure, bundle);
@@ -224,15 +226,28 @@ function rformOwnerBotV13CockpitModel_(closure, bundle) {
     });
   });
 
-  decisions.sort(function (a, b) { return b.priority - a.priority; });
+  const seen={};
+  const decisionReviews=Array.isArray(bundle && bundle.decision_reviews)?bundle.decision_reviews:[];
+  decisionReviews.forEach(function(review) {
+    if(review.Next_Decision_Required==='YES' && ['PARTIAL','REJECTED'].indexOf(review.Outcome)!==-1 && review.Status!=='OWNER_RESOLVED')
+      decisions.push({kind:'DECISION_REVIEW',priority:180,id:review.Review_ID,title:'Проверить результат решения · '+review.Decision_ID,
+        action:String(review.Actual_Result || '').slice(0,220)+'\n   '+String(review.Next_Action || 'Нужно отдельное решение о следующем шаге.')});
+  });
+  (Array.isArray(bundle && bundle.experiments)?bundle.experiments:[]).forEach(function(exp) {
+    if(exp.Status==='READY_FOR_REVIEW' && /^OBSERVED_METRICS_READY:/.test(String(exp.Result || '')) && exp.Decision==='OWNER_REVIEW_REQUIRED')
+      decisions.push({kind:'EXPERIMENT_REVIEW',priority:160,id:exp.Hypothesis_ID,title:'Рассмотреть гипотезу · '+exp.Hypothesis_ID,
+        action:'Наблюдения, контроль и выборка проверены. Оцените '+String(exp.Primary_Metric || '')+'; вывод остаётся за владельцем.'});
+  });
+  const unique=decisions.filter(function(d){const key=d.kind+':'+d.id;if(!d.id || seen[key])return false;seen[key]=true;return true;});
+  unique.sort(function (a, b) { return b.priority - a.priority || String(a.id).localeCompare(String(b.id)); });
   return {
     generated_at: new Date().toISOString(),
     date: closure && closure.date ? closure.date : Utilities.formatDate(new Date(), RFORM_OWNER_COCKPIT_V13.timezone, 'dd.MM.yyyy'),
     closure: closure || {found: false},
     event_counts: {total: events.length, owner_gate: actionableEvents.length},
     queue_counts: {open: openQueue.length, final_preview: ready.length},
-    owner_decision_total: decisions.length,
-    owner_decisions: decisions.slice(0, RFORM_OWNER_COCKPIT_V13.maxOwnerDecisions)
+    owner_decision_total: unique.length,
+    owner_decisions: unique.slice(0, RFORM_OWNER_COCKPIT_V13.maxOwnerDecisions)
   };
 }
 

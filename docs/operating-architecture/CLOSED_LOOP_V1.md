@@ -1,8 +1,8 @@
 # R/Form Closed Loop v1
 
-Status: CANDIDATE / canonical data migration applied 2026-10-11  
-Version: 1.0  
-Owner interface: Owner Bot  
+Status: v1.1 implementation candidate / runtime acceptance pending
+Version: 1.1
+Owner interface: Owner Bot
 Canonical business state: `RFORM_MASTER_DATA_v1`
 
 ## 1. Goal
@@ -31,7 +31,7 @@ The system must reduce owner attention, not create new surfaces.
 
 ## 3. Capture → Closure → Events
 
-The lifecycle candidate is Content Event Detector v0.4 / lifecycle 1.0.
+Content Event Detector v0.4 / lifecycle 1.0 is VERIFIED_PRODUCTION.
 
 Rules:
 
@@ -44,7 +44,7 @@ Rules:
 
 Production evidence on 2026-10-11 already shows `D-20261010` accepted Closure followed by `DAY_CLOSED` and `NUTRITION_DEVIATION` lifecycle events.
 
-Remaining production acceptance is intentionally fail-closed: native scheduled `RFORM_DETECTOR_RUN` START/FINISH receipt plus repeated idempotent/no-op evidence must pass Issue #42 before the detector manifest is promoted to v0.4/lifecycle 1.0.
+Issue #42 is closed: native scheduled START/FINISH on 2026-10-11 and repeated zero-mutation NO_OP passed; the manifest already records v0.4/lifecycle 1.0.
 
 ## 4. Content Packet v1
 
@@ -80,7 +80,7 @@ Packet generation may prepare text/visual assets. It may not approve, schedule o
 
 For a routine training packet selected for publication, the owner preview must contain the complete exercise list, accepted work-set count, duration, bench tonnage when relevant, total working tonnage, technique and pain/recovery facts when available.
 
-The 2026-10-11 acceptance case is `CNT-20261009-S-20261009-C`:
+The 2026-10-11 manually materialized reference packet is `CNT-20261009-S-20261009-C`:
 
 - 5 exercises;
 - 14 work sets;
@@ -205,3 +205,21 @@ PASS only when:
 - Content Packet v1: first canonical packet materialized in `CONTENT_QUEUE`; owner gate preserved.
 - Decision → Result: `DECISION_REVIEWS` created and first review closed as `CONFIRMED`.
 - Content → Metrics: canonical metric owner established as `CONTENT_REGISTRY`; stale experiments gated; automatic external metric ingestion remains dependent on an authenticated metrics source and must not be simulated.
+
+## v1.1 runtime connection and acceptance
+
+The existing signed Owner Bot `sync_training` request invokes the closed-loop adapter in Content API when `RFORM_CLOSED_LOOP_ENABLED=YES`. The existing Owner Bot polling trigger is reused. No additional scheduler, Telegram transport, approval path or datastore is introduced.
+
+Selection uses the unique canonical DATA_EVENTS row. Aggregate/filter dispositions produce an idempotent AUTO_EDITORIAL_NO_POST receipt in CONTENT_ACTION_LOG. Pending events wait; manual gates wait for the owner. A selected CLOSED training session is rebuilt from all canonical TRAINING_SETS, projected into a complete Content Packet, QA checked and appended once to CONTENT_QUEUE. Existing rows, including HOLD/approved/published rows and baseline history, are not rebuilt. Canonical packet JSON and source/set hashes live in the existing action audit; queue metadata references its packet hash.
+
+Decision reviews preserve DECISIONS and accepted manual reviews. Missing observations, targets or structured evaluation contracts produce INSUFFICIENT_DATA / OPEN / Next_Decision_Required=NO. The existing C Volume Bench contract evaluates complete structure, last-set RIR, technique and pain. Other free-text rules are not guessed into numerical criteria.
+
+Experiment contracts are hypothesis-specific: H01 six matched pairs with subscriber gain/views and retention; H02 at least four matched publication units per group with saves/views; H03 four independent week units per group with reach/subscriber base, retention and production time; H04 at least thirty observed starts per matched group with completions and return after three trainings. Readiness requests an owner review; it never confirms a hypothesis automatically.
+
+The existing CONTENT_REGISTRY Notes may contain one standalone `EXPERIMENT_EVIDENCE_V1:` JSON line with `group` (TREATMENT/CONTROL), explicit `comparison_key` and `metrics`. Each metric requires `value`, `observed:true`, `source` and ISO `observed_at`. Controls must be explicitly matched; generic Metrics_Source or Views_24H/Views_72H alone cannot satisfy a primary-metric contract. Historical/out-of-period observations do not count. This is provenance within the existing registry, not an additional evidence store.
+
+Owner Bot reads DECISION_REVIEWS and CONTENT_EXPERIMENTS from canonical Master Data. Insufficient-data housekeeping is omitted from owner actions. The existing global three-action cap applies across previews, closure/event gates and result/experiment reviews.
+
+Acceptance remains pending until runtime readback and a new naturally selected fact produce the full private Owner Bot preview without manual packet assembly, followed by a zero-mutation repeat. A NO_POST natural fact verifies that branch only. A pre-existing manually assembled packet cannot stand in for the positive-path acceptance.
+
+For H03, each observation also requires an ISO `period_id` matching its publication week; repeated observations in one group/week do not count as independent weeks. Previous-period controls require explicit `control_start_date_iso` and `control_end_date_iso` in an `EXPERIMENT_CONTRACT_V1:` JSON line in the existing CONTENT_EXPERIMENTS Notes. Controls outside that declared window do not count.
