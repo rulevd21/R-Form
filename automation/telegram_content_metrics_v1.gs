@@ -40,7 +40,7 @@ function rformTelegramMetricsStripTagsV1(value) {
 
 function rformTelegramMetricsExtractClassTextV1(html, className) {
   const safe = String(className).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const regex = new RegExp('<[^>]+class=["\\'][^"\\']*\\b' + safe + '\\b[^"\\']*["\\'][^>]*>([\\s\\S]*?)<\\/[^>]+>', 'gi');
+  const regex = new RegExp("<[^>]+class=[\"'][^\"']*\\b" + safe + "\\b[^\"']*[\"'][^>]*>([\\s\\S]*?)<\\/[^>]+>", 'gi');
   const out = [];
   let match;
   while ((match = regex.exec(String(html || '')))) out.push(rformTelegramMetricsStripTagsV1(match[1]));
