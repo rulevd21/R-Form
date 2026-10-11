@@ -80,6 +80,8 @@ jobs:
               'RECONCILIATION_REQUIRED',
               'ACCEPTANCE_PENDING',
               'MERGED_NOT_PRODUCTION_VERIFIED',
+              'MERGED_NOT_DEPLOYED',
+              'DEPLOYED_NOT_VERIFIED',
               'CANDIDATE',
               'SUPERSEDED',
               'ARCHIVED_EXPERIMENT',
