@@ -133,7 +133,7 @@ jobs:
             node scripts/release/apply-owner-bot-build-report-v1-5.mjs --check
             node --test tests/owner-bot-build-report-v1-5.test.mjs
           else
-            grep -Eq "version: '1[.](6|7)[.]0'" automation/owner_bot_cockpit_v1_3.gs
+            grep -Eq "version: '1[.](6[.]0|7[.][01])'" automation/owner_bot_cockpit_v1_3.gs
             grep -Fq 'rformOwnerBotV15ShowAnalyticalReport_' automation/owner_bot_cockpit_v1_3.gs
             grep -Fq 'oc:rp:b:' automation/owner_bot_cockpit_v1_3.gs
             echo 'v1.5 Build Report contract inherited by materialized v1.6 candidate.'
@@ -145,7 +145,7 @@ jobs:
           if grep -Fq "version: '1.6.0'" automation/owner_bot_cockpit_v1_3.gs; then
             node scripts/release/apply-owner-bot-strength-trends-v1-6.mjs --check
           else
-            grep -Fq "version: '1.7.0'" automation/owner_bot_cockpit_v1_3.gs
+            grep -Eq "version: '1[.]7[.][01]'" automation/owner_bot_cockpit_v1_3.gs
             grep -Fq 'rformOwnerBotV16StrengthTrends_' automation/owner_bot_cockpit_v1_3.gs
           fi
           node --test tests/owner-bot-strength-trends-v1-6.test.mjs

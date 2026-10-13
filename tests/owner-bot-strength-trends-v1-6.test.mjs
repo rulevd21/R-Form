@@ -66,7 +66,7 @@ function bundle(){
 }
 
 test('working-tree source is accepted both before and after materialization',()=>{
-  assert.match(code,/version: '1\.(6|7)\.0'/);
+  assert.match(code,/version: '1\.(?:6\.0|7\.[01])'/);
   assert.match(code,/setsSheet: 'TRAINING_SETS'/);
   assert.match(code,/rformOwnerBotV16StrengthTrends_/);
   assert.doesNotThrow(()=>new Function(code));

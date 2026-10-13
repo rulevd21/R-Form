@@ -4,7 +4,7 @@
 // No new datastore, publisher, router or trigger.
 
 const RFORM_OWNER_COCKPIT_V13 = Object.freeze({
-  version: '1.7.0',
+  version: '1.7.1',
   timezone: 'Europe/Moscow',
   queueSheet: 'CONTENT_QUEUE',
   closureSheet: 'DAY_CLOSURE',
@@ -228,9 +228,13 @@ function rformOwnerBotV13CockpitModel_(closure, bundle) {
 
   const seen={};
   const decisionReviews=Array.isArray(bundle && bundle.decision_reviews)?bundle.decision_reviews:[];
-  decisionReviews.forEach(function(review) {
+  decisionReviews.slice().sort(function(a,b) {
+    function iso(x) {const v=String(x || ''),m=v.match(/^(\d{2})\.(\d{2})\.(\d{4})/);return m?m[3]+'-'+m[2]+'-'+m[1]:v;}
+    return iso(b.Evidence_Period || b.Review_Date).localeCompare(iso(a.Evidence_Period || a.Review_Date)) ||
+      String(b.Review_ID || '').localeCompare(String(a.Review_ID || ''));
+  }).forEach(function(review) {
     if(review.Next_Decision_Required==='YES' && ['PARTIAL','REJECTED'].indexOf(review.Outcome)!==-1 && review.Status!=='OWNER_RESOLVED')
-      decisions.push({kind:'DECISION_REVIEW',priority:180,id:review.Review_ID,title:'Проверить результат решения · '+review.Decision_ID,
+      decisions.push({kind:'DECISION_REVIEW',priority:180,id:review.Review_ID,decision_id:review.Decision_ID,title:'Проверить результат решения · '+review.Decision_ID,
         action:String(review.Actual_Result || '').slice(0,220)+'\n   '+String(review.Next_Action || 'Нужно отдельное решение о следующем шаге.')});
   });
   (Array.isArray(bundle && bundle.experiments)?bundle.experiments:[]).forEach(function(exp) {
@@ -238,7 +242,7 @@ function rformOwnerBotV13CockpitModel_(closure, bundle) {
       decisions.push({kind:'EXPERIMENT_REVIEW',priority:160,id:exp.Hypothesis_ID,title:'Рассмотреть гипотезу · '+exp.Hypothesis_ID,
         action:'Наблюдения, контроль и выборка проверены. Оцените '+String(exp.Primary_Metric || '')+'; вывод остаётся за владельцем.'});
   });
-  const unique=decisions.filter(function(d){const key=d.kind+':'+d.id;if(!d.id || seen[key])return false;seen[key]=true;return true;});
+  const unique=decisions.filter(function(d){const key=d.kind+':'+(d.kind==='DECISION_REVIEW' && d.decision_id?d.decision_id:d.id);if(!d.id || seen[key])return false;seen[key]=true;return true;});
   unique.sort(function (a, b) { return b.priority - a.priority || String(a.id).localeCompare(String(b.id)); });
   return {
     generated_at: new Date().toISOString(),
