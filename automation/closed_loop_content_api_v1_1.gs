@@ -104,8 +104,9 @@ function rformContentApiV11Experiments_(c,request,today) {
 function rformContentApiV11DecisionReviews_(c,request,today) {
   const decisions=rformContentApiV11Rows_(c.ss,'DECISIONS','Decision_ID'),reviews=rformContentApiV11Rows_(c.ss,'DECISION_REVIEWS','Review_ID'),
     sessions=rformContentApiV11Rows_(c.ss,'TRAINING_SESSIONS','Session_ID');
-  let written=0;
-  decisions.filter(function(d){return d.Status==='ACTIVE' && !d.Duplicate_Flag;}).forEach(function(d) {
+  const hypothesis=rformHypothesisRunV01_(c,request,today,decisions,reviews,sessions);
+  let written=hypothesis.written;
+  decisions.filter(function(d){return d.Status==='ACTIVE' && !d.Duplicate_Flag && d.Decision_ID!==rformHypothesisContractV01_().decision_id;}).forEach(function(d) {
     const accepted=sessions.filter(function(s){return s.Session_Status==='CLOSED' && s.Completed_At && !s.Duplicate_Flag &&
       s.Session_Type==='C' && rformContentApiV11Iso_(s.Date)>=rformContentApiV11Iso_(d.Effective_From);})
       .sort(function(a,b){return rformContentApiV11Iso_(b.Date).localeCompare(rformContentApiV11Iso_(a.Date));});
@@ -147,14 +148,14 @@ function rformContentApiV11DecisionReviews_(c,request,today) {
       Evidence_Source:evidence,Reviewed_By:'CLOSED_LOOP_WORKER',Created_At:prior?prior.Created_At:today,Updated_At:prior?prior.Updated_At:today};
     if(rformContentApiV11Record_(c,id,'AUTO_DECISION_REVIEW','DECISION_REVIEWS','Review_ID',item,request))written++;
   });
-  return {written:written};
+  return {written:written,hypothesis: hypothesis};
 }
 function rformContentApiV11Cycle_(c,request) {
   const props=PropertiesService.getScriptProperties(),cutoff=props.getProperty('RFORM_CLOSED_LOOP_EVENT_FROM');
   if(props.getProperty('RFORM_CLOSED_LOOP_ENABLED')!=='YES')return {ok:true,status:'DISABLED',created:[],blocked:[]};
   if(!/^\d{4}-\d{2}-\d{2}$/.test(String(cutoff || '')))throw new Error('CLOSED_LOOP_BASELINE_REQUIRED');
   const report={ok:true,status:'APPLIED',version:'1.1.0',created:[],blocked:[],no_post_written:0,decision_reviews_written:0,experiments_written:0};
-  const events=rformContentApiV11Rows_(c.ss,'DATA_EVENTS','Event_ID');
+  const events=rformContentApiV11Rows_(c.ss,'DATA_EVENTS','Event_ID'),plans=rformContentApiV11Rows_(c.ss,'TRAINING_PLAN','Plan_Set_ID');
   events.filter(function(e){return rformContentApiV11Iso_(e.Date)>=cutoff;}).forEach(function(e) {
     const selection=rformClosedLoopEditorialV11(e);
     if(selection.outcome==='NO_POST' && rformContentApiV11Record_(c,e.Event_ID,'AUTO_EDITORIAL_NO_POST',null,null,
@@ -163,9 +164,12 @@ function rformContentApiV11Cycle_(c,request) {
   const drafts=rformContentApiV04TrainingDrafts_(c,request);
   report.created=drafts.created || [];report.blocked=drafts.blocked || [];
   const today=Utilities.formatDate(new Date(),'Europe/Moscow','yyyy-MM-dd');
-  report.decision_reviews_written=rformContentApiV11DecisionReviews_(c,request,today).written;
+  const decisionResult=rformContentApiV11DecisionReviews_(c,request,today);
+  report.decision_reviews_written=decisionResult.written;
+  report.hypothesis_review=decisionResult.hypothesis;
+  report.hypothesis_qa_written=decisionResult.hypothesis.qa_written;
   report.experiments_written=rformContentApiV11Experiments_(c,request,today).written;
-  report.mutation_count=report.created.length+report.no_post_written+report.decision_reviews_written+report.experiments_written;
+  report.mutation_count=report.created.length+report.no_post_written+report.decision_reviews_written+report.experiments_written+report.hypothesis_qa_written;
   console.log(JSON.stringify({event:'RFORM_CLOSED_LOOP_CYCLE',report:report}));
   return report;
 }
@@ -208,4 +212,153 @@ function rformContentApiV11PromoteTraining_(ss,approvedEvent) {
   const rows=rformContentApiV11Rows_(ss,'CONTENT_QUEUE','Content_ID').filter(function(q){return q.Session_ID===sessionId;});
   if(rows.length!==1 || (result.blocked || []).length)throw new Error('CLOSED_LOOP:OWNER_SELECTED_PACKET_NOT_READY');
   return rows[0].Content_ID;
+}
+
+// Hypothesis contract adapter 0.1.0; all writes use the existing workspace lock/audit.
+function rformHypothesisContractV01_() {
+  return {schema:'HYPOTHESIS_REVIEW_V1',hypothesis_id:'HYP-TRAINING-C-VOLUME-GATES-001',
+    contract_version:'0.1.0',decision_id:'DEC-20260924-TRAINING-C-VOLUME-BENCH',
+    window_start:'2026-10-14',window_end:'2026-11-10',timezone:'Europe/Moscow',minimum_sample:1};
+}
+function rformHypothesisRatingV01_(session,kind) {
+  const fields=kind==='technique'?['Technique_Status','Session_Conclusion']:['Pain_After','Session_Conclusion'];
+  const observations=[],invalid=[];
+  fields.forEach(function(field,index) {
+    const raw=String(session[field] == null?'':session[field]).trim();
+    if(!raw)return;
+    const scalar=index===0 && raw.match(/^([+-]?\d+(?:[.,]\d+)?)(?:\s*\/\s*(\d+))?$/);
+    const pattern=kind==='technique'?/техника(?:\s+жима)?\s*[:—]?\s*([+-]?\d+(?:[.,]\d+)?)(?:\s*\/\s*(\d+))?(?![\d.,/a-zа-я])/gi:
+      /(?:общая\s+боль|боль\s+после(?:\s+тренировки)?|(?:плечо|локоть|другая\s+боль))\s*[:—]?\s*([+-]?\d+(?:[.,]\d+)?)(?:\s*\/\s*(\d+))?(?![\d.,/a-zа-я])/gi;
+    let matches=scalar?[scalar]:Array.from(raw.matchAll(pattern));
+    // "Боль после" may label the whole primary field; never parse unrelated numbers in a conclusion.
+    if(kind==='pain' && index===0 && !matches.length)matches=Array.from(raw.matchAll(/боль\s*[:—]?\s*([+-]?\d+(?:[.,]\d+)?)(?:\s*\/\s*(\d+))?(?![\d.,/a-zа-я])/gi));
+    const values=matches.map(function(m){return Number(m[1].replace(',','.'));});
+    if(matches.some(function(m){return m[2] && m[2]!=='10';}) || values.some(function(v){return !Number.isFinite(v)||v<0||v>10;})){invalid.push(field);return;}
+    if(values.length) {
+      const value=kind==='pain'?Math.max.apply(null,values):values[0];
+      if(kind==='technique' && values.some(function(v){return v!==value;}))invalid.push(field);
+      observations.push({source:'TRAINING_SESSIONS',field:field,raw:raw,value:value});
+    }
+  });
+  const conflict=invalid.length>0 || observations.some(function(o){return o.value!==observations[0].value;});
+  return {value:conflict || !observations.length?null:observations[0].value,
+    reason:conflict?'CONFLICTING_EVIDENCE':!observations.length?'MISSING_RATING':'',
+    provenance:observations,invalid_fields:invalid};
+}
+function rformHypothesisEvaluateV01_(decision,session,packet,eligibility,today) {
+  const contract=rformHypothesisContractV01_(),checks=[],gaps=(eligibility || []).slice();
+  const result={contract:contract,session_id:session?session.Session_ID:'',checks:checks,gaps:gaps,
+    hypothesis_state:'INSUFFICIENT_DATA',reason:'AWAITING_NEW_ELIGIBLE_SESSION'};
+  if(!decision || decision.Status!=='ACTIVE' || decision.Duplicate_Flag) {
+    result.hypothesis_state='STALE';result.reason='DECISION_NOT_ACTIVE';return result;
+  }
+  if(!session) {
+    if(today>contract.window_end){result.hypothesis_state='STALE';result.reason='REVIEW_WINDOW_EXPIRED';}
+    return result;
+  }
+  const date=rformContentApiV11Iso_(session.Date);
+  if(!date || date<contract.window_start || date>contract.window_end || date>today ||
+    (decision.Effective_From && date<rformContentApiV11Iso_(decision.Effective_From)) ||
+    (decision.Effective_To && date>rformContentApiV11Iso_(decision.Effective_To)))gaps.push('OUTSIDE_EFFECTIVE_WINDOW');
+  if(session.Session_Status!=='CLOSED'||!session.Completed_At||session.Session_Type!=='C'||session.Duplicate_Flag)gaps.push('SESSION_NOT_ACCEPTED');
+  if(packet) {
+    const groups=packet.exercises || [],bench=groups.filter(function(g){return g.code==='BARBELL_BENCH_PRESS';});
+    const group=function(code,n,min,max){const xs=groups.filter(function(g){return g.code===code;});
+      return xs.length===1 && xs[0].sets.length===n && xs[0].sets.every(function(s){return s.reps>=min && s.reps<=max;});};
+    const structure=groups.length===5 && group('BARBELL_BENCH_PRESS',4,6,8) &&
+      groups.filter(function(g){return g.code==='BARBELL_SQUAT';}).length===1 &&
+      group('CHEST_SUPPORTED_DUMBBELL_ROW',3,10,12) && group('DUMBBELL_CHEST_FLY',2,12,15) &&
+      group('DUMBBELL_REAR_DELT_FLY',2,12,15);
+    let rir=null;
+    if(bench.length===1 && bench[0].sets.length) {
+      const numbers=bench[0].sets.map(function(s){return Number(s.number);});
+      if(numbers.some(function(n){return !Number.isInteger(n)||n<=0;}) || new Set(numbers).size!==numbers.length)gaps.push('AMBIGUOUS_SET_ORDER');
+      else {
+        const last=bench[0].sets.slice().sort(function(a,b){return a.number-b.number;}).pop(),raw=String(last.rir == null?'':last.rir);
+        if(/^\d+(?:[.,]\d+)?$/.test(raw) && Number(raw.replace(',','.'))<=20)rir=Number(raw.replace(',','.'));
+      }
+    }
+    checks.push({metric:'C structure',target:'C Volume Bench',actual:String(structure),passed:structure});
+    checks.push({metric:'last bench RIR',target:'>=2',actual:rir,passed:rir===null?null:rir>=2});
+  } else gaps.push('FACT_PACKET_INCOMPLETE');
+  const tech=rformHypothesisRatingV01_(session,'technique'),pain=rformHypothesisRatingV01_(session,'pain');
+  [tech,pain].forEach(function(x){if(x.reason)gaps.push(x.reason);});
+  checks.push({metric:'technique',target:'>=8/10',actual:tech.value,passed:tech.value===null?null:tech.value>=8});
+  checks.push({metric:'pain',target:'<=1/10',actual:pain.value,passed:pain.value===null?null:pain.value<=1});
+  result.provenance={technique:tech,pain:pain};
+  const review=rformClosedLoopBuildDecisionReviewV1({decision_id:decision.Decision_ID,checks:checks,next_decision_required:true});
+  result.outcome=gaps.length?'INSUFFICIENT_DATA':review.outcome;
+  result.hypothesis_state=result.outcome==='CONFIRMED'?'SUPPORTED':
+    result.outcome==='INSUFFICIENT_DATA'?'INSUFFICIENT_DATA':'CONTRADICTED';
+  result.reason=result.hypothesis_state==='SUPPORTED'?'ALL_GATES_PASS':result.hypothesis_state==='CONTRADICTED'?'OBSERVED_GATE_FAILURE':
+    gaps.length?Array.from(new Set(gaps)).join(','):'MISSING_CHECK';
+  return result;
+}
+function rformHypothesisRunV01_(c,request,today,decisions,reviews,sessions) {
+  const contract=rformHypothesisContractV01_(),decision=decisions.find(function(d){return d.Decision_ID===contract.decision_id;});
+  if(decisions.filter(function(d){return d.Decision_ID===contract.decision_id;}).length>1)throw new Error('HYPOTHESIS_DUPLICATE_DECISION');
+  const report={contract_version:contract.contract_version,hypothesis_id:contract.hypothesis_id,written:0,qa_written:0,
+    hypothesis_state:decision && decision.Status==='ACTIVE'?'INSUFFICIENT_DATA':'STALE',reason:'AWAITING_NEW_ELIGIBLE_SESSION',reviews:[]};
+  if(!decision || decision.Status!=='ACTIVE' || decision.Duplicate_Flag){report.reason='DECISION_NOT_ACTIVE';return report;}
+  const candidates=sessions.filter(function(s){const date=rformContentApiV11Iso_(s.Date);
+    return s.Session_Type==='C' && date>=contract.window_start && date<=contract.window_end && date<=today;})
+    .sort(function(a,b){return rformContentApiV11Iso_(a.Date).localeCompare(rformContentApiV11Iso_(b.Date)) || String(a.Session_ID).localeCompare(String(b.Session_ID));});
+  if(!candidates.length){if(today>contract.window_end){report.hypothesis_state='STALE';report.reason='REVIEW_WINDOW_EXPIRED';}return report;}
+  const closures=rformContentApiV11Rows_(c.ss,'DAY_CLOSURE','Closure_ID'),qa=rformContentApiV11Rows_(c.ss,'QA_LOG','QA_ID'),
+    events=rformContentApiV11Rows_(c.ss,'DATA_EVENTS','Event_ID');
+  candidates.forEach(function(session) {
+    const id='REV-AUTO-'+decision.Decision_ID+'-'+session.Session_ID;
+    const existing=reviews.filter(function(r){return r.Decision_ID===decision.Decision_ID && (r.Review_ID===id ||
+      (r.Status==='CLOSED' && String(r.Actual_Result || '').indexOf(session.Session_ID)!==-1));});
+    if(existing.some(function(r){return r.Reviewed_By!=='CLOSED_LOOP_WORKER' || r.Status==='OWNER_RESOLVED';}))return;
+    const prior=reviews.find(function(r){return r.Review_ID===id;}),gaps=[];
+    const closureRows=closures.filter(function(x){return x.Day_ID===session.Day_ID;});
+    const closure=closureRows.length===1?closureRows[0]:null;
+    if(!closure || closure.Close_Readiness!=='READY' || !closure.Closed_At || closure.Close_Request!=='REQUESTED' ||
+      closure.Blocking_Issues || String(closure.Duplicate_Count)!=='0' || String(closure.Open_QA_Count)!=='0' ||
+      closure.Training_Status!=='CLOSED' || closure.Session_ID!==session.Session_ID)gaps.push('DAY_CLOSURE_NOT_ACCEPTED');
+    if(!events.some(function(e){return e.Entity===session.Session_ID || e.Source==='TRAINING_SESSIONS / '+session.Session_ID;}))gaps.push('ACCEPTED_EVENT_REQUIRED');
+    const planRows=plans.filter(function(p){return p.Session_ID===session.Session_ID && p.Plan_Status==='ACTIVE';});
+    const planIds=Array.from(new Set(planRows.map(function(p){return p.Plan_ID;}).filter(Boolean)));
+    if(planIds.length!==1 || planRows.some(function(p){return p.Duplicate_Flag;}))gaps.push('PLAN_CONTEXT_REQUIRED');
+    const currentConflict=[rformHypothesisRatingV01_(session,'technique'),rformHypothesisRatingV01_(session,'pain')].some(function(x){return x.reason==='CONFLICTING_EVIDENCE';});
+    const relatedQa=qa.filter(function(q){return !(currentConflict && String(q.QA_ID || '').startsWith('QA-HYPOTHESIS-')) && !['RESOLVED','CLOSED','DISMISSED'].includes(q.Status) &&
+      [session.Session_ID,session.Day_ID,decision.Decision_ID].some(function(k){return k && String(q.Record_ID || '').includes(k);});});
+    if(relatedQa.length)gaps.push('OPEN_QA');
+    if(sessions.filter(function(s){return s.Session_ID===session.Session_ID;}).length!==1)gaps.push('DUPLICATE_SESSION');
+    let packet=null,sets=[];
+    try {sets=rformContentApiV04CardRows_(c.ss,session.Session_ID);packet=rformContentApiV04CardPacket_(session,sets);}
+    catch(_){gaps.push('FACT_PACKET_INCOMPLETE');}
+    const evaluated=rformHypothesisEvaluateV01_(decision,session,packet,gaps,today);
+    const evidenceHash=rformContentApiV04Sha256Hex_(rformClosedLoopStableStringify_({
+      contract:contract,decision:decision,session:session,sets_hash:packet?packet.sets_hash:'',
+      closure:closure,plan_rows:planRows,related_qa:relatedQa,event_ids:events.filter(function(e){return e.Entity===session.Session_ID || e.Source==='TRAINING_SESSIONS / '+session.Session_ID;}).map(function(e){return e.Event_ID;}).sort()}));
+    const meta=Object.assign({},contract,{hypothesis_state:evaluated.hypothesis_state,reason:evaluated.reason,
+      evidence_hash:evidenceHash,sets_hash:packet?packet.sets_hash:'',session_id:session.Session_ID,plan_id:planIds[0] || ''});
+    const outcome=evaluated.outcome || 'INSUFFICIENT_DATA',insufficient=outcome==='INSUFFICIENT_DATA',supported=outcome==='CONFIRMED';
+    const item={Review_ID:id,Decision_ID:decision.Decision_ID,Area:decision.Area,Decision_Date:decision.Decision_Date,
+      Review_Date:prior?prior.Review_Date:today,Evidence_Period:session.Date,
+      Expected_Result:'C structure and RIR/technique/pain gates; '+contract.hypothesis_id+' / '+contract.contract_version,
+      Metric:'C structure; last bench RIR; technique; pain',Target:'C Volume Bench; >=2; >=8/10; <=1/10',
+      Actual_Result:session.Session_ID+': '+rformClosedLoopStableStringify_({checks:evaluated.checks,gaps:evaluated.gaps,provenance:evaluated.provenance || {}}),
+      Outcome:outcome,Next_Action:supported?'KEEP':insufficient?'COLLECT_MISSING_EVIDENCE':'REVIEW_ADJUST_OR_STOP',
+      Next_Decision_Required:!insufficient && !supported?'YES':'NO',Status:insufficient?'OPEN':'CLOSED',
+      Evidence_Source:'TRAINING_SESSIONS / '+session.Session_ID+' / TRAINING_SETS / '+(packet?packet.sets_hash:'')+'\nHYPOTHESIS_REVIEW_V1:'+rformClosedLoopStableStringify_(meta),
+      Reviewed_By:'CLOSED_LOOP_WORKER',Created_At:prior?prior.Created_At:today,Updated_At:prior?prior.Updated_At:today};
+    if(rformContentApiV11Record_(c,id,'AUTO_DECISION_REVIEW','DECISION_REVIEWS','Review_ID',item,request))report.written++;
+    if(evaluated.reason.indexOf('CONFLICTING_EVIDENCE')!==-1) {
+      const qaId='QA-HYPOTHESIS-'+evidenceHash.slice(0,24);
+      if(!qa.some(function(q){return q.QA_ID===qaId;})) {
+        const qaItem={QA_ID:qaId,Detected_At:today,QA_Type:'CONFLICTING_EVIDENCE',Severity:'WARNING',
+          Source_Sheet:'TRAINING_SESSIONS',Record_ID:session.Session_ID,Field_Name:'Technique_Status; Pain_After; Session_Conclusion',
+          Issue_Description:'Hypothesis review cannot resolve conflicting or invalid explicit numeric ratings.',
+          Current_Value:rformClosedLoopStableStringify_(evaluated.provenance),Expected_Value:'Unambiguous rating 0–10 with source provenance',
+          Owner:'OWNER',Status:'OPEN',Resolution:'',Resolved_At:'',Resolved_By:''};
+        if(rformContentApiV11Record_(c,qaId,'AUTO_HYPOTHESIS_QA','QA_LOG','QA_ID',qaItem,request))report.qa_written++;
+      }
+    }
+    report.hypothesis_state=evaluated.hypothesis_state;report.reason=evaluated.reason;
+    report.reviews.push({review_id:id,session_id:session.Session_ID,evidence_hash:evidenceHash,state:evaluated.hypothesis_state});
+  });
+  return report;
 }
