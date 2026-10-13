@@ -285,3 +285,15 @@ test('cockpit includes only sufficiently observed experiment/decision actions an
   assert.equal(model.owner_decisions[0].kind,'DECISION_REVIEW');
   assert.ok(model.owner_decisions.every(x=>x.id!=='R-MISSING' && x.id!=='H01'));
 });
+
+test('actionable reviews for one decision occupy one cockpit slot using the latest failure',()=>{
+  const bundle={queue:[],events:[],experiments:[],decision_reviews:[
+    {Review_ID:'REV-OLD',Decision_ID:'DEC-SAME',Evidence_Period:'16.10.2026',Outcome:'PARTIAL',Status:'CLOSED',Next_Decision_Required:'YES'},
+    {Review_ID:'REV-NEW',Decision_ID:'DEC-SAME',Evidence_Period:'23.10.2026',Outcome:'REJECTED',Status:'CLOSED',Next_Decision_Required:'YES'},
+    {Review_ID:'REV-OTHER',Decision_ID:'DEC-OTHER',Evidence_Period:'16.10.2026',Outcome:'PARTIAL',Status:'CLOSED',Next_Decision_Required:'YES'}
+  ]};
+  const model=context.rformOwnerBotV13CockpitModel_({found:false},bundle);
+  assert.equal(model.owner_decision_total,2);
+  const same=model.owner_decisions.filter(x=>x.decision_id==='DEC-SAME');
+  assert.equal(same.length,1);assert.equal(same[0].id,'REV-NEW');
+});
