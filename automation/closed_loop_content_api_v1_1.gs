@@ -155,7 +155,7 @@ function rformContentApiV11Cycle_(c,request) {
   if(props.getProperty('RFORM_CLOSED_LOOP_ENABLED')!=='YES')return {ok:true,status:'DISABLED',created:[],blocked:[]};
   if(!/^\d{4}-\d{2}-\d{2}$/.test(String(cutoff || '')))throw new Error('CLOSED_LOOP_BASELINE_REQUIRED');
   const report={ok:true,status:'APPLIED',version:'1.1.0',created:[],blocked:[],no_post_written:0,decision_reviews_written:0,experiments_written:0};
-  const events=rformContentApiV11Rows_(c.ss,'DATA_EVENTS','Event_ID'),plans=rformContentApiV11Rows_(c.ss,'TRAINING_PLAN','Plan_Set_ID');
+  const events=rformContentApiV11Rows_(c.ss,'DATA_EVENTS','Event_ID');
   events.filter(function(e){return rformContentApiV11Iso_(e.Date)>=cutoff;}).forEach(function(e) {
     const selection=rformClosedLoopEditorialV11(e);
     if(selection.outcome==='NO_POST' && rformContentApiV11Record_(c,e.Event_ID,'AUTO_EDITORIAL_NO_POST',null,null,
@@ -305,7 +305,7 @@ function rformHypothesisRunV01_(c,request,today,decisions,reviews,sessions) {
     .sort(function(a,b){return rformContentApiV11Iso_(a.Date).localeCompare(rformContentApiV11Iso_(b.Date)) || String(a.Session_ID).localeCompare(String(b.Session_ID));});
   if(!candidates.length){if(today>contract.window_end){report.hypothesis_state='STALE';report.reason='REVIEW_WINDOW_EXPIRED';}return report;}
   const closures=rformContentApiV11Rows_(c.ss,'DAY_CLOSURE','Closure_ID'),qa=rformContentApiV11Rows_(c.ss,'QA_LOG','QA_ID'),
-    events=rformContentApiV11Rows_(c.ss,'DATA_EVENTS','Event_ID');
+    events=rformContentApiV11Rows_(c.ss,'DATA_EVENTS','Event_ID'),plans=rformContentApiV11Rows_(c.ss,'TRAINING_PLAN','Plan_Set_ID');
   candidates.forEach(function(session) {
     const id='REV-AUTO-'+decision.Decision_ID+'-'+session.Session_ID;
     const existing=reviews.filter(function(r){return r.Decision_ID===decision.Decision_ID && (r.Review_ID===id ||
