@@ -14,7 +14,7 @@ function replaceOnce(source, before, after, label) {
 
 export function applyStrengthTrendsPatch(input) {
   let source = String(input || '');
-  const complete = (source.includes("version: '1.6.0'") || source.includes("version: '1.7.0'")) &&
+  const complete = (source.includes("version: '1.6.0'") || source.includes("version: '1.7.0'") || source.includes("version: '1.7.1'")) &&
     source.includes("setsSheet: 'TRAINING_SETS'") &&
     source.includes('rformOwnerBotV16StrengthTrends_') &&
     source.includes("'СИЛОВЫЕ ТРЕНДЫ'");
