@@ -1,6 +1,6 @@
 {
-  "manifest_version": "1.0.14",
-  "generated_at": "2026-10-11",
+  "manifest_version": "1.0.15",
+  "generated_at": "2026-10-13",
   "repository": "rulevd21/R-Form",
   "governance_status": "ACTIVE",
   "production_ref": {
@@ -53,11 +53,11 @@
       "component": "owner_bot",
       "runtime": "Google Apps Script + Telegram Bot API",
       "production_version": "1.7.0",
-      "deployment_evidence": "PRs #67–#68; exact cockpit source readback; existing deployment version 20; cockpit self-test passed; sole poll trigger retained; restored signed preflight and scheduled polls PASS in Issue #69",
+      "deployment_evidence": "PRs #67–#68; exact cockpit source readback; existing deployment version 20; cockpit self-test passed; sole poll trigger retained; restored signed preflight and scheduled polls PASS in Issue #69; private /today screen PASS recorded in Issue #69",
       "source_ref": "e55d2c9e1b2c33cbf5f7b7c3fa799be0cc82bcb6",
       "status": "DEPLOYED_NOT_VERIFIED",
       "last_verified": "2026-10-11",
-      "notes": "Cockpit 1.7.0 is installed; existing transport reports 1.3.0 independently. Owner reconciled the existing shared authentication configuration; pairing, deployment URL, webhook and sole rformOwnerBotV1Poll clock trigger retained. Native signed preflight passed at 22:02:53–22:03:04 Europe/Moscow: ownerPaired=true, pollTriggerCount=1, no pending webhook updates or last webhook error. Scheduled poll at 22:01:51 completed in 121.285 seconds with outcome OK and all recorded stages OK. Latest observed successful poll is 2026-10-11T19:29:06.414Z, with sync_training APPLIED, created=0 and blocked_count=0. Source/tests establish global cap of three true actions; private /today cockpit acceptance and new automatic fact-to-preview acceptance remain pending.",
+      "notes": "Cockpit 1.7.0 is installed; existing transport reports 1.3.0 independently. Owner reconciled the existing shared authentication configuration; pairing, deployment URL, webhook and sole rformOwnerBotV1Poll clock trigger retained. Native signed preflight passed at 22:02:53–22:03:04 Europe/Moscow: ownerPaired=true, pollTriggerCount=1, no pending webhook updates or last webhook error. Scheduled poll at 22:01:51 completed in 121.285 seconds with outcome OK and all recorded stages OK. Latest observed successful poll is 2026-10-11T19:29:06.414Z, with sync_training APPLIED, created=0 and blocked_count=0. Source/tests establish global cap of three true actions; Private /today screen acceptance passed on 2026-10-12 with two owner actions; button callbacks are not established by screenshot. New automatic fact-to-preview and duplicate-free repeat acceptance remain pending Issue #69.",
       "source_sha256": "5918d2500acf75d70693b8b74cf4d1a7730125578b45e482da756657bd3797b9",
       "rollback": {
         "deployment_version": 19,
@@ -128,9 +128,9 @@
   "known_governance_debt": [
     {
       "issue": "#69",
-      "scope": "Natural positive-path packet/preview acceptance and private cockpit acceptance after restored signed pairing",
+      "scope": "Natural positive-path packet/preview and duplicate-free repeat acceptance after restored signed pairing and private cockpit screen PASS",
       "status": "OPEN",
-      "owner_action": "Authentication recovery is complete. Complete private /today cockpit acceptance and use the next eligible naturally closed fact for full QA packet, exact BOT_PREVIEW_SENT and duplicate-free repeat; preserve final owner publication approval."
+      "owner_action": "Authentication recovery and private /today screen acceptance are complete. Use the next eligible naturally closed fact for full QA packet, exact BOT_PREVIEW_SENT and duplicate-free repeat; preserve final owner publication approval."
     }
   ],
   "candidate_connections": [
@@ -138,13 +138,13 @@
       "component": "closed_loop_content_api",
       "version": "0.8.0 / closed loop 1.1.0",
       "status": "DEPLOYED_NOT_VERIFIED",
-      "production_acceptance": "Exact source/deployment readback and restored signed preflight/scheduled polls passed. Issue #69 remains open for private /today cockpit acceptance, new natural selected fact to complete QA packet, exact BOT_PREVIEW_SENT and duplicate-free repeat; no VERIFIED_PRODUCTION promotion."
+      "production_acceptance": "Exact source/deployment readback, restored signed preflight/scheduled polls and private /today screen acceptance passed. Issue #69 remains open for a new natural selected fact to complete QA packet, exact BOT_PREVIEW_SENT and duplicate-free repeat; no VERIFIED_PRODUCTION promotion."
     },
     {
       "component": "owner_bot_closed_loop",
       "version": "1.7.0",
       "status": "DEPLOYED_NOT_VERIFIED",
-      "production_acceptance": "Exact source/deployment readback and restored signed preflight/scheduled polls passed. Issue #69 remains open for private /today cockpit acceptance, new natural selected fact to complete QA packet, exact BOT_PREVIEW_SENT and duplicate-free repeat; no VERIFIED_PRODUCTION promotion."
+      "production_acceptance": "Exact source/deployment readback, restored signed preflight/scheduled polls and private /today screen acceptance passed. Issue #69 remains open for a new natural selected fact to complete QA packet, exact BOT_PREVIEW_SENT and duplicate-free repeat; no VERIFIED_PRODUCTION promotion."
     }
   ],
   "acceptance_checks": {
@@ -172,9 +172,10 @@
       "latest_attempt": "2026-10-11: NO_POST. The latest accepted natural events have AGGREGATE_TO_WEEKLY / AGGREGATE_ONLY dispositions and existing APPLIED NO_POST receipts. No new automatic packet or exact BOT_PREVIEW_SENT was established; the manual reference packet does not satisfy this gate."
     },
     "private_today_cockpit": {
-      "status": "PENDING",
+      "status": "PASS",
       "issue": "#69",
-      "evidence": "Cockpit source/self-test passed; actual private /today screen and global maximum of three true owner actions have not yet completed runtime acceptance."
+      "date": "2026-10-12",
+      "evidence": "Owner-provided private /today screenshot dated 2026-10-12 20:58 Europe/Moscow, recorded in Issue #69, confirms screen rendering with two owner actions (2 <= 3); prior source/self-test evidence covers global cap implementation. Screenshot does not prove button callbacks, overload behavior or new automatic packet delivery."
     }
   }
 }
