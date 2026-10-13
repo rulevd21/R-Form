@@ -3368,3 +3368,21 @@ function rformHypothesisRunV01_(c,request,today,decisions,reviews,sessions) {
   });
   return report;
 }
+
+function rformContentApiHypothesisPreflightV01() {
+  const c=rformContentApiV04WorkspaceContext_(),contract=rformHypothesisContractV01_();
+  const today=Utilities.formatDate(new Date(),'Europe/Moscow','yyyy-MM-dd');
+  const decisions=rformContentApiV11Rows_(c.ss,'DECISIONS','Decision_ID').filter(function(d){return d.Decision_ID===contract.decision_id;});
+  if(decisions.length!==1)throw new Error('HYPOTHESIS_DECISION_IDENTITY_REQUIRED');
+  const reviews=rformContentApiV11Rows_(c.ss,'DECISION_REVIEWS','Review_ID');
+  const sessions=rformContentApiV11Rows_(c.ss,'TRAINING_SESSIONS','Session_ID').filter(function(s) {
+    const date=rformContentApiV11Iso_(s.Date);
+    return s.Session_Type==='C' && date>=contract.window_start && date<=contract.window_end && date<=today;
+  });
+  const result={ok:true,read_only:true,api_version:RFORM_CONTENT_API_V04.version,contract:contract,
+    enabled:PropertiesService.getScriptProperties().getProperty('RFORM_CLOSED_LOOP_ENABLED')==='YES',
+    decision_status:decisions[0].Status,window_candidate_count:sessions.length,
+    retained_closed_review_count:reviews.filter(function(r){return r.Decision_ID===contract.decision_id && r.Status==='CLOSED';}).length,
+    no_fact_state:rformHypothesisEvaluateV01_(decisions[0],null,null,[],today).hypothesis_state,mutation_count:0};
+  console.log(JSON.stringify({event:'RFORM_HYPOTHESIS_PREFLIGHT',report:result}));return result;
+}
