@@ -44,7 +44,7 @@ test('exact incident passes, each stale/closed/duplicate/evidence guard fails cl
 });
 test('DailyService uses recovery mapping in both CREATE and existing identity checks and retains status/revision guards',()=>{
  const source=fs.readFileSync(path.join(root,'DailyService.gs'),'utf8');
- assert.equal((source.match(/RFormRecoveryPolicy.dayType\(first.sessionType\)/g)||[]).length,2);
+ assert.equal((source.match(/RFormRecoveryPolicy.dayType\(first.sessionType\)/g)||[]).length,3);
  assert.ok(source.includes('assertMutableStatus('));
  assert.ok(source.includes('assertExpectedRevision_(existing, expectedRevision, first.dayId)'));
  assert.ok(!source.includes("Day_Type: 'TRAINING_' + first.sessionType"));
