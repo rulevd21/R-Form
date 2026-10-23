@@ -120,7 +120,7 @@ var RFormDailyService = (function() {
           fieldName: 'Date / Day_Type',
           description: 'DAILY не совпадает с активным тренировочным планом.',
           currentValue: existing.dateKey + ' / ' + existing.dayType,
-          expectedValue: first.dateKey + ' / TRAINING_' + first.sessionType
+          expectedValue: first.dateKey + ' / ' + RFormRecoveryPolicy.dayType(first.sessionType)
         });
         throw new Error('DAILY не совпадает с активным планом. Запись заблокирована.');
       }
