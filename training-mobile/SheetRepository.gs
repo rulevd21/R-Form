@@ -356,11 +356,15 @@ var RFormSheetRepository = (function() {
     var source = sheet.getRange(templateRow, 1, 1, width);
     var target = sheet.getRange(targetRow, 1, 1, width);
 
-    source.copyTo(target, SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
+    // Never clone static fact/status cells from the template. A failed
+    // setValues (for example, strict Day_Type validation) must not leave
+    // a historical CLOSED day or conclusion in a new DAILY row.
+    source.copyTo(target, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+    source.copyTo(target, SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
+    source.copyTo(target, SpreadsheetApp.CopyPasteType.PASTE_FORMULA, false);
 
-    // После copyTo формулы уже адаптированы под targetRow. Собираем финальную
-    // строку в памяти и выполняем один setValues вместо отдельной очистки
-    // статических значений и серии сегментных записей.
+    // The copied formulas are already adjusted to targetRow. Static fields
+    // come exclusively from the validated mutation payload.
     var finalRow = target.getFormulas()[0].map(function(formula) {
       return formula || '';
     });
@@ -375,7 +379,22 @@ var RFormSheetRepository = (function() {
       finalRow[map[header]] = valuesByHeader[header];
     });
 
-    target.setValues([finalRow]);
+    try {
+      target.setValues([finalRow]);
+    } catch (error) {
+      // New row only: remove any partially written values AND formulas,
+      // retaining its validation/formatting for a clean, retryable slot.
+      // This must not touch the original template or any existing facts.
+      try {
+        target.clearContent();
+      } catch (cleanupError) {
+        throw new Error(
+          'APPEND_TEMPLATE_ROLLBACK_FAILED: ' + cleanupError.message +
+          '; initial write error: ' + error.message
+        );
+      }
+      throw error;
+    }
     invalidateFindRowsCache_(sheetName);
     return targetRow;
   }
