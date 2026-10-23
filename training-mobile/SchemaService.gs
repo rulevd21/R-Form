@@ -33,9 +33,17 @@ var RFormSchemaService = (function() {
       formulaFields: ['Day_ID','Weight_7D_Average','Calories_Plan_Min','Calories_Plan_Max','Protein_Plan_Min','Protein_Plan_Max','Fat_Plan_Min','Fat_Plan_Max','Carbs_Plan_Min','Carbs_Plan_Max','Calories_Fact_Min','Calories_Fact_Max','Protein_Fact_Min','Protein_Fact_Max','Fat_Fact_Min','Fat_Fact_Max','Carbs_Fact_Min','Carbs_Fact_Max','Duplicate_Flag'],
       writable: {
         CREATE_DAILY: ['Date','Day_Type','Morning_Weight','Sleep_Hours','Sleep_Quality','Readiness','Shoulder_Pain','Elbow_Pain','Other_Pain','Day_Status','Daily_Conclusion','Updated_At','Updated_By'],
+        REPAIR_GHOST_RECOVERY: ['Day_Type','Morning_Weight','Sleep_Hours','Sleep_Quality','Readiness','Steps','Shoulder_Pain','Elbow_Pain','Other_Pain','Day_Status','Daily_Conclusion','Updated_At','Updated_By'],
         UPDATE_RECOVERY: ['Morning_Weight','Sleep_Hours','Sleep_Quality','Readiness','Shoulder_Pain','Elbow_Pain','Other_Pain','Updated_At','Updated_By'],
         APPEND_DAILY_CONCLUSION: ['Daily_Conclusion','Updated_At','Updated_By']
       }
+    };
+
+    schemas[S.DAY_CLOSURE] = {
+      headers: ['Closure_ID','Day_ID','Date','Day_Type','Morning_Weight_Check','Nutrition_Row_Check','Meal_Count','Nutrition_Status','Nutrition_Values_Check','Training_Required','Session_ID','Training_Status','Training_Sets_Count','Duplicate_Count','Open_QA_Count','Close_Request','Close_Readiness','Blocking_Issues','Closed_At','Day_Packet_Status','Content_ID','Content_Status','Version','Updated_At','Updated_By'],
+      templateRow: 2,
+      formulaFields: [],
+      writable: {}
     };
 
     schemas[S.TRAINING_SESSIONS] = {
