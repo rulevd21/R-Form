@@ -140,11 +140,11 @@ var RFormIncidentRecovery = (function() {
   }
   return {preview:preview,repair:repair};
 }());
-function previewIssue77Recovery_() {
+function previewIssue77Recovery() {
   var result=RFormIncidentRecovery.preview();console.log(JSON.stringify(result));return result;
 }
 
-function testIssue77SafetySummary_() {
+function testIssue77SafetySummary() {
   var baseline=RFormTests.runSafetyBaseline();
   var pure=RFormTests.runPureFunctions();
   var summary={ok:baseline.ok && pure.ok,baselineOk:baseline.ok,pure:pure,
