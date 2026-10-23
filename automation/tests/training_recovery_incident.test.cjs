@@ -55,7 +55,7 @@ test('incident repair preserves before-image, logs before writes, checks baselin
  assert.ok(source.indexOf("'CREATE_INBOX_EVENT'")<source.indexOf("'REPAIR_GHOST_RECOVERY'"));
  assert.ok(source.includes("if (!baseline.ok) throw new Error('ISSUE77_BLOCKED:SAFETY_BASELINE')"));
  assert.ok(source.includes('RFormRecoveryPolicy.assertIncident(s, expectedRevision, expectedSetsHash)'));
- assert.ok(source.includes("function previewIssue77Recovery_()"));
+ assert.ok(source.includes("function previewIssue77Recovery()"));
  assert.ok(!source.includes("writeFields(RFormConfig.SHEETS.TRAINING_SETS"));
  assert.ok(!source.includes("writeFields(RFormConfig.SHEETS.DAY_CLOSURE"));
 });
