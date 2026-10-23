@@ -156,3 +156,32 @@ test('functional repair restores original authorized fields after a partial writ
  assert.equal(f.state.day.Daily_Conclusion,f.old.Daily_Conclusion);
  assert.equal(f.state.audits.length,1);assert.equal(f.state.audits[0].Processing_Status,'ERROR');
 });
+
+test('finish runner sends the approved exact payload and retries without creating another session',()=>{
+ let writes=0,closed=false;
+ const p={expectedSetsHash:'SETS:728e87fe42a0274c7c71',expectedRevision:'DAY:repaired',
+ setCount:11,uniqueSetKeys:11,duplicateFlags:0,closureCount:0,
+ day:{dayType:'RECOVERY',morningWeight:73.7,sleepHours:7,dayStatus:'OPEN',dailyConclusion:''},
+ originalRecovery:{morningWeight:73.7,sleepHours:7,sleepQuality:9,readiness:10,shoulderPain:0,elbowPain:0,otherPain:0}};
+ const c=vm.createContext({console:{log(){}},RFormConfig:{APP_VERSION:'2.1.9'},
+ RFormTests:{runSafetyBaseline:()=>({ok:true})},
+ RFormIncidentRecovery:{preview:()=>({...p,session:closed?{sessionId:'S-20261023-RECOVERY',dayId:'D-20261023',
+ dateKey:'2026-10-23',sessionType:'RECOVERY',sessionStatus:'CLOSED',actualDuration:55,
+ painAfter:'Общая боль 0/10',conclusion:'техника жима 10/10; сохранено подходов 11 из 11',
+ completedAt:'2026-10-23T14:00:00Z',duplicateFlag:''}:null})},
+ RFormSessionService:{finish:payload=>{
+ assert.equal(payload.requestId,'REQ:3f5a05d7-1486-40b8-98d9-0cb16da208bf');
+ assert.equal(payload.sessionId,'S-20261023-RECOVERY');
+ assert.equal(payload.expectedRevision,'NEW:S-20261023-RECOVERY');
+ assert.equal(payload.recoveryExpectedRevision,'DAY:repaired');
+ assert.equal(payload.durationMinutes,55);assert.equal(payload.recovery.morningWeight,73.7);
+ assert.equal(payload.recovery.sleepHours,7);assert.equal(payload.recovery.technique,10);
+ assert.equal(payload.recovery.postPain,0);
+ const replay=closed;if(!closed){closed=true;writes++;}return {ok:true,idempotentReplay:replay};
+ }}});
+ vm.runInContext(fs.readFileSync(path.join(root,'IncidentRunner.gs'),'utf8'),c);
+ assert.equal(c.finishIssue77Recovery().ok,true);
+ assert.equal(c.finishIssue77Recovery().idempotentReplay,true);assert.equal(writes,1);
+ p.expectedSetsHash='SETS:changed';
+ assert.throws(()=>c.finishIssue77Recovery(),/ISSUE77_BLOCKED:FINISH_PREFLIGHT/);assert.equal(writes,1);
+});
