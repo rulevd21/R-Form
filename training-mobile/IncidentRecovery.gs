@@ -143,3 +143,14 @@ var RFormIncidentRecovery = (function() {
 function previewIssue77Recovery_() {
   var result=RFormIncidentRecovery.preview();console.log(JSON.stringify(result));return result;
 }
+
+function testIssue77SafetySummary_() {
+  var baseline=RFormTests.runSafetyBaseline();
+  var pure=RFormTests.runPureFunctions();
+  var summary={ok:baseline.ok && pure.ok,baselineOk:baseline.ok,pure:pure,
+    writeContractOk:baseline.setup.writeContractOk,
+    duplicateChecks:baseline.duplicateChecks.map(function(x){return {sheet:x.sheet,field:x.field,duplicates:x.duplicates};})};
+  console.log(JSON.stringify(summary));
+  if(!summary.ok)throw new Error('ISSUE77_BLOCKED:NATIVE_TESTS');
+  return summary;
+}
